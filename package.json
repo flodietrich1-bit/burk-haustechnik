@@ -1,0 +1,12 @@
+{
+  "name": "burk-haustechnik",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "Programming/ToolTime/admin-web"
+  ],
+  "scripts": {
+    "build": "npm --workspace=Programming/ToolTime/admin-web run build",
+    "start": "npm --workspace=Programming/ToolTime/admin-web run start"
+  }
+}
