@@ -1,0 +1,437 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  SafeAreaView,
+  StatusBar,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import { COLORS } from './src/constants/theme';
+import { getLanguage, setLanguage } from './src/services/storageService';
+import { getActiveMonteur } from './src/services/authService';
+import {
+  getRooms,
+  getMaterials,
+  getProjectInfo,
+  getPendingBookings,
+  enqueueBooking,
+  enqueueAddendum,
+} from './src/services/storageService';
+import { syncBookings, checkOnlineStatus } from './src/services/syncService';
+
+// Components
+import Header from './src/components/Header';
+
+// Screens
+import SetupProfileScreen from './src/screens/SetupProfileScreen';
+import PinLockScreen from './src/screens/PinLockScreen';
+import SyncLoadingScreen from './src/screens/SyncLoadingScreen';
+import RoomListScreen from './src/screens/RoomListScreen';
+import BookingScreen from './src/screens/BookingScreen';
+import PhotoCaptureScreen from './src/screens/PhotoCaptureScreen';
+import DoneScreen from './src/screens/DoneScreen';
+
+export default function App() {
+  // App Phase: 'loading' | 'setup' | 'pin' | 'app'
+  const [appPhase, setAppPhase] = useState('loading');
+  const [currentScreen, setCurrentScreen] = useState('rooms'); // 'rooms' | 'book' | 'photos' | 'done'
+
+  // User & Localization
+  const [monteur, setMonteur] = useState(null);
+  const [currentLang, setCurrentLang] = useState('de');
+
+  // Master Data & Project
+  const [rooms, setRooms] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [project, setProject] = useState({});
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Network State
+  const [isOnline, setIsOnline] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState({ visible: false, text: '', progress: 0 });
+
+  // Active Booking Session State
+  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [sessionQuantities, setSessionQuantities] = useState({}); // { matId: delta }
+  const [sessionPhotos, setSessionPhotos] = useState([]); // [localUri, ...]
+  const [unclearItems, setUnclearItems] = useState([]);
+  const [lastSummary, setLastSummary] = useState([]);
+
+  // 1. Initial App Loading
+  useEffect(() => {
+    async function initApp() {
+      try {
+        const [savedLang, activeUser, cachedRooms, cachedMats, proj, pending] = await Promise.all([
+          getLanguage(),
+          getActiveMonteur(),
+          getRooms(),
+          getMaterials(),
+          getProjectInfo(),
+          getPendingBookings(),
+        ]);
+
+        setCurrentLang(savedLang);
+        setRooms(cachedRooms);
+        setMaterials(cachedMats);
+        setProject(proj);
+        setPendingCount(pending.length);
+
+        if (!activeUser) {
+          setAppPhase('setup');
+        } else {
+          setMonteur(activeUser);
+          setAppPhase('pin');
+        }
+      } catch (err) {
+        console.error('Error during app initialization:', err);
+        setAppPhase('setup');
+      }
+    }
+
+    initApp();
+  }, []);
+
+  // 2. NetInfo Listener for real-time connectivity & background sync
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(async (state) => {
+      const online = !!(state.isConnected && state.isInternetReachable !== false);
+      setIsOnline(online);
+
+      // If reconnected and in main app with pending bookings, trigger background sync
+      if (online && appPhase === 'app') {
+        const pending = await getPendingBookings();
+        if (pending.length > 0 && !isSyncing) {
+          syncBookings({ silent: true }).then((res) => {
+            if (res.success) {
+              refreshData();
+            }
+          });
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [appPhase, isSyncing]);
+
+  const refreshData = async () => {
+    const [r, m, pending] = await Promise.all([
+      getRooms(),
+      getMaterials(),
+      getPendingBookings(),
+    ]);
+    setRooms(r);
+    setMaterials(m);
+    setPendingCount(pending.length);
+  };
+
+  // 3. User Setup Complete
+  const handleSetupComplete = (newMonteur) => {
+    setMonteur(newMonteur);
+    handleUnlockWithAutoSync();
+  };
+
+  // 4. PIN Unlock & Seamless Auto-Sync Flow
+  const handleUnlockWithAutoSync = async () => {
+    const online = await checkOnlineStatus();
+    setIsOnline(online);
+
+    if (online) {
+      // Show seamless sync overlay
+      setSyncProgress({
+        visible: true,
+        text: 'Verbindung hergestellt – Synchronisiere Baustellendaten...',
+        progress: 0.1,
+      });
+
+      try {
+        await syncBookings({
+          silent: true,
+          onProgress: (text, progress) => {
+            setSyncProgress({ visible: true, text, progress });
+          },
+        });
+        await refreshData();
+      } catch (err) {
+        console.warn('Auto-sync notice:', err);
+      } finally {
+        setTimeout(() => {
+          setSyncProgress({ visible: false, text: '', progress: 1 });
+          setAppPhase('app');
+          setCurrentScreen('rooms');
+        }, 600);
+      }
+    } else {
+      // Immediately open offline mode without waiting
+      setAppPhase('app');
+      setCurrentScreen('rooms');
+    }
+  };
+
+  // 5. Language Change
+  const handleSelectLang = async (lang) => {
+    setCurrentLang(lang);
+    await setLanguage(lang);
+  };
+
+  // 6. Manual Sync Button
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const res = await syncBookings({ silent: false });
+      if (res.success) {
+        await refreshData();
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // 7. Room Navigation
+  const handleSelectRoom = (room) => {
+    setSelectedRoom(room);
+    setSessionQuantities({});
+    setSessionPhotos([]);
+    setUnclearItems([]);
+    setCurrentScreen('book');
+  };
+
+  const handleQuantityChange = (matId, qty) => {
+    setSessionQuantities((prev) => ({
+      ...prev,
+      [matId]: qty,
+    }));
+  };
+
+  const handleAddPhoto = (uri) => {
+    setSessionPhotos((prev) => [...prev, uri]);
+  };
+
+  const handleRemovePhoto = (index) => {
+    setSessionPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddUnclearItem = (item) => {
+    setUnclearItems((prev) => [...prev, item]);
+  };
+
+  const handleAddNachtrag = async (nachtragData) => {
+    try {
+      await enqueueAddendum(nachtragData);
+      const pending = await getPendingBookings();
+      setPendingCount(pending.length);
+    } catch (e) {
+      console.warn('Error saving addendum:', e);
+    }
+  };
+
+  // 8. Commit Booking & Outbox Queueing
+  const handleFinishBooking = async () => {
+    if (!selectedRoom) return;
+
+    try {
+      const summary = [];
+
+      // Save each material delta into the outbox queue
+      for (const [matId, delta] of Object.entries(sessionQuantities)) {
+        if (Number(delta) > 0) {
+          const mat = materials.find((m) => m.id === matId);
+          if (mat) {
+            await enqueueBooking({
+              projectId: project.id || 'hallenbad-weingarten',
+              roomId: selectedRoom.id,
+              roomName: selectedRoom.name,
+              itemId: mat.id,
+              itemOz: mat.pos,
+              itemText: mat.cleanName,
+              quantity: delta,
+              qu: mat.qu,
+              photoUris: sessionPhotos,
+              createdBy: monteur?.name || 'Monteur',
+              calendarWeek: project.calendarWeek || 27,
+            });
+
+            summary.push({
+              name: mat.cleanName,
+              quantity: delta,
+              qu: mat.qu,
+            });
+          }
+        }
+      }
+
+      // If only photos were taken without material delta (e.g. proof inspection)
+      if (summary.length === 0 && sessionPhotos.length > 0) {
+        await enqueueBooking({
+          projectId: project.id || 'hallenbad-weingarten',
+          roomId: selectedRoom.id,
+          roomName: selectedRoom.name,
+          itemId: 'photo_doc',
+          itemOz: 'DOKU',
+          itemText: 'Foto-Belegdokumentation',
+          quantity: sessionPhotos.length,
+          qu: 'Fotos',
+          photoUris: sessionPhotos,
+          createdBy: monteur?.name || 'Monteur',
+          calendarWeek: project.calendarWeek || 27,
+        });
+
+        summary.push({
+          name: 'Foto-Belegdokumentation',
+          quantity: sessionPhotos.length,
+          qu: 'Fotos',
+        });
+      }
+
+      setLastSummary(summary);
+      await refreshData();
+      setCurrentScreen('done');
+    } catch (error) {
+      Alert.alert('Fehler', 'Buchung konnte nicht gespeichert werden.');
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Render Phases
+  // -------------------------------------------------------------
+
+  if (appPhase === 'loading') {
+    return (
+      <View style={styles.centerLoading}>
+        <ActivityIndicator size="large" color={COLORS.amber} />
+      </View>
+    );
+  }
+
+  if (appPhase === 'setup') {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+        <SetupProfileScreen
+          currentLang={currentLang}
+          onComplete={handleSetupComplete}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  if (appPhase === 'pin') {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
+        <PinLockScreen
+          monteur={monteur}
+          currentLang={currentLang}
+          onUnlockSuccess={handleUnlockWithAutoSync}
+        />
+        <SyncLoadingScreen
+          visible={syncProgress.visible}
+          statusText={syncProgress.text}
+          progress={syncProgress.progress}
+        />
+      </SafeAreaView>
+    );
+  }
+
+  // Main Authenticated App Flow
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.ink} />
+
+      {/* Persistent Global Header */}
+      <Header
+        projectName={project.name || 'Hallenbad Weingarten'}
+        subTitle={`${project.client || 'Stadt Weingarten'} · ${selectedRoom ? selectedRoom.name : 'UG'}`}
+        calendarWeek={project.calendarWeek || 27}
+        isOnline={isOnline}
+        pendingCount={pendingCount}
+        currentLang={currentLang}
+        onSelectLang={handleSelectLang}
+        onSyncPress={handleManualSync}
+        isSyncing={isSyncing}
+        monteurName={monteur?.name || 'Monteur'}
+      />
+
+      {/* Screen Router */}
+      <View style={styles.body}>
+        {currentScreen === 'rooms' && (
+          <RoomListScreen
+            rooms={rooms}
+            materials={materials}
+            project={project}
+            currentLang={currentLang}
+            onSelectRoom={handleSelectRoom}
+          />
+        )}
+
+        {currentScreen === 'book' && selectedRoom && (
+          <BookingScreen
+            room={selectedRoom}
+            materials={materials}
+            currentLang={currentLang}
+            sessionQuantities={sessionQuantities}
+            onQuantityChange={handleQuantityChange}
+            photoCount={sessionPhotos.length}
+            onGoToPhotos={() => setCurrentScreen('photos')}
+            onBack={() => setCurrentScreen('rooms')}
+            unclearItems={unclearItems}
+            onAddUnclearItem={handleAddUnclearItem}
+            onAddNachtrag={handleAddNachtrag}
+          />
+        )}
+
+        {currentScreen === 'photos' && selectedRoom && (
+          <PhotoCaptureScreen
+            room={selectedRoom}
+            photos={sessionPhotos}
+            onAddPhoto={handleAddPhoto}
+            onRemovePhoto={handleRemovePhoto}
+            onFinishBooking={handleFinishBooking}
+            onBackToBook={() => setCurrentScreen('book')}
+            currentLang={currentLang}
+          />
+        )}
+
+        {currentScreen === 'done' && (
+          <DoneScreen
+            room={selectedRoom}
+            summaryItems={lastSummary}
+            photoCount={sessionPhotos.length}
+            onBackToRooms={() => {
+              setCurrentScreen('rooms');
+              setSelectedRoom(null);
+            }}
+            currentLang={currentLang}
+          />
+        )}
+      </View>
+
+      {/* Auto-Sync Overlay if triggered */}
+      <SyncLoadingScreen
+        visible={syncProgress.visible}
+        statusText={syncProgress.text}
+        progress={syncProgress.progress}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.ink,
+  },
+  body: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
+  centerLoading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.bg,
+  },
+});
