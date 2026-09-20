@@ -1,0 +1,25 @@
+{
+  "apphosting": {
+    "rootDir": "Programming/ToolTime/admin-web"
+  },
+  "hosting": {
+    "public": "Programming/ToolTime/admin-web/dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "Programming/ToolTime/backend/firestore.rules"
+  },
+  "storage": {
+    "rules": "Programming/ToolTime/backend/storage.rules"
+  }
+}
