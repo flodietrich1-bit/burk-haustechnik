@@ -5,13 +5,13 @@ import path from "path";
 import { XMLParser } from "fast-xml-parser";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAXf_veu3fsfYhyaRJI8531_ObU4zMY040",
-  authDomain: "burk-haustechnik.firebaseapp.com",
-  projectId: "burk-haustechnik",
-  storageBucket: "burk-haustechnik.firebasestorage.app",
-  messagingSenderId: "209459117942",
-  appId: "1:209459117942:web:5c2e32cfcee6467492c457",
-  measurementId: "G-9CBCVHREHS"
+  apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "",
+  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "burk-haustechnik.firebaseapp.com",
+  projectId: process.env.VITE_FIREBASE_PROJECT_ID || "burk-haustechnik",
+  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "burk-haustechnik.firebasestorage.app",
+  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "209459117942",
+  appId: process.env.VITE_FIREBASE_APP_ID || "1:209459117942:web:5c2e32cfcee6467492c457",
+  measurementId: process.env.VITE_FIREBASE_MEASUREMENT_ID || "G-9CBCVHREHS"
 };
 
 const app = initializeApp(firebaseConfig);
