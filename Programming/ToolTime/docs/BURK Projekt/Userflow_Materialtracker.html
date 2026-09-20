@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="de"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Userflow · Materialtracker · Firmengruppe Burk</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#EEF3F8;color:#152534;margin:0;padding:28px}
+ .wrap{max-width:1200px;margin:0 auto}
+ h1{font-size:26px;margin:0 0 4px}
+ .sub{color:#5C6B7A;font-size:14px;margin-bottom:22px}
+ .card{background:#fff;border:1px solid #E3EBF2;border-radius:16px;padding:20px 22px;margin-bottom:22px;box-shadow:0 8px 22px rgba(20,50,80,.06)}
+ h2{font-size:18px;margin:0 0 12px;color:#00426B}
+ .mermaid{overflow:auto}
+ .leg{font-size:12.5px;color:#5C6B7A;margin-top:8px}
+</style></head><body>
+<div class="wrap">
+ <h1>Userflow · Materialtracker</h1>
+ <div class="sub">Klickflow nach dem aktuellen Prototyp (v4). Firmengruppe Burk · Tool-Time</div>
+
+ <div class="card">
+  <h2>Monteur (mobile Web-App, Handy)</h2>
+  <pre class="mermaid">
+flowchart TD
+  A["App öffnen"] --> B["Sprache wählen<br/>DE / RO / PL / HR"]
+  B --> C["Räume<br/>Raumliste der Baustelle"]
+  C -->|"Raum antippen"| D["Buchung<br/>Material erfassen"]
+
+  D -->|"Suchfeld tippen"| E["Trefferliste<br/>Klartext + Pos-Nr + enthält-Info"]
+  E -->|"Position antippen"| F["Menge per + / -<br/>je Woche"]
+  F --> D
+  D -->|"Feld leer"| G["Zuletzt genutzt<br/>Top 5"]
+  G -->|"antippen"| F
+
+  D -->|"Position unklar"| H["Freitext + Menge"]
+  H -->|"Erfassen"| I["Eintrag: Zuordnung offen<br/>PL ordnet zu"]
+  I --> D
+
+  D -->|"+ Nachtrag"| J{"Typ waehlen"}
+  J -->|"Material"| J2["Beschreibung, Menge, Besteller"]
+  J -->|"Stundenlohn"| J3["Taetigkeit, Stunden, Besteller"]
+  J2 --> K["Unterschrift<br/>Signatur-Pad"]
+  J3 --> K
+  K -->|"Erfassen"| D
+
+  D -->|"360-Aufnahme"| L["Digitale Klappe / QR"]
+  L --> M
+  D -->|"Weiter zu Fotos"| M["Fotos<br/>Rundum-Aufnahmen"]
+  M -->|"Foto hinzufuegen"| M
+  M -->|"zurueck"| D
+  M -->|"Senden"| N["Bestaetigung<br/>Aufmass gesendet"]
+  N -->|"neuer Durchgang"| C
+  D -->|"zurueck"| C
+
+  classDef start fill:#0A2540,stroke:#0A2540,color:#fff;
+  classDef done fill:#12897E,stroke:#12897E,color:#fff;
+  classDef unclear fill:#FBEEDD,stroke:#D9822B,color:#7a4a12;
+  class A start;
+  class N done;
+  class H,I unclear;
+  </pre>
+  <div class="leg">Blau = Start · Grün = Abschluss · Amber = „Position unklar"-Pfad (Monteur muss nie raten)</div>
+ </div>
+
+ <div class="card">
+  <h2>Projektleiter (Dashboard)</h2>
+  <pre class="mermaid">
+flowchart TD
+  P0["Rolle: Projektleiter"] --> P1["Dashboard<br/>4 Kennzahlen + Reiter"]
+
+  P1 --> T1["Fortschritt<br/>Liquiditaetskurve je Woche"]
+  P1 --> T2["Raeume<br/>Fortschrittsbalken je Raum"]
+  P1 --> T3["Material"]
+  P1 --> T4["Nachtraege"]
+  P1 --> T5["Foto-Zeitleiste"]
+
+  T3 --> T3a["Suche"]
+  T3 --> T3b["Filter<br/>In Arbeit / Rest offen /<br/>Ueber LV / Nicht begonnen / Alle"]
+  T3 --> T3c["Sortierung<br/>Offener Wert / Fortschritt / Pos-Nr"]
+  T3 --> T3d["Groesste offene Posten<br/>Top 5 nach Euro"]
+  T3 --> T3e["Gruppen je LV-Titel"]
+  T3e -->|"Gruppe oeffnen"| T3f["Positionen<br/>geliefert / aufgemessen / offener Wert"]
+
+  T4 --> T4a["Nachtrags-Liste<br/>Typ, Besteller, Status, Unterschrift"]
+  T4 --> T4b["+ Nachtrag erfassen"]
+
+  T5 -->|"Woche anklicken"| T5a["Rundum-Fotos<br/>Vollprodukt"]
+
+  P1 -->|"Rolle wechseln"| P2["Monteur-Ansicht"]
+
+  classDef start fill:#0A2540,stroke:#0A2540,color:#fff;
+  class P0 start;
+  </pre>
+  <div class="leg">Reiter unter den Kennzahlen: Fortschritt · Räume · Material · Nachträge · Foto-Zeitleiste. Rechts oben wechselt die Rolle zurück zum Monteur.</div>
+ </div>
+</div>
+<script>mermaid.initialize({startOnLoad:true,theme:"base",themeVariables:{primaryColor:"#EAF4FB",primaryBorderColor:"#0082C9",primaryTextColor:"#152534",lineColor:"#5C6B7A",fontSize:"13px"},flowchart:{curve:"basis",nodeSpacing:36,rankSpacing:44}});</script>
+</body></html>

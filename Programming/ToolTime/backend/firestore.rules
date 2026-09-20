@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Projects collection and subcollections
+    match /projects/{projectId} {
+      allow read, write: if true;
+      
+      match /positions/{positionId} {
+        allow read, write: if true;
+      }
+      match /rooms/{roomId} {
+        allow read, write: if true;
+      }
+    }
+    
+    // Bookings collection
+    match /bookings/{bookingId} {
+      allow read, write: if true;
+    }
+    
+    // Addendums / Unclear materials
+    match /addendums/{addendumId} {
+      allow read, write: if true;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+  }
+}

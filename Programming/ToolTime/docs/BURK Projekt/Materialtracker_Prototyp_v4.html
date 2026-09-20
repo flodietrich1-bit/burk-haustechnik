@@ -1,0 +1,1030 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BURK Materialtracker - Prototyp</title>
+<style>
+:root{
+  --ink:#1C2A3B; --ink2:#26384D; --amber:#3B82C4; --amber-d:#2C6AA6;
+  --bg:#EEF1F4; --card:#FFFFFF; --line:#E2E7EC; --muted:#71808F;
+  --green:#2FA36B; --green-bg:#E7F5EE; --red:#E0533D; --red-bg:#FBECE8;
+  --ink-soft:#41505F; --lite:#EAF2FB;
+}
+*{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent;}
+html,body{background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:15px; line-height:1.45;}
+button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+.wrap{max-width:1120px; margin:0 auto; padding:18px;}
+
+/* top bar */
+.topbar{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px;}
+.brand{display:flex; align-items:center; gap:10px;}
+.brand .logo{display:flex; flex-direction:column; line-height:.82; padding-right:2px;}
+.brand .logo b{font-style:italic; font-weight:800; font-size:25px; color:var(--amber); letter-spacing:-.01em; transform:skewX(-7deg);}
+.brand .logo small{font-size:8.5px; letter-spacing:.15em; color:#8A9096; font-weight:600; margin-top:2px;}
+.brand .app{font-weight:600; color:var(--ink); font-size:16px;}
+.brand .app span{color:var(--muted); font-weight:500;}
+.roletoggle{display:flex; background:#DCE2E8; border-radius:10px; padding:3px;}
+.roletoggle button{padding:8px 14px; border-radius:8px; font-weight:600; font-size:13.5px; color:var(--ink-soft);}
+.roletoggle button.on{background:var(--ink); color:#fff;}
+
+/* device frame */
+.device{width:430px; max-width:100%; margin:0 auto; background:var(--card); border-radius:22px; box-shadow:0 12px 40px rgba(20,30,45,.14); overflow:hidden; border:1px solid var(--line);}
+.d-head{background:var(--ink); color:#fff; padding:14px 18px; display:flex; align-items:center; justify-content:space-between;}
+.d-head .t{font-weight:700; font-size:16px;}
+.d-head .sub{font-size:12px; color:#AEB9C6;}
+.d-head .kw{background:var(--amber); color:#fff; font-weight:700; font-size:12px; padding:3px 9px; border-radius:20px;}
+.d-body{padding:16px; min-height:560px;}
+.backbtn{display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-weight:600; font-size:13.5px; margin-bottom:10px;}
+.langbar{display:flex; align-items:center; gap:6px; padding:8px 16px; background:#F6F8FA; border-bottom:1px solid var(--line);}
+.langbar .lg{font-size:14px; margin-right:2px;}
+.langbar .lgp{font-size:12px; font-weight:700; color:var(--muted); padding:4px 10px; border-radius:8px;}
+.langbar .lgp.on{background:var(--amber); color:#fff;}
+
+/* rooms */
+.proj{background:var(--ink2); color:#fff; border-radius:14px; padding:14px 16px; margin-bottom:14px;}
+.proj .p1{font-weight:700; font-size:16px;}
+.proj .p2{color:#AEB9C6; font-size:12.5px; margin-top:2px;}
+.sect{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700; margin:6px 2px 10px;}
+.room{display:flex; align-items:center; gap:14px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:13px 14px; margin-bottom:10px; width:100%; text-align:left; transition:.12s;}
+.room:active{transform:scale(.99);}
+.room .ring{flex:0 0 46px;}
+.room .r-name{font-weight:700; font-size:15px;}
+.room .r-sub{font-size:12.5px; color:var(--muted); margin-top:1px;}
+.room .r-pct{margin-left:auto; font-weight:800; font-size:15px;}
+.chev{color:#C4CDD6; font-size:20px; margin-left:6px;}
+
+/* book screen */
+.modes{display:flex; gap:8px; margin-bottom:14px;}
+.mode{flex:1; border:1.5px solid var(--line); border-radius:12px; padding:11px; text-align:center; font-weight:700; font-size:13.5px; color:var(--ink-soft); background:#fff;}
+.mode.on{border-color:var(--amber); background:var(--lite); color:var(--ink);}
+.mode small{display:block; font-weight:500; font-size:11px; color:var(--muted); margin-top:2px;}
+.voicebox{background:var(--lite); border:1.5px dashed var(--amber-d); border-radius:12px; padding:14px; text-align:center; margin-bottom:14px;}
+.voicebox .mic{width:52px; height:52px; border-radius:50%; background:var(--amber); display:inline-flex; align-items:center; justify-content:center; margin-bottom:8px;}
+.voicebox .hint{font-size:12.5px; color:var(--ink-soft);}
+.voicebox .said{font-size:13px; color:var(--muted); font-style:italic; margin-top:6px; min-height:18px;}
+
+.dropwrap{margin-bottom:14px;}
+.dropwrap label{font-size:12px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; display:block; margin-bottom:6px;}
+.dropwrap select{width:100%; padding:12px 12px; border:1.5px solid var(--line); border-radius:12px; font-size:15px; background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2371808F' stroke-width='2.5' stroke-linecap='round'><path d='M6 9l6 6 6-6'/></svg>") no-repeat right 12px center; -webkit-appearance:none; appearance:none; color:var(--ink); font-weight:600;}
+
+.brow{display:flex; align-items:center; gap:12px; border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:10px; background:#fff;}
+.brow .ic{flex:0 0 44px; height:44px; border-radius:10px; background:#F1F4F7; display:flex; align-items:center; justify-content:center;}
+.brow .info{flex:1; min-width:0;}
+.brow .bn{font-weight:700; font-size:14px; line-height:1.2;}
+.fn{color:#9AA6B2; font-style:italic; font-weight:500; font-size:.9em; margin-left:5px;}
+.brow .bs{font-size:11.5px; color:var(--muted); margin-top:2px;}
+.pool{font-size:11.5px; color:var(--ink-soft); margin-top:5px; display:flex; gap:8px; flex-wrap:wrap;}
+.pool b{color:var(--ink);}
+.pool .rest.neg{color:var(--red); font-weight:700;}
+.bar{height:6px; border-radius:4px; background:#EDF1F4; overflow:hidden; margin-top:6px;}
+.bar > i{display:block; height:100%; background:var(--green);}
+.bar > i.over{background:var(--red);}
+.stepper{flex:0 0 auto; display:flex; align-items:center; gap:0; border:1.5px solid var(--line); border-radius:11px; overflow:hidden;}
+.stepper button{width:38px; height:40px; font-size:22px; font-weight:700; color:var(--ink); background:#F6F8FA;}
+.stepper button:active{background:#ECEFF2;}
+.stepper .val{min-width:48px; text-align:center; font-weight:800; font-size:16px;}
+.stepper .unit{font-size:10px; color:var(--muted); font-weight:600; display:block; margin-top:-4px;}
+
+.addwrap{margin:6px 0 16px;}
+.primary{display:block; width:100%; background:var(--amber); color:#fff; font-weight:800; font-size:16px; padding:15px; border-radius:14px; text-align:center;}
+.primary.dark{background:var(--ink); color:#fff;}
+.ghost{display:block; width:100%; text-align:center; color:var(--muted); font-weight:700; padding:12px; font-size:14px;}
+.footcta{position:sticky; bottom:0; padding-top:8px;}
+.rec360{display:flex; align-items:center; justify-content:center; gap:9px; width:100%; border:1.5px solid var(--ink); background:#fff; color:var(--ink); font-weight:700; font-size:14px; padding:12px; border-radius:12px; margin-bottom:14px;}
+.rec360 .dot{width:9px; height:9px; border-radius:50%; background:var(--red);}
+.slate{background:var(--ink); color:#fff; border-radius:16px; padding:16px; text-align:center;}
+.slate-h{font-weight:800; font-size:15px; margin-bottom:12px;}
+.slate-qr{background:#fff; border-radius:10px; padding:10px; width:196px; height:196px; margin:0 auto 12px;}
+.slate-hint{font-size:12.5px; color:#D9DEE4; margin-bottom:14px;}
+.slate-hint b{color:#fff;}
+.slate-fields{background:var(--ink2); border-radius:10px; padding:4px 12px; text-align:left;}
+.slate-fields > div{display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid #34465C; font-size:12.5px;}
+.slate-fields > div:last-child{border-bottom:none;}
+.slate-fields span{color:#9FB0C0;}
+.slate-fields b{color:#fff; text-align:right; word-break:break-all;}
+.slate-off{font-size:11px; color:#9FB0C0; margin-top:11px;}
+.act{display:block; width:100%; text-align:center; border:1.5px solid var(--line); background:#fff; color:var(--ink); font-weight:700; font-size:14px; padding:12px; border-radius:12px; margin-bottom:14px;}
+.ti{width:100%; padding:11px 12px; border:1.5px solid var(--line); border-radius:11px; font-size:15px; color:var(--ink); outline:none; background:#fff;}
+.ptile.filled img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+.reo{display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #EEF1F4;}
+.reo:last-child{border-bottom:none;}
+.bkhead{display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:14px;}
+.addbtn{flex:0 0 auto; border:1.5px solid var(--line); border-radius:20px; font-size:12px; font-weight:700; color:var(--blue-d); padding:7px 12px; white-space:nowrap; background:#fff;}
+.sigpad{width:100%; height:120px; border:1.5px dashed var(--line); border-radius:11px; background:#fff; touch-action:none; display:block;}
+
+/* photos */
+.pgrid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:6px 0 16px;}
+.ptile{aspect-ratio:4/3; border-radius:12px; background:#F1F4F7; border:1.5px dashed var(--line); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12.5px; font-weight:600; overflow:hidden; position:relative;}
+.ptile.filled{border-style:solid; border-color:var(--line); background:linear-gradient(135deg,#2B3543,#41505F); color:#fff;}
+.ptile.filled span{position:absolute; bottom:6px; left:8px; font-size:11px; opacity:.9;}
+.addtile{border-color:var(--amber-d); color:var(--amber-d); background:var(--lite);}
+
+/* done */
+.done{text-align:center; padding:26px 8px;}
+.done .check{width:70px; height:70px; border-radius:50%; background:var(--green-bg); color:var(--green); display:inline-flex; align-items:center; justify-content:center; font-size:38px; margin-bottom:14px;}
+.done h2{font-size:20px;}
+.done p{color:var(--muted); margin-top:6px; font-size:14px;}
+.summary{background:#F6F8FA; border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin:16px 0; text-align:left;}
+.summary .sr{display:flex; justify-content:space-between; font-size:13.5px; padding:5px 0; border-bottom:1px solid var(--line);}
+.summary .sr:last-child{border-bottom:none;}
+
+/* PL dashboard */
+.pl-head{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px;}
+.pl-head h1{font-size:22px;}
+.pl-head .sub{color:var(--muted); font-size:13.5px;}
+.kpis{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:14px;}
+.kpi{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px;}
+.kpi .k-l{font-size:12px; color:var(--muted); font-weight:600;}
+.kpi .k-v{font-size:24px; font-weight:800; margin-top:4px;}
+.kpi .k-s{font-size:11.5px; color:var(--muted); margin-top:2px;}
+.kpi.accent{background:var(--ink); color:#fff;}
+.kpi.accent .k-l,.kpi.accent .k-s{color:#AEB9C6;}
+.kpi .k-v .u{font-size:14px; font-weight:600; color:var(--muted);}
+.grid2{display:grid; grid-template-columns:1.35fr 1fr; gap:12px; margin-bottom:14px;}
+.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px;}
+.panel h3{font-size:14px; margin-bottom:12px;}
+.panel h3 small{color:var(--muted); font-weight:500;}
+.roomsbars .rb{margin-bottom:11px;}
+.roomsbars .rb .rt{display:flex; justify-content:space-between; font-size:13px; font-weight:600; margin-bottom:4px;}
+.roomsbars .rb .rt span{color:var(--muted); font-weight:600;}
+.tbar{height:9px; border-radius:5px; background:#EDF1F4; overflow:hidden;}
+.tbar>i{display:block; height:100%; background:var(--amber);}
+table{width:100%; border-collapse:collapse; font-size:13px;}
+th{text-align:right; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:6px 8px; border-bottom:1px solid var(--line);}
+th.l,td.l{text-align:left;}
+td{padding:8px 8px; border-bottom:1px solid #EEF1F4; text-align:right; white-space:nowrap;}
+td .mm{font-weight:700;}
+td .ms{font-size:11px; color:var(--muted);}
+.pctcell{display:flex; align-items:center; gap:8px; justify-content:flex-end;}
+.pctcell .mini{width:54px; height:7px; border-radius:4px; background:#EDF1F4; overflow:hidden;}
+.pctcell .mini>i{display:block; height:100%; background:var(--green);}
+.tag{display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px;}
+.tag.g{background:var(--green-bg); color:var(--green);} .tag.r{background:var(--red-bg); color:var(--red);} .tag.a{background:var(--lite); color:var(--amber-d);}
+.tag.n{background:#EDF1F4; color:#5A6B7A; margin-right:5px;}
+.split3{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:8px;}
+.split3 .s{background:#F6F8FA; border:1px solid var(--line); border-radius:10px; padding:10px 12px;}
+.split3 .s .sl{font-size:11.5px; color:var(--muted);}
+.split3 .s .sv{font-size:18px; font-weight:800; margin-top:2px;}
+.timeline{display:flex; gap:8px; overflow:auto; padding-bottom:4px;}
+.timeline .tt{flex:0 0 92px;}
+.timeline .th{aspect-ratio:4/3; border-radius:9px; background:linear-gradient(135deg,#2B3543,#41505F);}
+.timeline .tl{font-size:11px; color:var(--muted); margin-top:4px; text-align:center; font-weight:600;}
+.note{font-size:11.5px; color:var(--muted); margin-top:10px;}
+@media(max-width:720px){ .kpis{grid-template-columns:1fr 1fr;} .grid2{grid-template-columns:1fr;} }
+.posrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:4px}.poschip{font-size:11px;font-weight:800;color:#0082C9;background:#EAF4FB;border-radius:6px;padding:1px 7px}.bhchip{font-size:11px;color:#12897E;background:#E1F3F1;border-radius:6px;padding:1px 7px}
+.searchwrap{margin:10px 0 14px}
+.searchwrap label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600}
+.matsearch{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;font-size:14px;background:#fff;outline:none;font-family:inherit}
+.matsearch:focus{border-color:var(--amber)}
+.reslist{margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto}
+.resrow{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;cursor:pointer}
+.resrow:active{background:var(--lite)}
+.rn2{font-size:13.5px;font-weight:700;color:var(--ink)}
+.rs2{font-size:11.5px;color:var(--muted);margin-top:3px}
+.rbh{color:#12897E;font-weight:600}
+.reshint{font-size:12px;color:var(--muted);padding:6px 2px}
+.unclearbtn{margin-top:10px;width:100%;border:1.5px dashed var(--line);background:#fff;border-radius:12px;padding:10px;font-size:13px;font-weight:700;color:var(--amber-d)}
+.uform{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.usect{margin:14px 0 6px;font-size:12px;font-weight:800;color:#D9822B}
+.urow{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #F0D9BC;background:#FBEFE0;border-radius:10px;padding:10px 11px;margin-bottom:6px}
+.ubadge{font-size:10.5px;font-weight:700;color:#D9822B;background:#fff;border-radius:10px;padding:2px 8px;white-space:nowrap}
+.pltabs{display:flex;gap:6px;margin:16px 0 14px;flex-wrap:wrap}
+.pltab{border:1.5px solid var(--line);background:#fff;border-radius:22px;padding:9px 16px;font-size:13.5px;font-weight:700;color:var(--muted)}
+.pltab.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.mtool{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.mtool input{flex:1;min-width:220px;border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none}
+.mtool input:focus{border-color:var(--amber)}
+.fchip{border:1.5px solid var(--line);background:#fff;border-radius:20px;padding:7px 13px;font-size:12.5px;font-weight:700;color:var(--muted)}
+.fchip.on{background:var(--lite);border-color:var(--amber);color:var(--amber-d)}
+.topcard{background:var(--lite);border:1px solid #CFE2F5;border-radius:14px;padding:14px 16px;margin:4px 0 14px}
+.topcard h4{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:6px}
+.mgrp{border:1px solid var(--line);border-radius:12px;margin-bottom:8px;overflow:hidden;background:#fff}
+.mgrph{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;background:#fff;text-align:left}
+.gn{font-size:14px;font-weight:800;color:var(--ink)}
+.gs{font-size:11.5px;color:var(--muted);margin-top:2px}
+.gv{font-size:14px;font-weight:800;color:var(--ink);white-space:nowrap;text-align:right}
+.gv span,.mval span{display:block;font-size:10.5px;font-weight:600;color:var(--muted)}
+.mlist{border-top:1px solid var(--line)}
+.mrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid #F1F5F9}
+.mrow:last-child{border-bottom:none}
+.mleft{min-width:0;flex:1}
+.mn{font-size:13.5px;font-weight:700;color:var(--ink)}
+.msub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.mini2{height:5px;background:#EDF2F7;border-radius:3px;margin-top:6px;max-width:280px}
+.mini2 i{display:block;height:100%;background:var(--amber);border-radius:3px}
+.mini2 i.over{background:var(--red)}
+.mval{font-size:14px;font-weight:800;color:var(--ink);white-space:nowrap;text-align:right}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo"><b>burk</b><small>Haustechnik</small></span>
+      <span class="app">Materialtracker <span>· Prototyp</span></span>
+    </div>
+    <div class="roletoggle">
+      <button id="rb-m" class="on" onclick="app.setRole('monteur')">Monteur · Tablet</button>
+      <button id="rb-p" onclick="app.setRole('pl')">Projektleiter</button>
+    </div>
+  </div>
+
+  <div id="monteur"></div>
+  <div id="pl" style="display:none"></div>
+</div>
+
+<script>
+const money = n => n.toLocaleString('de-DE',{minimumFractionDigits:0,maximumFractionDigits:0});
+const num = n => n.toLocaleString('de-DE',{maximumFractionDigits:1});
+
+const app = {
+  role:'monteur',
+  screen:'rooms',
+  room:null,
+  mode:'voice',
+  session:{},        // matId -> delta (this week)
+  booking:[],        // matIds currently shown as rows
+  photos:2,
+  materials:[
+    {id:'m1', pos:'1.001', n:'Schmutzwasserleitung DN 125 hochschalldämmend', cn:'Schmutzwasserleitung DN 125 hochschalldämmend', s:'Schmutzwasser (Polo Kal NG)', u:'m', ic:'pipe', gel:6.0, verb:0, p:47.38, cut:true, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m2', pos:'1.002', n:'wie Pos. [01.1] , jedoch Kunststoffrohr DN 100', cn:'Kunststoffrohr DN 100', s:'Schmutzwasser (Polo Kal NG)', u:'m', ic:'pipe', gel:87.25, verb:73.75, p:38.02, cut:true, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m3', pos:'1.003', n:'wie Pos. [01.1] , jedoch Kunststoffrohr DN 70', cn:'Kunststoffrohr DN 70', s:'Schmutzwasser (Polo Kal NG)', u:'m', ic:'pipe', gel:18.5, verb:10.0, p:30.92, cut:true, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m4', pos:'1.004', n:'wie Pos. [01.1] , jedoch Kunststoffrohr DN 50', cn:'Kunststoffrohr DN 50', s:'Schmutzwasser (Polo Kal NG)', u:'m', ic:'pipe', gel:45.0, verb:20.0, p:22.39, cut:true, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m5', pos:'1.005', n:'wie Pos. [01.1] , jedoch Bogen DN 50, 15° - 87°', cn:'Bogen DN 50, 15° - 87°', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'bend', gel:110.0, verb:31.0, p:11.64, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m6', pos:'1.006', n:'wie Pos. [01.1] , jedoch Bogen DN 70, 15° - 87°', cn:'Bogen DN 70, 15° - 87°', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'bend', gel:70.0, verb:14.0, p:15.8, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m7', pos:'1.007', n:'wie Pos. [01.1] , jedoch Bogen DN 100, 15° - 87°', cn:'Bogen DN 100, 15° - 87°', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'bend', gel:109.0, verb:92.0, p:19.49, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:'(mitgemessen 2x Enddeckel100/ 4x Steckmuffe 100/4xSchweißmuffe)'},
+    {id:'m8', pos:'1.008', n:'wie Pos. [01.1] , jedoch Bogen DN 125, 15° - 87°', cn:'Bogen DN 125, 15° - 87°', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'bend', gel:2.0, verb:0, p:34.6, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m9', pos:'1.009', n:'wie Pos. [01.1] , jedoch Abzweig DN 50', cn:'Schmutzwasserleitung Abzweig DN 50', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'tee', gel:10.0, verb:0, p:17.25, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m10', pos:'1.010', n:'wie Pos. [01.1] , jedoch Abzweig DN 70', cn:'Schmutzwasserleitung Abzweig DN 70', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'tee', gel:10.0, verb:1.0, p:22.18, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m11', pos:'1.011', n:'wie Pos. [01.1] , jedoch Abzweig DN 100', cn:'Abzweig DN 100', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'tee', gel:46.0, verb:34.0, p:28.83, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m12', pos:'1.012', n:'wie Pos. [01.1] , jedoch Abzweig DN 125', cn:'Abzweig DN 125', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'tee', gel:2.0, verb:0, p:64.73, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m13', pos:'1.013', n:'wie Pos. [01.1] , jedoch Reduzierung DN 70 / 50', cn:'Reduzierung DN 70 / 50', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'red', gel:10.0, verb:1.0, p:14.44, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m14', pos:'1.014', n:'wie Pos. [01.1] , jedoch Reduzierung DN 100 / 70-50', cn:'Reduzierung DN 100 / 70-50', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'red', gel:18.0, verb:8.0, p:20.51, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m15', pos:'1.015', n:'wie Pos. [01.1] , jedoch Reinigungsrohr DN 100', cn:'Reinigungsrohr DN 100', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:3.0, verb:0, p:31.24, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m16', pos:'1.016', n:'wie Pos. [01.1] , jedoch Reinigungsrohr DN 125', cn:'Reinigungsrohr DN 125', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:55.01, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m17', pos:'1.017', n:'wie Pos. [01.1] , jedoch Sifonbogen DN 50, 15° - 87°', cn:'Sifonbogen DN 50, 15° - 87°', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'bend', gel:8.0, verb:0, p:13.5, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m18', pos:'1.018', n:'Brandschutzmanschette DN 100', cn:'Brandschutzmanschette DN 100', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:8.0, verb:0, p:164.98, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m19', pos:'1.019', n:'wie Pos. [01.18] , jedoch DN 70', cn:'Brandschutzmanschette DN 70', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:126.56, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m20', pos:'1.020', n:'wie Pos. [01.18] , jedoch DN 50', cn:'Brandschutzmanschette DN 50', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:100.57, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m21', pos:'1.021', n:'Anschlüsse DN 125 an Grundleitung PVC', cn:'Anschlüsse DN 125 an Grundleitung PVC', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:55.65, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m22', pos:'1.022', n:'wie Pos. [01.21] jedoch Anschlüsse DN 100', cn:'Anschlüsse DN 100', s:'Schmutzwasser (Polo Kal NG)', u:'Stk', ic:'pipe', gel:5.0, verb:5.0, p:55.65, cut:false, grp:'Schmutzwasser (Polo Kal NG)', bh:''},
+    {id:'m23', pos:'1.023', n:'Druckrohr schwarz 50x4,6mm', cn:'Druckrohr schwarz 50x4,6mm', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'m', ic:'pipe', gel:10.0, verb:0, p:11.21, cut:true, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m24', pos:'1.024', n:'HD-PE-Bogen da:50mm; 15-90°', cn:'HD-PE-Bogen da:50mm; 15-90°', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'bend', gel:12.0, verb:0, p:49.34, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m25', pos:'1.025', n:'HD-PE-T-Stück da:50mm; 15-90°', cn:'HD-PE-T-Stück da:50mm; 15-90°', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:57.72, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m26', pos:'1.026', n:'HD-PE-T-Muffe da:50mm; 15-90°', cn:'HD-PE-T-Muffe da:50mm; 15-90°', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'pipe', gel:8.0, verb:0, p:36.91, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m27', pos:'1.027', n:'HD-PE-Übergangsmuffe auf Messing', cn:'HD-PE-Übergangsmuffe auf Messing', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'pipe', gel:4.0, verb:2.0, p:68.55, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m28', pos:'1.028', n:'Dachhauben DN100 für Schmutzwasser Entlüftung,', cn:'Dachhauben DN100 für Schmutzwasser Entlüftung,', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:270.69, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m29', pos:'1.029', n:'Anschluss Schmutzwasserleitung an Dachhaube DN 100,', cn:'Anschluss Schmutzwasserleitung an Dachhaube DN 100,', s:'Druckleitung für Hebeanlage (Aduxa RC)', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:38.7, cut:false, grp:'Druckleitung für Hebeanlage (Aduxa RC)', bh:''},
+    {id:'m30', pos:'1.030', n:'Isolation von Rohrleitungen DN 125', cn:'Isolation von Rohrleitungen DN 125', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:6.0, verb:0, p:22.04, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m31', pos:'1.031', n:'Rohr DN 100', cn:'Rohr DN 100', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:35.0, verb:0, p:18.79, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m32', pos:'1.032', n:'Rohr DN 70', cn:'Rohr DN 70', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:6.0, verb:0, p:14.69, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m33', pos:'1.033', n:'Abflussrohr DN 100, dampfdicht mit 5 mm starkem', cn:'Abflussrohr DN 100, dampfdicht mit 5 mm starkem', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:20.0, verb:0, p:5.04, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m34', pos:'1.034', n:'Abflussrohr DN 70', cn:'Abflussrohr DN 70', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:6.0, verb:0, p:4.63, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m35', pos:'1.035', n:'Abflussrohr DN 50', cn:'Abflussrohr DN 50', s:'Dämmung SW-Leitung', u:'m', ic:'pipe', gel:10.0, verb:0, p:4.26, cut:true, grp:'Dämmung SW-Leitung', bh:''},
+    {id:'m36', pos:'1.036', n:'Schmutzwassersammelbehälter', cn:'Schmutzwassersammelbehälter', s:'Grauwasser Hebeanlage', u:'Stk', ic:'pipe', gel:1.0, verb:1.0, p:2308.56, cut:false, grp:'Grauwasser Hebeanlage', bh:''},
+    {id:'m37', pos:'1.037', n:'Vertikale 1-stufige Schmutzwasserpumpe', cn:'Vertikale 1-stufige Schmutzwasserpumpe', s:'Grauwasser Hebeanlage', u:'Stk', ic:'pipe', gel:2.0, verb:2.0, p:508.24, cut:false, grp:'Grauwasser Hebeanlage', bh:''},
+    {id:'m38', pos:'1.038', n:'Niveausteuerung Grauwasserhebeanlage', cn:'Niveausteuerung Grauwasserhebeanlage', s:'Grauwasser Hebeanlage', u:'Stk', ic:'pipe', gel:1.0, verb:1.0, p:833.18, cut:false, grp:'Grauwasser Hebeanlage', bh:''},
+    {id:'m39', pos:'1.039', n:'Schmutzwassersammelbehälter 270ltr.', cn:'Schmutzwassersammelbehälter 270ltr.', s:'Schmutzwasser Hebeanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:1849.78, cut:false, grp:'Schmutzwasser Hebeanlage', bh:''},
+    {id:'m40', pos:'1.040', n:'Vertikale 1-stufige Schmutzwasserpumpe', cn:'Vertikale 1-stufige Schmutzwasserpumpe', s:'Schmutzwasser Hebeanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:508.24, cut:false, grp:'Schmutzwasser Hebeanlage', bh:''},
+    {id:'m41', pos:'1.041', n:'Niveausteuerung Grauwasserhebeanlage', cn:'Niveausteuerung Grauwasserhebeanlage', s:'Schmutzwasser Hebeanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:676.11, cut:false, grp:'Schmutzwasser Hebeanlage', bh:''},
+    {id:'m42', pos:'1.042', n:'Rohrschelle NW DN 125', cn:'Rohrschelle NW DN 125', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:10.0, verb:0, p:17.14, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m43', pos:'1.043', n:'Rohrschelle DN 100', cn:'Rohrschelle DN 100', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:100.0, verb:76.0, p:12.99, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m44', pos:'1.044', n:'Rohrschelle DN 70', cn:'Rohrschelle DN 70', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:50.0, verb:15.0, p:12.2, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m45', pos:'1.045', n:'Rohrschelle DN 50', cn:'Rohrschelle DN 50', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:50.0, verb:30.0, p:11.75, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m46', pos:'1.046', n:'Aufhänge- und Stützkonstruktion aus verzinktem Stahl, mit', cn:'Aufhänge- und Stützkonstruktion aus verzinktem Stahl, mit', s:'Rohrbefestigung', u:'kg', ic:'pipe', gel:200.0, verb:5.0, p:18.23, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m47', pos:'2.001', n:'Freistrom-Absperrventil, DN 15 mit Entleerung, AG', cn:'Freistrom-Absperrventil, DN 15 mit Entleerung, AG', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:2.0, verb:2.0, p:204.16, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m48', pos:'2.002', n:'Freistrom-Absperrventil DN 20', cn:'Freistrom-Absperrventil DN 20', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:3.0, verb:3.0, p:235.14, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m49', pos:'2.003', n:'Freistrom-Absperrventil DN 25', cn:'Freistrom-Absperrventil DN 25', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:3.0, verb:3.0, p:285.47, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m50', pos:'2.004', n:'Freistrom-Absperrventil DN 32', cn:'Freistrom-Absperrventil DN 32', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:2.0, verb:2.0, p:357.66, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m51', pos:'2.005', n:'Freistrom-Absperrventil DN 40', cn:'Freistrom-Absperrventil DN 40', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:6.0, verb:0, p:411.6, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m52', pos:'2.006', n:'Freistrom-Absperrventil DN 50', cn:'Freistrom-Absperrventil DN 50', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:2.0, verb:0, p:559.97, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m53', pos:'2.007', n:'Freistrom-Absperrventil DN 80', cn:'Freistrom-Absperrventil DN 80', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:4.0, verb:0, p:1370.21, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m54', pos:'2.008', n:'Freimstrom-Absperrventil DN 65', cn:'Freimstrom-Absperrventil DN 65', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:2.0, verb:0, p:1187.81, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m55', pos:'2.009', n:'Freistrom-Rückflussverhinderer DN 80/16', cn:'Freistrom-Rückflussverhinderer DN 80/16', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:1370.21, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m56', pos:'2.010', n:'Druckminderer DN 80/25', cn:'Druckminderer DN 80/25', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:2384.85, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m57', pos:'2.011', n:'Entleer-Kugelhahn DN 15', cn:'Entleer-Kugelhahn DN 15', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:6.0, verb:0, p:24.47, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m58', pos:'2.012', n:'Wasseranschlüsse an Verbraucher aus anderen', cn:'Wasseranschlüsse an Verbraucher aus anderen', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:85.5, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m59', pos:'2.013', n:'Zirkulationspumpe Trinkwasser', cn:'Zirkulationspumpe Trinkwasser', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:475.55, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:''},
+    {id:'m60', pos:'2.014', n:'Zirkulations-Regulierventil, DN 15', cn:'Zirkulations-Regulierventil, DN 15', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'valve', gel:6.0, verb:5.0, p:159.8, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:'1x Strangregulierventil Multi Fix Plus DN15'},
+    {id:'m61', pos:'2.015', n:'Schutzfilter DN 65', cn:'Schutzfilter DN 65', s:'Die Lieferung und Montage umfasst die komplette Erstellung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:4823.23, cut:false, grp:'Die Lieferung und Montage umfasst die komplette Erstellung', bh:'AB Schuster #15318113'},
+    {id:'m62', pos:'2.016', n:'Ultraschall-Wasserzähler KW, Q3 6,30 m³/h, DN 25', cn:'Ultraschall-Wasserzähler KW, Q3 6,30 m³/h, DN 25', s:'Beschreibung Allgemein', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:509.96, cut:false, grp:'Beschreibung Allgemein', bh:''},
+    {id:'m63', pos:'2.017', n:'Wasserzähler KW, Q3 16m³/h, DN 40', cn:'Wasserzähler KW, Q3 16m³/h, DN 40', s:'Beschreibung Allgemein', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:633.59, cut:false, grp:'Beschreibung Allgemein', bh:''},
+    {id:'m64', pos:'2.018', n:'Medien-Trassenbezeichnung als Klebefolie bedruckt', cn:'Medien-Trassenbezeichnung als Klebefolie bedruckt', s:'Beschreibung Allgemein', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:6.29, cut:false, grp:'Beschreibung Allgemein', bh:''},
+    {id:'m65', pos:'2.019', n:'Bezeichnungsschilder aus Kunststoff', cn:'Bezeichnungsschilder aus Kunststoff', s:'Beschreibung Allgemein', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:21.45, cut:false, grp:'Beschreibung Allgemein', bh:''},
+    {id:'m66', pos:'2.020', n:'Edelstahl-System-Rohr 18 x 1,0 mm (DN 15)', cn:'Edelstahl-System-Rohr 18 x 1,0 mm (DN 15)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:66.0, verb:52.0, p:18.74, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m67', pos:'2.021', n:'Edelstahl-System-Rohr 22 x 1,2 mm (DN 20)', cn:'Edelstahl-System-Rohr 22 x 1,2 mm (DN 20)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:72.0, verb:25.0, p:23.35, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m68', pos:'2.022', n:'Edelstahl-System-Rohr 28 x 1,2 mm (DN 25)', cn:'Edelstahl-System-Rohr 28 x 1,2 mm (DN 25)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:84.0, verb:55.0, p:27.85, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m69', pos:'2.023', n:'Edelstahl-System-Rohr 35 x 1,5 mm (DN 32)', cn:'Edelstahl-System-Rohr 35 x 1,5 mm (DN 32)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:30.0, verb:18.0, p:36.65, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m70', pos:'2.024', n:'Edelstahl-System-Rohr 42 x 1,5 mm (DN 40)', cn:'Edelstahl-System-Rohr 42 x 1,5 mm (DN 40)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:42.0, verb:18.0, p:44.29, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m71', pos:'2.025', n:'Edelstahl-System-Rohr 76,1 x 2,0 mm (DN 65)', cn:'Edelstahl-System-Rohr 76,1 x 2,0 mm (DN 65)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:22.0, verb:0, p:93.9, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m72', pos:'2.026', n:'Edelstahl-System-Rohr 89 x 2,0 mm (DN 80)', cn:'Edelstahl-System-Rohr 89 x 2,0 mm (DN 80)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:22.0, verb:0, p:109.96, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m73', pos:'2.027', n:'Edelstahl-System-Rohr 108 x 2,0 mm (DN 100)', cn:'Edelstahl-System-Rohr 108 x 2,0 mm (DN 100)', s:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', u:'m', ic:'pipe', gel:10.0, verb:0, p:135.26, cut:true, grp:'Kalt- und Warmwasserleitung (Mapress Edelstahl)', bh:''},
+    {id:'m74', pos:'2.028', n:'Edelstahl Bogen 45-90°, 18 x 1,0 mm', cn:'Edelstahl Bogen 45-90°, 18 x 1,0 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:62.0, verb:11.0, p:14.28, cut:false, grp:'Formstücke', bh:''},
+    {id:'m75', pos:'2.029', n:'Edelstahl Bogen 45-90°, 22 x 1,2 mm', cn:'Edelstahl Bogen 45-90°, 22 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:76.0, verb:6.0, p:16.2, cut:false, grp:'Formstücke', bh:''},
+    {id:'m76', pos:'2.030', n:'Edelstahl Bogen 45-90°, 28 x 1,2 mm', cn:'Edelstahl Bogen 45-90°, 28 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:47.0, verb:12.0, p:19.7, cut:false, grp:'Formstücke', bh:''},
+    {id:'m77', pos:'2.031', n:'Edelstahl Bogen 45-90°, 35 x 1,5 mm', cn:'Edelstahl Bogen 45-90°, 35 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:40.0, verb:14.0, p:27.72, cut:false, grp:'Formstücke', bh:''},
+    {id:'m78', pos:'2.032', n:'Edelstahl Bogen 45-90°, 42 x 1,5 mm', cn:'Edelstahl Bogen 45-90°, 42 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:14.0, verb:0, p:42.62, cut:false, grp:'Formstücke', bh:''},
+    {id:'m79', pos:'2.033', n:'Edelstahl Bogen 45-90°, 76,1 x 2,0 mm', cn:'Edelstahl Bogen 45-90°, 76,1 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:8.0, verb:0, p:118.16, cut:false, grp:'Formstücke', bh:''},
+    {id:'m80', pos:'2.034', n:'Edelstahl Bogen 45-90°, 88,9 x 2,0 mm', cn:'Edelstahl Bogen 45-90°, 88,9 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:12.0, verb:0, p:142.98, cut:false, grp:'Formstücke', bh:''},
+    {id:'m81', pos:'2.035', n:'Edelstahl Bogen 45-90°, 108 x 2,0 mm', cn:'Edelstahl Bogen 45-90°, 108 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:8.0, verb:0, p:193.68, cut:false, grp:'Formstücke', bh:''},
+    {id:'m82', pos:'2.036', n:'T-Stück 18 x 1,0 mm', cn:'T-Stück 18 x 1,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:5.0, verb:4.0, p:20.9, cut:false, grp:'Formstücke', bh:''},
+    {id:'m83', pos:'2.037', n:'T-Stück 22 x 1,2 mm', cn:'T-Stück 22 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:6.0, verb:3.0, p:21.81, cut:false, grp:'Formstücke', bh:''},
+    {id:'m84', pos:'2.038', n:'T-Stück 28 x 1,2 mm', cn:'T-Stück 28 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:6.0, verb:5.0, p:25.88, cut:false, grp:'Formstücke', bh:''},
+    {id:'m85', pos:'2.039', n:'T-Stück 35 x 1,5 mm', cn:'T-Stück 35 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:10.0, verb:2.0, p:30.62, cut:false, grp:'Formstücke', bh:''},
+    {id:'m86', pos:'2.040', n:'T-Stück 42 x 1,5 mm', cn:'T-Stück 42 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:1.0, p:41.11, cut:false, grp:'Formstücke', bh:''},
+    {id:'m87', pos:'2.041', n:'T-Stück 76,1 x 2,0 mm', cn:'T-Stück 76,1 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:3.0, verb:0, p:189.5, cut:false, grp:'Formstücke', bh:''},
+    {id:'m88', pos:'2.042', n:'T-Stück 88,9 x 2,0 mm', cn:'T-Stück 88,9 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:3.0, verb:0, p:220.18, cut:false, grp:'Formstücke', bh:''},
+    {id:'m89', pos:'2.043', n:'Muffe 18 x 1,0 mm', cn:'Muffe 18 x 1,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:10.0, verb:6.0, p:11.68, cut:false, grp:'Formstücke', bh:''},
+    {id:'m90', pos:'2.044', n:'Muffe 22 x 1,2 mm', cn:'Muffe 22 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:10.0, verb:3.0, p:12.58, cut:false, grp:'Formstücke', bh:''},
+    {id:'m91', pos:'2.045', n:'Muffe 28 x 1,2 mm', cn:'Muffe 28 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:10.0, verb:5.0, p:13.48, cut:false, grp:'Formstücke', bh:''},
+    {id:'m92', pos:'2.046', n:'Muffe 35 x 1,5 mm', cn:'Muffe 35 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:2.0, p:15.52, cut:false, grp:'Formstücke', bh:''},
+    {id:'m93', pos:'2.047', n:'Muffe 42 x 1,5 mm', cn:'Muffe 42 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:6.0, verb:2.0, p:20.7, cut:false, grp:'Formstücke', bh:''},
+    {id:'m94', pos:'2.048', n:'Muffe 76,1 x 2,0 mm', cn:'Muffe 76,1 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:82.0, cut:false, grp:'Formstücke', bh:''},
+    {id:'m95', pos:'2.049', n:'Muffe 88,9 x 2,0 mm', cn:'Muffe 88,9 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:98.69, cut:false, grp:'Formstücke', bh:''},
+    {id:'m96', pos:'2.050', n:'Reduzier-Stück 18 x 1,0 mm', cn:'Reduzier-Stück 18 x 1,0 mm', s:'Formstücke', u:'Stk', ic:'red', gel:22.0, verb:6.0, p:11.79, cut:false, grp:'Formstücke', bh:''},
+    {id:'m97', pos:'2.051', n:'Reduzier-Stück 22 x 1,2 mm', cn:'Reduzier-Stück 22 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'red', gel:18.0, verb:6.0, p:12.47, cut:false, grp:'Formstücke', bh:''},
+    {id:'m98', pos:'2.052', n:'Reduzier-Stück 28 x 1,2 mm', cn:'Reduzier-Stück 28 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'red', gel:4.0, verb:1.0, p:13.48, cut:false, grp:'Formstücke', bh:''},
+    {id:'m99', pos:'2.053', n:'Reduzier-Stück 35 x 1,5 mm', cn:'Reduzier-Stück 35 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'red', gel:6.0, verb:3.0, p:18.12, cut:false, grp:'Formstücke', bh:''},
+    {id:'m100', pos:'2.054', n:'Reduzier-Stück 42 x 1,5 mm', cn:'Reduzier-Stück 42 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'red', gel:2.0, verb:1.0, p:22.73, cut:false, grp:'Formstücke', bh:''},
+    {id:'m101', pos:'2.055', n:'Reduzier-Stück 76,1 x 2,0 mm', cn:'Reduzier-Stück 76,1 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'red', gel:2.0, verb:0, p:76.58, cut:false, grp:'Formstücke', bh:''},
+    {id:'m102', pos:'2.056', n:'Reduzier-Stück 88,9 x 2,0 mm', cn:'Reduzier-Stück 88,9 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'red', gel:15.0, verb:0, p:84.33, cut:false, grp:'Formstücke', bh:''},
+    {id:'m103', pos:'2.057', n:'Übergangsstück mit AG oder IG 18 x 1,0 mm', cn:'Übergangsstück mit AG oder IG 18 x 1,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:17.99, cut:false, grp:'Formstücke', bh:''},
+    {id:'m104', pos:'2.058', n:'Übergangsstück mit AG/IG 22 x 1,2 mm', cn:'Übergangsstück mit AG/IG 22 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:19.68, cut:false, grp:'Formstücke', bh:''},
+    {id:'m105', pos:'2.059', n:'Übergangsstück mit AG/IG 28 x 1,2 mm', cn:'Übergangsstück mit AG/IG 28 x 1,2 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:25.33, cut:false, grp:'Formstücke', bh:''},
+    {id:'m106', pos:'2.060', n:'Übergangsstück mit AG/IG 35 x 1,5 mm', cn:'Übergangsstück mit AG/IG 35 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:8.0, verb:0, p:30.75, cut:false, grp:'Formstücke', bh:''},
+    {id:'m107', pos:'2.061', n:'Übergangsstück mit AG/IG 42 x 1,5 mm', cn:'Übergangsstück mit AG/IG 42 x 1,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:42.71, cut:false, grp:'Formstücke', bh:''},
+    {id:'m108', pos:'2.062', n:'Übergangsstück mit AG/IG 76,1 x 2,0 mm', cn:'Übergangsstück mit AG/IG 76,1 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:217.2, cut:false, grp:'Formstücke', bh:''},
+    {id:'m109', pos:'2.063', n:'Übergangsstück mit AG/IG 88,9 x 2,0 mm', cn:'Übergangsstück mit AG/IG 88,9 x 2,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:320.77, cut:false, grp:'Formstücke', bh:''},
+    {id:'m110', pos:'2.064', n:'Flansch DN80/PN10 mit Pressmuffe', cn:'Flansch DN80/PN10 mit Pressmuffe', s:'Formstücke', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:216.39, cut:false, grp:'Formstücke', bh:''},
+    {id:'m111', pos:'2.065', n:'Metallverbundrohr 16 x 2,25 mm (DN 12)', cn:'Metallverbundrohr 16 x 2,25 mm (DN 12)', s:'Anschlussleitungen ( Uponor Unipipe)', u:'m', ic:'pipe', gel:30.0, verb:0, p:9.4, cut:true, grp:'Anschlussleitungen ( Uponor Unipipe)', bh:''},
+    {id:'m112', pos:'2.066', n:'System-Rohr 20 x 2,5 mm (DN15)', cn:'System-Rohr 20 x 2,5 mm (DN15)', s:'Anschlussleitungen ( Uponor Unipipe)', u:'m', ic:'pipe', gel:15.0, verb:0, p:11.09, cut:true, grp:'Anschlussleitungen ( Uponor Unipipe)', bh:''},
+    {id:'m113', pos:'2.067', n:'System-Rohr 26 x 3,0 mm (DN20)', cn:'System-Rohr 26 x 3,0 mm (DN20)', s:'Anschlussleitungen ( Uponor Unipipe)', u:'m', ic:'pipe', gel:15.0, verb:0, p:18.06, cut:true, grp:'Anschlussleitungen ( Uponor Unipipe)', bh:''},
+    {id:'m114', pos:'2.068', n:'Bogen 45-90°, 16 x 2,25 mm', cn:'Bogen 45-90°, 16 x 2,25 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:30.0, verb:0, p:12.24, cut:false, grp:'Formstücke', bh:''},
+    {id:'m115', pos:'2.069', n:'Bogen 45-90°, 20 x 2,5 mm', cn:'Bogen 45-90°, 20 x 2,5 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:15.0, verb:0, p:14.5, cut:false, grp:'Formstücke', bh:''},
+    {id:'m116', pos:'2.070', n:'Bogen 45-90°, 26 x 3,0 mm', cn:'Bogen 45-90°, 26 x 3,0 mm', s:'Formstücke', u:'Stk', ic:'bend', gel:10.0, verb:0, p:18.34, cut:false, grp:'Formstücke', bh:''},
+    {id:'m117', pos:'2.071', n:'T-Stück 16 x 2,25 mm', cn:'T-Stück 16 x 2,25 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:15.0, verb:0, p:18.31, cut:false, grp:'Formstücke', bh:''},
+    {id:'m118', pos:'2.072', n:'T-Stück 20 x 2,5 mm', cn:'T-Stück 20 x 2,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:21.36, cut:false, grp:'Formstücke', bh:''},
+    {id:'m119', pos:'2.073', n:'T-Stück 26 x 3,0 mm', cn:'T-Stück 26 x 3,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:8.0, verb:0, p:27.01, cut:false, grp:'Formstücke', bh:''},
+    {id:'m120', pos:'2.074', n:'Reduzierung 16 x 2,25 mm', cn:'Reduzierung 16 x 2,25 mm', s:'Formstücke', u:'Stk', ic:'red', gel:8.0, verb:0, p:13.15, cut:false, grp:'Formstücke', bh:''},
+    {id:'m121', pos:'2.075', n:'Reduzierung 20 x 2,5 mm', cn:'Reduzierung 20 x 2,5 mm', s:'Formstücke', u:'Stk', ic:'red', gel:7.0, verb:0, p:13.15, cut:false, grp:'Formstücke', bh:''},
+    {id:'m122', pos:'2.076', n:'Reduzierung 26 x 3,0 mm', cn:'Reduzierung 26 x 3,0 mm', s:'Formstücke', u:'Stk', ic:'red', gel:6.0, verb:0, p:17.1, cut:false, grp:'Formstücke', bh:''},
+    {id:'m123', pos:'2.077', n:'Übergangsstück 16 x 2,25 mm', cn:'Übergangsstück 16 x 2,25 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:12.79, cut:false, grp:'Formstücke', bh:''},
+    {id:'m124', pos:'2.078', n:'Übergangsstück 20 x 2,5 mm', cn:'Übergangsstück 20 x 2,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:8.0, verb:0, p:15.5, cut:false, grp:'Formstücke', bh:''},
+    {id:'m125', pos:'2.079', n:'Übergangsstück 26 x 3,0 mm', cn:'Übergangsstück 26 x 3,0 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:20.36, cut:false, grp:'Formstücke', bh:''},
+    {id:'m126', pos:'2.080', n:'Überwandscheibe 16 x 2,25 mm', cn:'Überwandscheibe 16 x 2,25 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:20.0, verb:0, p:21.9, cut:false, grp:'Formstücke', bh:''},
+    {id:'m127', pos:'2.081', n:'Doppelwandscheibe 20 x 2,5 mm', cn:'Doppelwandscheibe 20 x 2,5 mm', s:'Formstücke', u:'Stk', ic:'pipe', gel:20.0, verb:0, p:37.74, cut:false, grp:'Formstücke', bh:''},
+    {id:'m128', pos:'2.082', n:'Sanitärverteiler DN 65', cn:'Sanitärverteiler DN 65', s:'Formstücke', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:2238.42, cut:false, grp:'Formstücke', bh:''},
+    {id:'m129', pos:'2.083', n:'Rohrschelle NW DN 80', cn:'Rohrschelle NW DN 80', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:14.0, verb:0, p:14.58, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m130', pos:'2.084', n:'Rohrschelle DN 65', cn:'Rohrschelle DN 65', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:15.0, verb:0, p:13.45, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m131', pos:'2.085', n:'Rohrschelle DN 40', cn:'Rohrschelle DN 40', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:9.0, verb:9.0, p:12.88, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m132', pos:'2.086', n:'Rohrschelle DN 32', cn:'Rohrschelle DN 32', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:60.0, verb:14.0, p:12.66, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m133', pos:'2.087', n:'Rohrschelle DN 25', cn:'Rohrschelle DN 25', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:40.0, verb:25.0, p:9.64, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m134', pos:'2.088', n:'Rohrschelle DN 20', cn:'Rohrschelle DN 20', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:70.0, verb:15.0, p:9.53, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m135', pos:'2.089', n:'Rohrschelle DN 15', cn:'Rohrschelle DN 15', s:'Rohrbefestigung', u:'Stk', ic:'clamp', gel:60.0, verb:26.0, p:9.3, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m136', pos:'2.090', n:'Aufhänge- und Stützkonstruktion aus verzinktem Stahl, mit', cn:'Aufhänge- und Stützkonstruktion aus verzinktem Stahl, mit', s:'Rohrbefestigung', u:'kg', ic:'pipe', gel:350.0, verb:0, p:18.23, cut:false, grp:'Rohrbefestigung', bh:''},
+    {id:'m137', pos:'3.001', n:'Rohr DN 80, 80 mm stark isolieren', cn:'Rohr DN 80, 80 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:13.0, verb:0, p:37.98, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m138', pos:'3.002', n:'Rohr DN 65, 60 mm stark isolieren', cn:'Rohr DN 65, 60 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:22.0, verb:0, p:27.29, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m139', pos:'3.003', n:'Rohr DN 40, 40 mm stark isolieren', cn:'Rohr DN 40, 40 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:15.0, verb:0, p:15.9, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m140', pos:'3.004', n:'Rohr DN 32, 30 mm stark isolieren', cn:'Rohr DN 32, 30 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:105.0, verb:0, p:11.48, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m141', pos:'3.005', n:'Rohr DN 25, 30 mm stark isolieren', cn:'Rohr DN 25, 30 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:15.0, verb:0, p:11.2, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m142', pos:'3.006', n:'Rohr DN 20, 20 mm stark isolieren', cn:'Rohr DN 20, 20 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:25.0, verb:0, p:8.31, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m143', pos:'3.007', n:'Rohr DN 15, 20 mm stark isolieren', cn:'Rohr DN 15, 20 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:10.0, verb:0, p:7.79, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m144', pos:'3.008', n:'System-Rohr DN 12 10 mm stark isolieren', cn:'System-Rohr DN 12 10 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:30.0, verb:0, p:4.19, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m145', pos:'3.009', n:'System-Rohr DN 15, 22 mm stark isolieren', cn:'System-Rohr DN 15, 22 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:15.0, verb:0, p:6.12, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m146', pos:'3.010', n:'System-Rohr DN 20, 22 mm stark isolieren', cn:'System-Rohr DN 20, 22 mm stark isolieren', s:'Isolationsmatrix Trinkwasser', u:'m', ic:'pipe', gel:15.0, verb:0, p:7.08, cut:true, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m147', pos:'3.011', n:'Rohrdurchführung DN 25', cn:'Rohrdurchführung DN 25', s:'Isolationsmatrix Trinkwasser', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:94.17, cut:false, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m148', pos:'3.012', n:'DN 32, Innen Ø 40 mm, Isolierstärke: 19 mm', cn:'DN 32, Innen Ø 40 mm, Isolierstärke: 19 mm', s:'Isolationsmatrix Trinkwasser', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:98.17, cut:false, grp:'Isolationsmatrix Trinkwasser', bh:''},
+    {id:'m149', pos:'4.001', n:'UP Element für Spülkasten 12 cm', cn:'UP Element für Spülkasten 12 cm', s:'UP Elemente', u:'Stk', ic:'pipe', gel:9.0, verb:8.0, p:243.23, cut:false, grp:'UP Elemente', bh:''},
+    {id:'m150', pos:'4.002', n:'UP-Element barrierefrei, höhenverstellbar,', cn:'UP-Element barrierefrei, höhenverstellbar,', s:'UP Elemente', u:'Stk', ic:'pipe', gel:1.0, verb:1.0, p:500.45, cut:false, grp:'UP Elemente', bh:''},
+    {id:'m151', pos:'4.003', n:'UP Element für Waschtisch, Standarmatur', cn:'UP Element für Waschtisch, Standarmatur', s:'UP Elemente', u:'Stk', ic:'valve', gel:5.0, verb:0, p:144.64, cut:false, grp:'UP Elemente', bh:'(Traverse 111.788.00.1 (Nachtrag erstellen?)'},
+    {id:'m152', pos:'4.004', n:'UP Element für Dusche und Badewanne, 98112 cm,', cn:'UP Element für Dusche und Badewanne, 98112 cm,', s:'UP Elemente', u:'Stk', ic:'pipe', gel:18.0, verb:0, p:200.43, cut:false, grp:'UP Elemente', bh:''},
+    {id:'m153', pos:'4.005', n:'UP Element für Urinal, 109127 cm, universell', cn:'UP Element für Urinal, 109127 cm, universell', s:'UP Elemente', u:'Stk', ic:'pipe', gel:2.0, verb:2.0, p:263.05, cut:false, grp:'UP Elemente', bh:''},
+    {id:'m154', pos:'4.006', n:'UP Element für Stütz- und Haltegriffe für Trockenbau', cn:'UP Element für Stütz- und Haltegriffe für Trockenbau', s:'UP Elemente', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:170.16, cut:false, grp:'UP Elemente', bh:''},
+    {id:'m155', pos:'4.007', n:'Wandtiefspül-WC', cn:'Wandtiefspül-WC', s:'WC Einrichtung', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:127.35, cut:false, grp:'WC Einrichtung', bh:'Nachtrag 1'},
+    {id:'m156', pos:'4.008', n:'WC Sitz mit Softclosing', cn:'WC Sitz mit Softclosing', s:'WC Einrichtung', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:55.78, cut:false, grp:'WC Einrichtung', bh:'Nachtrag 1'},
+    {id:'m157', pos:'4.009', n:'Betätigungsplatte für 2-Mengen-Spülung', cn:'Betätigungsplatte für 2-Mengen-Spülung', s:'WC Einrichtung', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:52.85, cut:false, grp:'WC Einrichtung', bh:'Nachtrag 1'},
+    {id:'m158', pos:'4.010', n:'Absaugeurinal', cn:'Absaugeurinal', s:'Urinal Einrichtung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:206.81, cut:false, grp:'Urinal Einrichtung', bh:'Nachtrag 1'},
+    {id:'m159', pos:'4.011', n:'Rohbauset mit Spülrohr, für Urinalsteuerung', cn:'Rohbauset mit Spülrohr, für Urinalsteuerung', s:'Urinal Einrichtung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:8.38, cut:false, grp:'Urinal Einrichtung', bh:''},
+    {id:'m160', pos:'4.012', n:'Elektronische Spülauslösung für Urinal', cn:'Elektronische Spülauslösung für Urinal', s:'Urinal Einrichtung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:608.07, cut:false, grp:'Urinal Einrichtung', bh:''},
+    {id:'m161', pos:'4.013', n:'Handwaschbecken 45 x 35 cm Form: rechteckig', cn:'Handwaschbecken 45 x 35 cm Form: rechteckig', s:'Waschtischeinrichtung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:141.04, cut:false, grp:'Waschtischeinrichtung', bh:'Nachtrag 1'},
+    {id:'m162', pos:'4.014', n:'Waschtisch Breite: 600 mm, Tiefe: 450 mm', cn:'Waschtisch Breite: 600 mm, Tiefe: 450 mm', s:'Waschtischeinrichtung', u:'Stk', ic:'pipe', gel:3.0, verb:0, p:142.72, cut:false, grp:'Waschtischeinrichtung', bh:'Nachtrag 1'},
+    {id:'m163', pos:'4.015', n:'Waschtischarmatur, mit IR-Sensor, mit Mischung', cn:'Waschtischarmatur, mit IR-Sensor, mit Mischung', s:'Waschtischeinrichtung', u:'Stk', ic:'valve', gel:5.0, verb:0, p:565.85, cut:false, grp:'Waschtischeinrichtung', bh:''},
+    {id:'m164', pos:'4.016', n:'CNX Converter 30V - 6V, kurze Ausführung', cn:'CNX Converter 30V - 6V, kurze Ausführung', s:'Waschtischeinrichtung', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:164.95, cut:false, grp:'Waschtischeinrichtung', bh:''},
+    {id:'m165', pos:'4.017', n:'Behinderten Waschtisch 80 x 55,5 cm rechteckig', cn:'Behinderten Waschtisch 80 x 55,5 cm rechteckig', s:'Behinderten WC Einrichtung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:424.1, cut:false, grp:'Behinderten WC Einrichtung', bh:''},
+    {id:'m166', pos:'4.018', n:'Behinderten WC Wandtiefspül-WC ohne Spülrande', cn:'Behinderten WC Wandtiefspül-WC ohne Spülrande', s:'Behinderten WC Einrichtung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:400.77, cut:false, grp:'Behinderten WC Einrichtung', bh:''},
+    {id:'m167', pos:'4.019', n:'Handbrause Länge 1000 mm', cn:'Handbrause Länge 1000 mm', s:'Behinderten WC Einrichtung', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:347.87, cut:false, grp:'Behinderten WC Einrichtung', bh:'AB Schuster #15318109'},
+    {id:'m168', pos:'4.020', n:'Wandanschlussbogen Handbrause', cn:'Wandanschlussbogen Handbrause', s:'Behinderten WC Einrichtung', u:'Stk', ic:'bend', gel:2.0, verb:0, p:59.99, cut:false, grp:'Behinderten WC Einrichtung', bh:'AB Schuster #15318109'},
+    {id:'m169', pos:'4.021', n:'Unterputzthermostat für Dusche DN15', cn:'Unterputzthermostat für Dusche DN15', s:'Duscheinrichtung', u:'Stk', ic:'pipe', gel:18.0, verb:0, p:249.84, cut:false, grp:'Duscheinrichtung', bh:''},
+    {id:'m170', pos:'4.022', n:'Fertigmontageset Dusche UP Edelstahl rund', cn:'Fertigmontageset Dusche UP Edelstahl rund', s:'Duscheinrichtung', u:'Stk', ic:'pipe', gel:18.0, verb:0, p:1034.47, cut:false, grp:'Duscheinrichtung', bh:''},
+    {id:'m171', pos:'4.023', n:'Brausekopf Dusche DN15', cn:'Brausekopf Dusche DN15', s:'Duscheinrichtung', u:'Stk', ic:'pipe', gel:18.0, verb:0, p:193.49, cut:false, grp:'Duscheinrichtung', bh:'AB Schuster #15318109'},
+    {id:'m172', pos:'4.024', n:'Brausewannen-Einrichtung 80 x 80 cm,', cn:'Brausewannen-Einrichtung 80 x 80 cm,', s:'Duscheinrichtung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:688.46, cut:false, grp:'Duscheinrichtung', bh:''},
+    {id:'m173', pos:'4.025', n:'Abdichten der Wanne gegenüber der Wand,', cn:'Abdichten der Wanne gegenüber der Wand,', s:'Duscheinrichtung', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:115.24, cut:false, grp:'Duscheinrichtung', bh:''},
+    {id:'m174', pos:'4.026', n:'Ausgussbeckenanlage bestehend aus:', cn:'Ausgussbeckenanlage bestehend aus:', s:'Ausgussbecken', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:119.26, cut:false, grp:'Ausgussbecken', bh:''},
+    {id:'m175', pos:'4.027', n:'Wandarmatur DN 15 / PN 10 aus Messing', cn:'Wandarmatur DN 15 / PN 10 aus Messing', s:'Ausgussbecken', u:'Stk', ic:'valve', gel:1.0, verb:0, p:123.92, cut:false, grp:'Ausgussbecken', bh:''},
+    {id:'m176', pos:'4.028', n:'Gitter-Papierkorb für Aufputzmontage oder freistehend', cn:'Gitter-Papierkorb für Aufputzmontage oder freistehend', s:'Zubehör', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:269.31, cut:false, grp:'Zubehör', bh:'Nachtrag 1'},
+    {id:'m177', pos:'4.029', n:'Papierhandtuchspender aus 1,5 mm gebürstetem', cn:'Papierhandtuchspender aus 1,5 mm gebürstetem', s:'Zubehör', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:216.68, cut:false, grp:'Zubehör', bh:'Nachtrag 1'},
+    {id:'m178', pos:'4.030', n:'Berührungsfreier Seifenspender Edelstahl', cn:'Berührungsfreier Seifenspender Edelstahl', s:'Zubehör', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:278.41, cut:false, grp:'Zubehör', bh:'Nachtrag 1'},
+    {id:'m179', pos:'4.031', n:'Hygieneabfallbehälter mit Hygienebeutelspender Edelstahl', cn:'Hygieneabfallbehälter mit Hygienebeutelspender Edelstahl', s:'Zubehör', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:225.13, cut:false, grp:'Zubehör', bh:'Nachtrag 1'},
+    {id:'m180', pos:'4.032', n:'Haltegriff Set Länge: 1.000 mm,', cn:'Haltegriff Set Länge: 1.000 mm,', s:'Zubehör', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:172.07, cut:false, grp:'Zubehör', bh:''},
+    {id:'m181', pos:'4.033', n:'Stützklappgriff aus Edelstahl Länge 700mm', cn:'Stützklappgriff aus Edelstahl Länge 700mm', s:'Zubehör', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:540.66, cut:false, grp:'Zubehör', bh:''},
+    {id:'m182', pos:'4.034', n:'Kippspiegel 600 x 540 x 90 mm', cn:'Kippspiegel 600 x 540 x 90 mm', s:'Zubehör', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:384.93, cut:false, grp:'Zubehör', bh:''},
+    {id:'m183', pos:'4.035', n:'Rückenlehne für WC-Sitz 543 x 180 x 140 mm', cn:'Rückenlehne für WC-Sitz 543 x 180 x 140 mm', s:'Zubehör', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:275.36, cut:false, grp:'Zubehör', bh:''},
+    {id:'m184', pos:'4.036', n:'Duschklappsitz, rechteckig', cn:'Duschklappsitz, rechteckig', s:'Zubehör', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:450.48, cut:false, grp:'Zubehör', bh:''},
+    {id:'m185', pos:'4.037', n:'Kristallglasspiegel, 650 x 600 mm, Splitterschutz', cn:'Kristallglasspiegel, 650 x 600 mm, Splitterschutz', s:'Zubehör', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:114.22, cut:false, grp:'Zubehör', bh:''},
+    {id:'m186', pos:'4.038', n:'Bürstengarnitur aus massivem Edelstahl', cn:'Bürstengarnitur aus massivem Edelstahl', s:'Zubehör', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:87.95, cut:false, grp:'Zubehör', bh:''},
+    {id:'m187', pos:'4.039', n:'WC-Großrollenhalter', cn:'WC-Großrollenhalter', s:'Zubehör', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:370.02, cut:false, grp:'Zubehör', bh:'Nachtrag 1'},
+    {id:'m188', pos:'4.040', n:'Spültisch-Zubehör, bestehend aus:', cn:'Spültisch-Zubehör, bestehend aus:', s:'Zubehör', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:46.3, cut:false, grp:'Zubehör', bh:''},
+    {id:'m189', pos:'4.041', n:'Küchenarmatur', cn:'Küchenarmatur', s:'Zubehör', u:'Stk', ic:'valve', gel:1.0, verb:0, p:287.54, cut:false, grp:'Zubehör', bh:''},
+    {id:'m190', pos:'4.042', n:'Eckventil 1/2" mit Verlängerung und Schubrosette', cn:'Eckventil 1/2" mit Verlängerung und Schubrosette', s:'Zubehör', u:'Stk', ic:'valve', gel:14.0, verb:0, p:13.88, cut:false, grp:'Zubehör', bh:''},
+    {id:'m191', pos:'4.043', n:'Doppelspindel-Eckregulierventil 1/2"', cn:'Doppelspindel-Eckregulierventil 1/2"', s:'Zubehör', u:'Stk', ic:'valve', gel:1.0, verb:0, p:31.53, cut:false, grp:'Zubehör', bh:''},
+    {id:'m192', pos:'4.044', n:'Geruchsverschluss für Waschbecken und Spülen', cn:'Geruchsverschluss für Waschbecken und Spülen', s:'Zubehör', u:'Stk', ic:'pipe', gel:12.0, verb:0, p:32.2, cut:false, grp:'Zubehör', bh:'5 Stück in Nachtrag 1 durch UP Sifons ersetzt!'},
+    {id:'m193', pos:'4.045', n:'Geruchsverschluss für Geräte, mit Einlauftrichter oval', cn:'Geruchsverschluss für Geräte, mit Einlauftrichter oval', s:'Zubehör', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:34.99, cut:false, grp:'Zubehör', bh:''},
+    {id:'m194', pos:'4.046', n:'Geruchsverschluss AP für Geräte, mit Abdeckung', cn:'Geruchsverschluss AP für Geräte, mit Abdeckung', s:'Zubehör', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:63.63, cut:false, grp:'Zubehör', bh:''},
+    {id:'m195', pos:'4.047', n:'Edelstahl-Entwässerungsrinne B156 L4600 mm', cn:'Edelstahl-Entwässerungsrinne B156 L4600 mm', s:'Bodenabläufe/ Rinnen', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:2880.39, cut:false, grp:'Bodenabläufe/ Rinnen', bh:'Nachtrag 2'},
+    {id:'m196', pos:'4.048', n:'Bodenablaufunterteil DN 70 senkrecht', cn:'Bodenablaufunterteil DN 70 senkrecht', s:'Bodenabläufe/ Rinnen', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:258.93, cut:false, grp:'Bodenabläufe/ Rinnen', bh:'Nachtrag 2'},
+    {id:'m197', pos:'4.049', n:'Brandschutzelement DN 70', cn:'Brandschutzelement DN 70', s:'Bodenabläufe/ Rinnen', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:134.31, cut:false, grp:'Bodenabläufe/ Rinnen', bh:''},
+    {id:'m198', pos:'4.050', n:'V4A Bodenablauf incl. V4A Lochrostabdeckung', cn:'V4A Bodenablauf incl. V4A Lochrostabdeckung', s:'Bodenablauf DN 70', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:347.0, cut:false, grp:'Bodenablauf DN 70', bh:''},
+    {id:'m199', pos:'4.051', n:'Bodenablaufunterteil DN 70 senkrecht', cn:'Bodenablaufunterteil DN 70 senkrecht', s:'Bodenablauf DN 70', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:258.93, cut:false, grp:'Bodenablauf DN 70', bh:''},
+    {id:'m200', pos:'4.052', n:'Brandschutzelement DN 70', cn:'Brandschutzelement DN 70', s:'Bodenablauf DN 70', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:134.31, cut:false, grp:'Bodenablauf DN 70', bh:''},
+    {id:'m201', pos:'4.053', n:'Steuerzentrale CNX 64 mit Touch-Display', cn:'Steuerzentrale CNX 64 mit Touch-Display', s:'Wassermanagment System', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:2791.29, cut:false, grp:'Wassermanagment System', bh:'AB Schuster #15318109'},
+    {id:'m202', pos:'4.054', n:'Leitung J-Y(St)Y, 2x2x0,8 mm schwarz - grau,', cn:'Leitung J-Y(St)Y, 2x2x0,8 mm schwarz - grau,', s:'Wassermanagment System', u:'m', ic:'pipe', gel:70.0, verb:0, p:17.16, cut:true, grp:'Wassermanagment System', bh:''},
+    {id:'m203', pos:'4.055', n:'CNX Inbetriebnahme', cn:'CNX Inbetriebnahme', s:'Wassermanagment System', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:1014.74, cut:false, grp:'Wassermanagment System', bh:''},
+    {id:'m204', pos:'4.056', n:'Silikon mit pilzhemmendem Dichtstoff (sauervernetzend) für', cn:'Silikon mit pilzhemmendem Dichtstoff (sauervernetzend) für', s:'Wassermanagment System', u:'m', ic:'pipe', gel:17.0, verb:0, p:7.91, cut:true, grp:'Wassermanagment System', bh:''},
+    {id:'m205', pos:'4.057', n:'Organisation einer Bemusterung sämtlicher Sanitärgegenstände', cn:'Organisation einer Bemusterung sämtlicher Sanitärgegenstände', s:'Wassermanagment System', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:400.0, cut:false, grp:'Wassermanagment System', bh:''},
+    {id:'m206', pos:'5.001', n:'Enthärtungsanlage Parallel', cn:'Enthärtungsanlage Parallel', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:12662.5, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m207', pos:'5.002', n:'Salzmangelanzeige', cn:'Salzmangelanzeige', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:38.7, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m208', pos:'5.003', n:'Verschneideeinrichtung R 2"', cn:'Verschneideeinrichtung R 2"', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:71.75, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m209', pos:'5.004', n:'Regenerationssalz', cn:'Regenerationssalz', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:15.16, cut:false, grp:'Enthärtungsanlage', bh:''},
+    {id:'m210', pos:'5.005', n:'Dosieranlage Berkodos AM 4-50', cn:'Dosieranlage Berkodos AM 4-50', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:1723.21, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m211', pos:'5.006', n:'Auffangbehälter für Chemikalien Größe 60', cn:'Auffangbehälter für Chemikalien Größe 60', s:'Enthärtungsanlage', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:161.5, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m212', pos:'5.007', n:'Härtestabilisierungsmittel, Korrosionsschutzmittel', cn:'Härtestabilisierungsmittel, Korrosionsschutzmittel', s:'Enthärtungsanlage', u:'kg', ic:'pipe', gel:1.0, verb:0, p:4.75, cut:false, grp:'Enthärtungsanlage', bh:'AB Schuster #15318113'},
+    {id:'m213', pos:'5.008', n:'Anklemmarbeiten, Inbetriebnahme und Einweisung', cn:'Anklemmarbeiten, Inbetriebnahme und Einweisung', s:'Enthärtungsanlage', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:904.0, cut:false, grp:'Enthärtungsanlage', bh:''},
+    {id:'m214', pos:'6.001', n:'Frischwasserstation Qmin: 82 l/m / Qmax: 171 l/min', cn:'Frischwasserstation Qmin: 82 l/m / Qmax: 171 l/min', s:'Frischwasserstation', u:'Stk.', ic:'pipe', gel:1.0, verb:0, p:7001.12, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m215', pos:'6.002', n:'Absperr-Set für Geräte/Module mit Dämmung', cn:'Absperr-Set für Geräte/Module mit Dämmung', s:'Frischwasserstation', u:'Stk.', ic:'pipe', gel:2.0, verb:0, p:278.14, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m216', pos:'6.003', n:'Absperrhahn mit Dämmung DN25', cn:'Absperrhahn mit Dämmung DN25', s:'Frischwasserstation', u:'Stk.', ic:'valve', gel:1.0, verb:0, p:74.58, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m217', pos:'6.004', n:'Zirkulationspumpen-Set als Einbauteil', cn:'Zirkulationspumpen-Set als Einbauteil', s:'Frischwasserstation', u:'Stk.', ic:'pipe', gel:1.0, verb:0, p:621.59, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m218', pos:'6.005', n:'Entleerstutzen mit Entleerventil DN25', cn:'Entleerstutzen mit Entleerventil DN25', s:'Frischwasserstation', u:'Stk.', ic:'valve', gel:3.0, verb:0, p:44.35, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m219', pos:'6.006', n:'Probenahmeventil JRG DVGW DN8', cn:'Probenahmeventil JRG DVGW DN8', s:'Frischwasserstation', u:'Stk.', ic:'valve', gel:3.0, verb:0, p:136.56, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m220', pos:'6.007', n:'Sicherheitsventil 8 bar,', cn:'Sicherheitsventil 8 bar,', s:'Frischwasserstation', u:'Stk.', ic:'valve', gel:1.0, verb:0, p:102.21, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m221', pos:'6.008', n:'Rückspülbarer Trinkwasserfeinfilter DN25', cn:'Rückspülbarer Trinkwasserfeinfilter DN25', s:'Frischwasserstation', u:'Stk.', ic:'pipe', gel:1.0, verb:0, p:950.23, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m222', pos:'6.009', n:'Verteilerbox für Spannungsversorgung', cn:'Verteilerbox für Spannungsversorgung', s:'Frischwasserstation', u:'Stk.', ic:'pipe', gel:1.0, verb:0, p:749.79, cut:false, grp:'Frischwasserstation', bh:''},
+    {id:'m223', pos:'6.010', n:'Pufferspeicher 1000 ltr.', cn:'Pufferspeicher 1000 ltr.', s:'Pufferspeicher und Zubehör', u:'Stk.', ic:'pipe', gel:2.0, verb:0, p:2179.04, cut:false, grp:'Pufferspeicher und Zubehör', bh:''},
+    {id:'m224', pos:'6.011', n:'Mantel-Absperr-Kugelhahn DN50; für PS 100mm', cn:'Mantel-Absperr-Kugelhahn DN50; für PS 100mm', s:'Pufferspeicher und Zubehör', u:'Stk.', ic:'valve', gel:2.0, verb:0, p:125.52, cut:false, grp:'Pufferspeicher und Zubehör', bh:''},
+    {id:'m225', pos:'6.012', n:'Temp.-fühler + Zubehör, Pt1000, Leitung 7m, AD 5mm', cn:'Temp.-fühler + Zubehör, Pt1000, Leitung 7m, AD 5mm', s:'Pufferspeicher und Zubehör', u:'Stk.', ic:'pipe', gel:2.0, verb:0, p:59.7, cut:false, grp:'Pufferspeicher und Zubehör', bh:''},
+    {id:'m226', pos:'6.013', n:'Kesselkreis-/Speicherladesatz Qn300 DN25 PWMopt', cn:'Kesselkreis-/Speicherladesatz Qn300 DN25 PWMopt', s:'Pufferspeicher und Zubehör', u:'Stk.', ic:'pipe', gel:1.0, verb:0, p:1689.72, cut:false, grp:'Pufferspeicher und Zubehör', bh:''},
+    {id:'m227', pos:'6.014', n:'Inbetriebnahme der Frischwassserstation', cn:'Inbetriebnahme der Frischwassserstation', s:'Pufferspeicher und Zubehör', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:904.0, cut:false, grp:'Pufferspeicher und Zubehör', bh:''},
+    {id:'m228', pos:'7.001', n:'Obermonteur Abrechnungslohn', cn:'Obermonteur Abrechnungslohn', s:'Allgemeines', u:'Std', ic:'pipe', gel:27.75, verb:27.75, p:75.5, cut:false, grp:'Allgemeines', bh:''},
+    {id:'m229', pos:'7.002', n:'Monteur Abrechnungslohn', cn:'Monteur Abrechnungslohn', s:'Allgemeines', u:'Std', ic:'pipe', gel:2.75, verb:2.75, p:67.5, cut:false, grp:'Allgemeines', bh:''},
+    {id:'m230', pos:'7.003', n:'Helfer/Auszubildender', cn:'Helfer/Auszubildender', s:'Allgemeines', u:'Std', ic:'pipe', gel:14.75, verb:14.75, p:44.0, cut:false, grp:'Allgemeines', bh:''},
+    {id:'m231', pos:'7.004', n:'Servicetechniker', cn:'Servicetechniker', s:'Allgemeines', u:'Std', ic:'pipe', gel:8.0, verb:0, p:75.5, cut:false, grp:'Allgemeines', bh:''},
+    {id:'m232', pos:'7.005', n:'Bohrungen, 100 mm Ø, durch Porenbetonwände bis', cn:'Bohrungen, 100 mm Ø, durch Porenbetonwände bis', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:180.8, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m233', pos:'7.006', n:'Bohrungen, 150 mm Ø', cn:'Bohrungen, 150 mm Ø', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:209.05, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m234', pos:'7.007', n:'Kernbohrungen durch Beton', cn:'Kernbohrungen durch Beton', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'St', ic:'pipe', gel:1, verb:0, p:0.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m235', pos:'7.008', n:'Kernbohrungen, 100 mm Ø, in Betonwände oder -decken', cn:'Kernbohrungen, 100 mm Ø, in Betonwände oder -decken', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:180.8, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m236', pos:'7.009', n:'Kernbohrungen, 125 mm Ø, in Betonwände oder -decken', cn:'Kernbohrungen, 125 mm Ø, in Betonwände oder -decken', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Stk', ic:'pipe', gel:3.0, verb:0, p:192.1, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m237', pos:'7.010', n:'Kernbohrungen, 150 mm Ø, in Betonwände oder -decken', cn:'Kernbohrungen, 150 mm Ø, in Betonwände oder -decken', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:209.05, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m238', pos:'7.011', n:'Montageplanung Titel 1-3', cn:'Montageplanung Titel 1-3', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:0.25, verb:0.25, p:1400.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m239', pos:'7.012', n:'Bautagebuch des AN erstellen', cn:'Bautagebuch des AN erstellen', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:800.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m240', pos:'7.013', n:'Komplette Inbetriebnahme der aufgeführten', cn:'Komplette Inbetriebnahme der aufgeführten', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:1800.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m241', pos:'7.014', n:'Erstellung Kabelzugliste für den Elektriker.', cn:'Erstellung Kabelzugliste für den Elektriker.', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:0.25, verb:0.25, p:690.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m242', pos:'7.015', n:'Elektrische Anschlussarbeiten sämtlicher aufgeführter', cn:'Elektrische Anschlussarbeiten sämtlicher aufgeführter', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:904.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m243', pos:'7.016', n:'Druckprobe/ Spülen/ sämtlicher aufgeführten Leitungen', cn:'Druckprobe/ Spülen/ sämtlicher aufgeführten Leitungen', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:1740.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m244', pos:'7.017', n:'Spülen und Reinigen sämtlicher Rohrleitungen im', cn:'Spülen und Reinigen sämtlicher Rohrleitungen im', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:1450.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m245', pos:'7.018', n:'Befüllung und Inbetriebnahme des kompletten Leitungs', cn:'Befüllung und Inbetriebnahme des kompletten Leitungs', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:350.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m246', pos:'7.019', n:'Trinkwasseruntersuchung des gesamten Trinkwasser', cn:'Trinkwasseruntersuchung des gesamten Trinkwasser', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:79.38, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m247', pos:'7.020', n:'Revisionsunterlagen sämtlicher aufgeführter', cn:'Revisionsunterlagen sämtlicher aufgeführter', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:1.0, verb:0, p:1000.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m248', pos:'7.021', n:'Stellen und Vorhalten eines Rollgerüstes für Arbeiten', cn:'Stellen und Vorhalten eines Rollgerüstes für Arbeiten', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Tage', ic:'pipe', gel:8.0, verb:8.0, p:10.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m249', pos:'7.022', n:'Baustelleneinrichtung', cn:'Baustelleneinrichtung', s:'Kernbohrungen durch Porenbeton / Ziegel', u:'Psch', ic:'pipe', gel:0.25, verb:0.25, p:2800.0, cut:false, grp:'Kernbohrungen durch Porenbeton / Ziegel', bh:''},
+    {id:'m250', pos:'8.001', n:'Gewährleistungswartung Enthärtungsanlage', cn:'Gewährleistungswartung Enthärtungsanlage', s:'Wartungsarbeiten', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:1126.0, cut:false, grp:'Wartungsarbeiten', bh:''},
+    {id:'m251', pos:'8.002', n:'Gewährleistungswartung Frischwasserstation', cn:'Gewährleistungswartung Frischwasserstation', s:'Wartungsarbeiten', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:660.0, cut:false, grp:'Wartungsarbeiten', bh:''},
+    {id:'m252', pos:'9.001', n:'Wand-Tiefspül-WC derby V3 ohne Spülrand weiss, Pfl.tectPl VIGOUR', cn:'Wand-Tiefspül-WC derby V3 ohne Spülrand weiss, Pfl.tectPl VIGOUR', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:229.2, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .007 (Info EK 164,34€ + Index + 30GM)'},
+    {id:'m253', pos:'9.002', n:'WC-Sitz derby V3 Edelstahlscharnier abnehmb. mit Abesenkautom. Weiss VIGOUR', cn:'WC-Sitz derby V3 Edelstahlscharnier abnehmb. mit Abesenkautom. Weiss VIGOUR', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:67.54, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .008 (Info EK 49,50€ + Index + 8GM)'},
+    {id:'m254', pos:'9.003', n:'Abdeckplatte Sigma20 square, 2-Mengen-Spülung, mattchrom Geberit', cn:'Abdeckplatte Sigma20 square, 2-Mengen-Spülung, mattchrom Geberit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:11.0, verb:0, p:139.39, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .009 (Info EK 113,09€ + Index + 8GM)'},
+    {id:'m255', pos:'9.004', n:'Urinal derby V3 spülrandlos Zulauf verd. Weiss, Pfl.tectPl VIGOUR', cn:'Urinal derby V3 spülrandlos Zulauf verd. Weiss, Pfl.tectPl VIGOUR', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:250.95, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .010 (Info EK 164,34€ + Index + 45GM)'},
+    {id:'m256', pos:'9.005', n:'Unterbauwaschtisch 56x42cm ohne Hahnloch, mit Überlauf inkl. Siebventil. Montage von unten, weiss Grohe', cn:'Unterbauwaschtisch 56x42cm ohne Hahnloch, mit Überlauf inkl. Siebventil. Montage von unten, weiss Grohe', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'valve', gel:2.0, verb:0, p:155.49, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .013 (Info EK 86,27€ + Index + 40GM)'},
+    {id:'m257', pos:'9.006', n:'Waschtisch Renova Plan 60x84cm ohne Hahnloch, mit Überlauf inkl. Siebventil. Weiss Geberit', cn:'Waschtisch Renova Plan 60x84cm ohne Hahnloch, mit Überlauf inkl. Siebventil. Weiss Geberit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'valve', gel:2.0, verb:0, p:151.93, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .014 (Info EK 83,12€ + Index + 40GM)'},
+    {id:'m258', pos:'9.007', n:'Conbox Fit UP RM mit Termostat + Congenial Fit IR Wand Armatur UP CNX Thermo. Fertigset Edelstahl eckig mit Auslauf 220mm Conti', cn:'Conbox Fit UP RM mit Termostat + Congenial Fit IR Wand Armatur UP CNX Thermo. Fertigset Edelstahl eckig mit Auslauf 220mm Conti', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'valve', gel:5.0, verb:0, p:1579.1, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .015 (Info EK 1326,86€ + Index + 55GM) /AB Schuster '},
+    {id:'m259', pos:'9.008', n:'Waschtisch clivia V2 plus care 65x55cm unterfahrbar ohne Hahnloch mit Überlauf und Siebventil. Weiss VIGOUR', cn:'Waschtisch clivia V2 plus care 65x55cm unterfahrbar ohne Hahnloch mit Überlauf und Siebventil. Weiss VIGOUR', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'valve', gel:1.0, verb:0, p:292.61, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .017 (Info EK 207,62€ + Index + 40GM)'},
+    {id:'m260', pos:'9.009', n:'Wandeinbausifon 1 1/4"x32mm für Waschtisch abg.horiz. 50/56mm verchromt Geberit', cn:'Wandeinbausifon 1 1/4"x32mm für Waschtisch abg.horiz. 50/56mm verchromt Geberit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:5.0, verb:0, p:129.98, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'5 Stück in Pos 4. .044 ersetzen (Info EK 91,93€ + Index + 18GM)'},
+    {id:'m261', pos:'9.010', n:'Renova Comfort WC-Ring barrierefrei, antibakteriell Befestigung von obeen, weiss', cn:'Renova Comfort WC-Ring barrierefrei, antibakteriell Befestigung von obeen, weiss', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'clamp', gel:1.0, verb:0, p:99.88, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'(Info EK 78,12€ + Index + 8GM)'},
+    {id:'m262', pos:'9.011', n:'Conbox Dusche UP RM mit Thermostat + Congenial el. PZ Dusche UP CNX Fertigset Thermo. Edelstahl eckig Conti', cn:'Conbox Dusche UP RM mit Thermostat + Congenial el. PZ Dusche UP CNX Fertigset Thermo. Edelstahl eckig Conti', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:20.0, verb:0, p:1077.79, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos 4. .022 (Info EK 928,13€ + Index + 20GM) / AB Schuster '},
+    {id:'m263', pos:'9.012', n:'Zala Abfallbehälter 20 Liter Edelstahl Kemmlit', cn:'Zala Abfallbehälter 20 Liter Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:192.74, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos.4. .028 (Info EK 151,32€ + Index + 15GM)'},
+    {id:'m264', pos:'9.013', n:'Zala Handtuchrollenspender Edelstahl Kemmlit', cn:'Zala Handtuchrollenspender Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:283.83, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos.4. .029 (Info EK 231,93€ + Index + 15GM)'},
+    {id:'m265', pos:'9.014', n:'Zala Handtuchspender Edelstahl Kemmlit', cn:'Zala Handtuchspender Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:211.42, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Alternativ für Pos. 4. .029 (Info EK 167,85 + Index + 15GM)'},
+    {id:'m266', pos:'9.015', n:'Zala Schaumseifenspender Edelstahl Kemmlit', cn:'Zala Schaumseifenspender Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:163.71, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos. 4. .030 (Info EK 125,63€ + Index + 15GM)'},
+    {id:'m267', pos:'9.016', n:'Zala Hygienebehälter mit Kniebedienung 9 Liter Edelstahl Kemmlit', cn:'Zala Hygienebehälter mit Kniebedienung 9 Liter Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:196.47, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos. 4. .031 (Info EK 154,62€ + Index + 15GM)'},
+    {id:'m268', pos:'9.017', n:'Zala Tampon und Bindenspender Edelstahl Kemmlit', cn:'Zala Tampon und Bindenspender Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:6.0, verb:0, p:163.71, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'(Info EK 125,63€ + Index + 15GM)'},
+    {id:'m269', pos:'9.018', n:'Zala Toiletttenpapierspender Edelstahl Kemmlit', cn:'Zala Toiletttenpapierspender Edelstahl Kemmlit', s:'Fertigmontage nach Bemusterung/Austellungsbesuch', u:'Stk', ic:'pipe', gel:10.0, verb:0, p:200.98, cut:false, grp:'Fertigmontage nach Bemusterung/Austellungsbesuch', bh:'Ersatz für Pos. 4. .039 (Info EK 158,61€ + Index + 15GM)'},
+    {id:'m270', pos:'9.019', n:'Duschrinne - ELIX - aus Edelstahl Eckausführung 2x90° und 1x Verbindungsflansch Gesamtlänge1:ca.2900mm Gesamtlänge 2:ca.2400mm', cn:'Duschrinne - ELIX - aus Edelstahl Eckausführung 2x90° und 1x Verbindungsflansch Gesamtlänge1:ca.2900mm Gesamtlänge 2:ca.2400mm', s:'Duschrinne', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:2802.94, cut:false, grp:'Duschrinne', bh:'(Info EK 1659,24€ + Index + 640GM)'},
+    {id:'m271', pos:'9.020', n:'Schlitzrost geschliffen zu oben genannter Rinne', cn:'Schlitzrost geschliffen zu oben genannter Rinne', s:'Duschrinne', u:'Stk', ic:'pipe', gel:2.0, verb:0, p:825.21, cut:false, grp:'Duschrinne', bh:'(Info EK 627,62€ + Index + 80GM)'},
+    {id:'m272', pos:'9.021', n:'Duschrinne aus Edelstahl Einlauflänge: 1100mm / Gesamtlänge: 1180 mm', cn:'Duschrinne aus Edelstahl Einlauflänge: 1100mm / Gesamtlänge: 1180 mm', s:'Duschrinne', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:552.78, cut:false, grp:'Duschrinne', bh:'(Info EK 219,72€ + Index + 210GM)'},
+    {id:'m273', pos:'9.022', n:'Rost zu oben genannter Duschrinne Einlauflänge: 1100mm / Einlaufbreite: 70mm', cn:'Rost zu oben genannter Duschrinne Einlauflänge: 1100mm / Einlaufbreite: 70mm', s:'Duschrinne', u:'Stk', ic:'pipe', gel:4.0, verb:0, p:162.5, cut:false, grp:'Duschrinne', bh:'(Info EK 105,31€ + Index + 30GM)'},
+    {id:'m274', pos:'9.023', n:'Duschrinne aus Edelstahl Gesamtlänge: 880mm / Gesamtbreite 150mm', cn:'Duschrinne aus Edelstahl Gesamtlänge: 880mm / Gesamtbreite 150mm', s:'Duschrinne', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:475.86, cut:false, grp:'Duschrinne', bh:'(Info EK 151,65€ + Index + 210GM)'},
+    {id:'m275', pos:'9.024', n:'Rost zu oben genannter Duschrinne Einlauflänge: 800mm / Einlaufbreite: 70mm', cn:'Rost zu oben genannter Duschrinne Einlauflänge: 800mm / Einlaufbreite: 70mm', s:'Duschrinne', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:93.13, cut:false, grp:'Duschrinne', bh:'(Info EK 43,92€ + Index + 30GM) Bitte alle Pos. Mit den Pos. 4. .047 -'},
+    {id:'m276', pos:'09.025', n:'Mehrpreis Plattenwärmetauscher Frischwasserstation in buntmetallfreier Ausführung Typ 80 PWT - VacInox gelötet "PWT-Vacinox, bei verzinktem Leitungsnetz und Mischinstallation zu empfehlen, um einer Entzinkung durch den Plattenwärmetauscher mit CU-Lot (Standardtauscher!) zu verhindern. Auch um Grenzwertige Wasserqualitäten abzudecken die mit dem Standard CU-Lot Wärmetauscher nicht abzudecken sind."', cn:'Mehrpreis Plattenwärmetauscher Frischwasserstation in buntmetallfreier Ausführung Typ 80 PWT - VacInox gelötet "PWT-Vacinox, bei verzinktem Leitungsnetz und Mischinstallation zu empfehlen, um einer Entzinkung durch den Plattenwärmetauscher mit CU-Lot (Standardtauscher!) zu verhindern. Auch um Grenzwertige Wasserqualitäten abzudecken die mit dem Standard CU-Lot Wärmetauscher nicht abzudecken sind."', s:'Mehrpreis Plattenwärmetauscher', u:'Stk', ic:'pipe', gel:1.0, verb:0, p:1656.63, cut:false, grp:'Mehrpreis Plattenwärmetauscher', bh:'(Info EK 1466,04€ + Index)'}
+  ],
+  rooms:[
+    {id:'r1', n:'WC-Bereich UG', s:'Geberit-Elemente, Abwasser', pct:82, tr:{ro:'Zonă WC',pl:'Strefa WC',hr:'WC zona'}},
+    {id:'r2', n:'Technikraum UG', s:'Grauwasser-Hebeanlage, Verteiler', pct:63, tr:{ro:'Cameră tehnică',pl:'Pom. techniczne',hr:'Tehnička prostorija'}},
+    {id:'r3', n:'Flur UG', s:'Sammelleitungen Trinkwasser', pct:71, tr:{ro:'Hol',pl:'Korytarz',hr:'Hodnik'}},
+    {id:'r4', n:'Duschen UG', s:'Abwasser, Trinkwasser', pct:38, tr:{ro:'Dușuri',pl:'Prysznice',hr:'Tuševi'}},
+    {id:'r5', n:'Steigschacht A', s:'Steigleitungen', pct:20, tr:{ro:'Ghenă A',pl:'Szacht A',hr:'Vert. kanal A'}},
+  ],
+};
+
+app.lang = 'de';
+app.T = {
+  projTitle:{de:'Wöchentliches Aufmaß',ro:'Măsurare săptămânală',pl:'Cotygodniowy obmiar',hr:'Tjedni obračun'},
+  projSub:{de:'Wähle den Raum, in dem du diese Woche Material verbaut hast.',ro:'Alege încăperea în care ai montat material săptămâna aceasta.',pl:'Wybierz pomieszczenie, w którym w tym tygodniu zamontowałeś materiał.',hr:'Odaberi prostoriju u kojoj si ovaj tjedan ugradio materijal.'},
+  roomsSect:{de:'Räume · Untergeschoss',ro:'Încăperi · Subsol',pl:'Pomieszczenia · Piwnica',hr:'Prostorije · Podrum'},
+  back:{de:'Räume',ro:'Încăperi',pl:'Pomieszczenia',hr:'Prostorije'},
+  backShort:{de:'Zurück',ro:'Înapoi',pl:'Wstecz',hr:'Natrag'},
+  bookHead:{de:'Ausbuchen, was verbaut wurde',ro:'Înregistrează ce s-a montat',pl:'Odpisz, co zostało zamontowane',hr:'Otpiši ono što je ugrađeno'},
+  modeVoice:{de:'Sprache',ro:'Voce',pl:'Głos',hr:'Glas'},
+  modeVoiceSub:{de:'ansagen &amp; zählen',ro:'dictează &amp; numără',pl:'dyktuj i licz',hr:'diktiraj i broji'},
+  modeManual:{de:'Manuell',ro:'Manual',pl:'Ręcznie',hr:'Ručno'},
+  modeManualSub:{de:'Dropdown &amp; +/−',ro:'Listă &amp; +/−',pl:'Lista &amp; +/−',hr:'Popis &amp; +/−'},
+  voiceHint:{de:'Tippen und ansagen, z. B.',ro:'Apasă și dictează, de ex.',pl:'Naciśnij i dyktuj, np.',hr:'Pritisni i diktiraj, npr.'},
+  recStart:{de:'Aufnahme starten',ro:'Pornește înregistrarea',pl:'Rozpocznij nagrywanie',hr:'Započni snimanje'},
+  addLabel:{de:'Material hinzufügen',ro:'Adaugă material',pl:'Dodaj materiał',hr:'Dodaj materijal'},
+  selectPh:{de:'Material wählen …',ro:'Alege material …',pl:'Wybierz materiał …',hr:'Odaberi materijal …'},
+  gLief:{de:'geliefert',ro:'livrat',pl:'dostarczone',hr:'isporučeno'},
+  gBer:{de:'bereits',ro:'deja',pl:'już',hr:'već'},
+  gRest:{de:'Rest',ro:'rest',pl:'pozostało',hr:'ostatak'},
+  perWeek:{de:'/ Woche',ro:'/ săpt.',pl:'/ tydz.',hr:'/ tj.'},
+  empty:{de:'Noch nichts erfasst - per Sprache ansagen oder oben ein Material wählen.',ro:'Încă nimic - dictează vocal sau alege un material mai sus.',pl:'Jeszcze nic - dyktuj głosem lub wybierz materiał powyżej.',hr:'Još ništa - diktiraj glasom ili odaberi materijal gore.'},
+  toPhotos:{de:'Weiter zu Fotos ›',ro:'Mai departe la poze ›',pl:'Dalej do zdjęć ›',hr:'Dalje na fotografije ›'},
+  photoTitle:{de:'Rundum-Foto',ro:'Foto de ansamblu',pl:'Zdjęcie dookoła',hr:'Foto uokolo'},
+  photoSub:{de:'Ein Foto-Rundumblick je Zähl-Version - Beleg und Nachvollziehbarkeit ohne Rausfahren.',ro:'O rotire foto la fiecare numărare - dovadă și verificare fără deplasare.',pl:'Zdjęcia dookoła przy każdym liczeniu - dowód i weryfikacja bez dojazdu.',hr:'Krug fotografija po svakom brojanju - dokaz i provjera bez dolaska.'},
+  addPhoto:{de:'＋ Foto aufnehmen',ro:'＋ Adaugă poză',pl:'＋ Zrób zdjęcie',hr:'＋ Dodaj fotografiju'},
+  finish:{de:'Buchung abschließen ✓',ro:'Finalizează ✓',pl:'Zakończ ✓',hr:'Završi ✓'},
+  backToBook:{de:'Zurück zum Ausbuchen',ro:'Înapoi la înregistrare',pl:'Wróć do odpisywania',hr:'Natrag na otpis'},
+  doneTitle:{de:'Gespeichert · KW 27',ro:'Salvat · săpt. 27',pl:'Zapisano · tydz. 27',hr:'Spremljeno · tj. 27'},
+  doneSub:{de:'inkl. {n} Fotos. Der Projektleiter sieht den neuen Stand sofort im Dashboard.',ro:'incl. {n} poze. Șeful de proiect vede imediat noul stadiu.',pl:'w tym {n} zdjęć. Kierownik od razu widzi nowy stan.',hr:'uklj. {n} fotografija. Voditelj odmah vidi novo stanje.'},
+  backToRooms:{de:'Zurück zur Raumliste',ro:'Înapoi la încăperi',pl:'Wróć do pomieszczeń',hr:'Natrag na prostorije'},
+  viewAsPL:{de:'Als Projektleiter ansehen ›',ro:'Vezi ca șef de proiect ›',pl:'Zobacz jako kierownik ›',hr:'Prikaži kao voditelj ›'},
+};
+app.t = function(k,vars){ let s=(this.T[k]&&(this.T[k][this.lang]||this.T[k].de))||k; if(vars) Object.entries(vars).forEach(([a,b])=>s=s.replace('{'+a+'}',b)); return s; };
+app.setLang = function(l){ this.lang=l; this.render(); };
+app.MB = {m1:'rohr',m2:'rohr',m3:'rohr',m4:'bogen',m5:'bogen',m6:'abzweig',m7:'reduzierung',m8:'rohr',m9:'rohr',m10:'bogen',m11:'schelle',m12:'ventil'};
+app.GLOSS = {
+  rohr:{ro:'Țeavă',pl:'Rura',hr:'Cijev'},
+  bogen:{ro:'Cot',pl:'Kolano',hr:'Koljeno'},
+  abzweig:{ro:'Ramificație',pl:'Odgałęzienie',hr:'Odvojak'},
+  reduzierung:{ro:'Reducție',pl:'Redukcja',hr:'Redukcija'},
+  schelle:{ro:'Brățară',pl:'Obejma',hr:'Obujmica'},
+  ventil:{ro:'Robinet',pl:'Zawór',hr:'Ventil'},
+};
+app.matFx = function(m){ if(this.lang==='de') return ''; const k=this.MB[m.id]; return (k&&this.GLOSS[k]&&this.GLOSS[k][this.lang])||''; };
+Object.assign(app.T, {
+  rec360:{de:'360°-Aufnahme starten',ro:'Pornește înregistrarea 360°',pl:'Rozpocznij nagranie 360°',hr:'Pokreni 360° snimku'},
+  slateTitle:{de:'360°-Klappe',ro:'Clapetă 360°',pl:'Klaps 360°',hr:'Klapa 360°'},
+  slateHint:{de:'Halte die 360°-Kamera <b>1 Sekunde auf diesen Bildschirm</b>, dann geh den Rundgang.',ro:'Ține camera 360° <b>1 secundă pe ecran</b>, apoi fă turul.',pl:'Skieruj kamerę 360° <b>na 1 sekundę na ekran</b>, potem zrób obchód.',hr:'Drži 360° kameru <b>1 sekundu na ekran</b>, zatim obiđi prostoriju.'},
+  fldProjekt:{de:'Projekt',ro:'Proiect',pl:'Projekt',hr:'Projekt'},
+  fldRaum:{de:'Raum',ro:'Încăpere',pl:'Pomieszczenie',hr:'Prostorija'},
+  fldKwDatum:{de:'KW / Datum',ro:'Săpt. / Data',pl:'Tydz. / Data',hr:'Tj. / Datum'},
+  fldMonteur:{de:'Monteur',ro:'Montator',pl:'Monter',hr:'Monter'},
+  fldId:{de:'Aufnahme-ID',ro:'ID înregistrare',pl:'ID nagrania',hr:'ID snimke'},
+  slateDone:{de:'Rundgang aufgenommen ›',ro:'Tur înregistrat ›',pl:'Obchód nagrany ›',hr:'Obilazak snimljen ›'},
+  cancel:{de:'Abbrechen',ro:'Anulează',pl:'Anuluj',hr:'Odustani'},
+  slateOff:{de:'Funktioniert offline - der Code trägt alle Daten.',ro:'Funcționează offline - codul conține toate datele.',pl:'Działa offline - kod zawiera wszystkie dane.',hr:'Radi offline - kôd nosi sve podatke.'},
+});
+Object.assign(app.T, {
+  reorder:{de:'Material nachfordern',ro:'Solicită material',pl:'Zamów materiał',hr:'Naruči materijal'},
+  reorderTitle:{de:'Materialnachforderung',ro:'Solicitare de material',pl:'Zamówienie materiału',hr:'Naknadna narudžba'},
+  reMat:{de:'Material / Artikel',ro:'Material / articol',pl:'Materiał / artykuł',hr:'Materijal / artikl'},
+  reQty:{de:'Menge',ro:'Cantitate',pl:'Ilość',hr:'Količina'},
+  reNote:{de:'Notiz / Grund (optional)',ro:'Notă / motiv (opțional)',pl:'Notatka / powód (opc.)',hr:'Napomena / razlog (neob.)'},
+  reCreate:{de:'Nachforderung anlegen',ro:'Creează solicitarea',pl:'Utwórz zamówienie',hr:'Kreiraj narudžbu'},
+  reorderShort:{de:'Nachfordern',ro:'Solicită',pl:'Zamów',hr:'Naruči'},
+  reBest:{de:'Besteller (wer hat angefragt)',ro:'Solicitant (cine a cerut)',pl:'Zamawiający (kto poprosił)',hr:'Naručitelj (tko je tražio)'},
+  reOpen:{de:'Bereits nachgefordert',ro:'Deja solicitat',pl:'Już zamówione',hr:'Već naručeno'},
+  reNew:{de:'Neu anlegen',ro:'Adaugă nou',pl:'Dodaj nowe',hr:'Dodaj novo'},
+  reSign:{de:'Unterschrift Besteller',ro:'Semnătura solicitantului',pl:'Podpis zamawiającego',hr:'Potpis naručitelja'},
+  reClear:{de:'löschen',ro:'șterge',pl:'wyczyść',hr:'obriši'},
+  nachtrag:{de:'Nachtrag',ro:'Supliment',pl:'Dodatek',hr:'Dodatak'},
+  nachtragTitle:{de:'Nachtrag erfassen',ro:'Adaugă supliment',pl:'Dodaj dodatek',hr:'Unesi dodatak'},
+  typeMat:{de:'Material',ro:'Material',pl:'Materiał',hr:'Materijal'},
+  typeStd:{de:'Stundenlohn',ro:'Manoperă (ore)',pl:'Robocizna (godz.)',hr:'Rad po satu'},
+  fldTaetigkeit:{de:'Tätigkeit',ro:'Activitate',pl:'Czynność',hr:'Radnja'},
+  fldStunden:{de:'Stunden',ro:'Ore',pl:'Godziny',hr:'Sati'},
+  nachtragOpen:{de:'Bereits erfasst',ro:'Deja înregistrat',pl:'Już zapisane',hr:'Već uneseno'},
+});
+app.reorders = [
+  {type:'stunden', mat:'Zusätzliche Kernbohrung + Anpassung', qty:'2,5 h', room:'Technikraum UG', besteller:'Bauleiter Fischer', ts:'02.07.2026 · 11:20', signed:true, status:'angefragt'},
+  {type:'material', mat:'Duschkopf (Sonderwunsch Bauherr)', qty:'1 St', room:'WC-Bereich UG', besteller:'Bauleiter Fischer', ts:'02.07.2026 · 15:10', signed:true, status:'angefragt'},
+  {type:'material', mat:'Edelstahl-Rohr 28×1,2 (DN 25)', qty:'5 m', room:'Flur UG', besteller:'Planer Hörmann', ts:'01.07.2026 · 09:40', signed:true, status:'bestellt'},
+];
+app.openReorder = function(){ this.reType='material'; this.screen='reorder'; this.render(); };
+app.setReType = function(t){ this.reType=t; this.render(); };
+app.addReorder = function(){
+  const g=id=>{const e=document.getElementById(id); return e?e.value.trim():'';};
+  const desc=g('reMat'); if(!desc){ this.screen='book'; this.render(); return; }
+  const now=new Date(); const p=n=>String(n).padStart(2,'0');
+  const ts=`${p(now.getDate())}.${p(now.getMonth()+1)}.${now.getFullYear()} · ${p(now.getHours())}:${p(now.getMinutes())}`;
+  const qty = this.reType==='stunden' ? ((g('reStd')||'-')+' h') : (g('reQty')||'-');
+  this.reorders.unshift({type:this.reType, mat:desc, qty, room:this.room.n, besteller:g('reBest')||'-', ts, signed:!!this.sigHasInk, status:'angefragt'});
+  this.sigHasInk=false; this.screen='book'; this.render();
+};
+app.initSig = function(){
+  const cv=document.getElementById('sigpad'); if(!cv) return;
+  const ctx=cv.getContext('2d'); ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1C2A3B';
+  this.sigHasInk=false; let drawing=false, last=null;
+  const pos=e=>{const r=cv.getBoundingClientRect(); const t=(e.touches&&e.touches[0])||e; return [(t.clientX-r.left)*(cv.width/r.width),(t.clientY-r.top)*(cv.height/r.height)];};
+  cv.addEventListener('pointerdown',e=>{drawing=true; last=pos(e); e.preventDefault();});
+  cv.addEventListener('pointermove',e=>{ if(!drawing)return; const q=pos(e); ctx.beginPath(); ctx.moveTo(last[0],last[1]); ctx.lineTo(q[0],q[1]); ctx.stroke(); last=q; app.sigHasInk=true; e.preventDefault();});
+  window.addEventListener('pointerup',()=>{drawing=false;});
+};
+app.clearSig = function(){ const cv=document.getElementById('sigpad'); if(cv){ cv.getContext('2d').clearRect(0,0,cv.width,cv.height); } this.sigHasInk=false; };
+app.addPhoto = function(){ (this.photoList=this.photoList||[]).push(null); this.render(); };
+
+/* ---- icons ---- */
+function icon(kind,color){
+  const c = color||'#41505F';
+  const S = `stroke="${c}" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"`;
+  const paths = {
+    pipe:`<path ${S} d="M3 9h14a4 4 0 0 1 4 4v2M3 9v6h14"/><path ${S} d="M3 8.2v7.6M17 13v3.5"/>`,
+    bend:`<path ${S} d="M6 21v-6a9 9 0 0 1 9-9h3"/><path ${S} d="M4.5 21h3M15 4.5v3"/>`,
+    tee:`<path ${S} d="M3 10h18M3 14h18M12 14v6"/><path ${S} d="M3 9.5v5M21 9.5v5M10.5 20h3"/>`,
+    red:`<path ${S} d="M3 8h7l4 3v2l-4 3H3"/><path ${S} d="M3 7.5v9"/>`,
+    clamp:`<circle ${S} cx="12" cy="12" r="6"/><path ${S} d="M12 6V3M12 21v-3"/>`,
+    valve:`<path ${S} d="M12 12l-6-4v8zM12 12l6-4v8z"/><path ${S} d="M12 12V5M9 5h6"/>`,
+  };
+  return `<svg width="24" height="24" viewBox="0 0 24 24">${paths[kind]||paths.pipe}</svg>`;
+}
+function ring(pct){
+  const r=18, c=2*Math.PI*r, off=c*(1-pct/100);
+  const col = pct>=75?'#2FA36B':pct>=45?'#3B82C4':'#E0533D';
+  return `<svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="18" fill="none" stroke="#EDF1F4" stroke-width="5"/><circle cx="23" cy="23" r="18" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 23 23)"/><text x="23" y="27" text-anchor="middle" font-size="12" font-weight="800" fill="#1E2632">${pct}</text></svg>`;
+}
+
+function pseudoQR(seed){
+  const N=25, m=8, size=N*m;
+  const h=(x)=>{let s=2166136261>>>0;for(let i=0;i<x.length;i++){s^=x.charCodeAt(i);s=Math.imul(s,16777619);}return s>>>0;};
+  const finder=(r,c,R,C)=>{const rr=r-R,cc=c-C;if(rr<0||rr>6||cc<0||cc>6)return null;const b=(rr===0||rr===6||cc===0||cc===6),inn=(rr>=2&&rr<=4&&cc>=2&&cc<=4);return b||inn;};
+  let cells='';
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    let on=finder(r,c,0,0); if(on===null)on=finder(r,c,0,N-7); if(on===null)on=finder(r,c,N-7,0);
+    if(on===null) on=((h(seed+r+'_'+c)&1)===1);
+    if(on) cells+=`<rect x="${c*m}" y="${r*m}" width="${m}" height="${m}"/>`;
+  }
+  return `<svg viewBox="0 0 ${size} ${size}" width="100%" height="100%" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="#fff"/><g fill="#0c0c0d">${cells}</g></svg>`;
+}
+
+/* ---- role ---- */
+app.setRole = function(r){
+  this.role=r;
+  document.getElementById('rb-m').classList.toggle('on', r==='monteur');
+  document.getElementById('rb-p').classList.toggle('on', r==='pl');
+  document.getElementById('monteur').style.display = r==='monteur'?'block':'none';
+  document.getElementById('pl').style.display = r==='pl'?'block':'none';
+  if(r==='monteur') this.render(); else this.renderPL();
+};
+
+/* ---- monteur render ---- */
+app.render = function(){
+  const el = document.getElementById('monteur');
+  let head = `<div class="d-head"><div><div class="t">Hallenbad Weingarten</div><div class="sub">Burk Haustechnik · UG</div></div><div class="kw">KW 27</div></div>`;
+  const langs=[['de','DE'],['ro','RO'],['pl','PL'],['hr','HR']];
+  const langbar = `<div class="langbar"><span class="lg">🌐</span>${langs.map(([c,l])=>`<button class="lgp ${this.lang===c?'on':''}" onclick="app.setLang('${c}')">${l}</button>`).join('')}</div>`;
+  let body='';
+  if(this.screen==='rooms') body=this.viewRooms();
+  else if(this.screen==='book') body=this.viewBook();
+  else if(this.screen==='slate') body=this.viewSlate();
+  else if(this.screen==='reorder') body=this.viewReorder();
+  else if(this.screen==='photos') body=this.viewPhotos();
+  else if(this.screen==='done') body=this.viewDone();
+  el.innerHTML = `<div class="device">${head}${langbar}<div class="d-body">${body}</div></div>`;
+  if(this.screen==='reorder') this.initSig();
+};
+
+app.viewRooms = function(){
+  let rr = this.rooms.map(r=>`
+    <button class="room" onclick="app.openRoom('${r.id}')">
+      <div class="ring">${ring(r.pct)}</div>
+      <div><div class="r-name">${r.n}${this.lang!=='de'&&r.tr?` <i class="fn">${r.tr[this.lang]}</i>`:''}</div><div class="r-sub">${r.s}</div></div>
+      <div class="chev">›</div>
+    </button>`).join('');
+  return `<div class="proj"><div class="p1">${this.t('projTitle')}</div><div class="p2">${this.t('projSub')}</div></div>
+    <div class="sect">${this.t('roomsSect')}</div>${rr}`;
+};
+
+app.openRoom = function(id){
+  this.room = this.rooms.find(r=>r.id===id);
+  this.session = {}; this.q=''; this.uOpen=false; this.booking = ["m2", "m3", "m4"];
+  this.photoList = (this.demoPhotos||[]).slice();
+  this.screen='book'; this.render();
+};
+
+app.searchMat=function(v){this.q=v;this.render();var el=document.getElementById('matSearch');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
+app.pickMat=function(id){this.recent=[id].concat((this.recent||[]).filter(function(x){return x!==id;})).slice(0,6);this.q='';this.addFromDrop(id);};
+app.toggleUnclear=function(){this.uOpen=!this.uOpen;this.render();};
+app.saveUnclear=function(){var t=document.getElementById('uTxt'),q=document.getElementById('uQty');if(!t||!t.value.trim())return;(this.unclear=this.unclear||[]).push({txt:t.value.trim(),qty:(q&&q.value.trim())||'-'});this.uOpen=false;this.render();};
+app.viewBook = function(){
+  const rows = this.booking.map(id=>this.bookRow(id)).join('');
+  const groups={}; this.materials.forEach(m=>{(groups[m.grp]=groups[m.grp]||[]).push(m);});
+  const q=(this.q||'').trim().toLowerCase();
+  let list=[];
+  if(q){ list=this.materials.filter(m=>((m.cn+' '+m.n+' '+m.pos+' '+m.grp).toLowerCase().indexOf(q)>=0)).slice(0,8); }
+  else { list=(this.recent||[]).map(id=>this.materials.find(m=>m.id===id)).filter(Boolean).slice(0,5); }
+  const res=list.map(m=>`<div class="resrow" onclick="app.pickMat('${m.id}')"><div class="rn2">${m.cn}</div><div class="rs2">Pos ${m.pos} · ${m.grp} · ${m.u}${m.bh?` · <span class="rbh">enthält: ${m.bh}</span>`:''}</div></div>`).join('') || `<div class="reshint">${q?'Nichts gefunden - dann „Position unklar" nutzen':'Zuletzt genutzte Positionen erscheinen hier'}</div>`;
+  const ur=(this.unclear||[]).map(u=>`<div class="urow"><div><div class="rn2">${u.txt}</div><div class="rs2">${u.qty} · ${this.room.n}</div></div><span class="ubadge">Zuordnung offen</span></div>`).join('');
+  return `
+   <button class="backbtn" onclick="app.screen='rooms';app.render()">‹ ${this.t('back')}</button>
+   <div class="bkhead">
+     <div>
+       <div style="font-weight:800;font-size:17px;margin-bottom:2px;">${this.room.n}</div>
+       <div style="color:var(--muted);font-size:13px;">${this.t('bookHead')} · KW 27</div>
+     </div>
+     <button class="addbtn" onclick="app.openReorder()">＋ ${this.t('nachtrag')}</button>
+   </div>
+
+   <div class="searchwrap">
+     <label>${this.t('addLabel')}</label>
+     <input id="matSearch" class="matsearch" placeholder="Position suchen - z. B. 110, Bogen, Schelle" value="${(this.q||'').replace(/"/g,'&quot;')}" oninput="app.searchMat(this.value)">
+     <div class="reslist">${res}</div>
+     <button class="unclearbtn" onclick="app.toggleUnclear()">Position unklar - trotzdem erfassen</button>
+     ${this.uOpen?`<div class="uform">
+        <input id="uTxt" class="matsearch" placeholder="Was wurde verbaut? z. B. 20 Rohrschellen DN 100">
+        <input id="uQty" class="matsearch" placeholder="Menge, z. B. 20 St">
+        <button class="primary" style="margin-top:8px" onclick="app.saveUnclear()">Erfassen</button>
+      </div>`:''}
+   </div>
+   ${ur?`<div class="usect">Zuordnung offen - der Projektleiter ordnet zu</div>${ur}`:''}
+
+   ${rows || `<div style="text-align:center;color:var(--muted);font-size:13px;padding:18px 0;">${this.t('empty')}</div>`}
+
+   <div class="footcta">
+     <button class="primary dark" onclick="app.screen='photos';app.render()">${this.t('toPhotos')}</button>
+     <button class="rec360" style="margin:10px 0 0" onclick="app.openSlate()"><span class="dot"></span> ${this.t('rec360')}</button>
+   </div>`;
+};
+
+app.bookRow = function(id){
+  const m = this.materials.find(x=>x.id===id);
+  const d = this.session[id]||0;
+  const rest = m.gel - m.verb - d;
+  const doneP = Math.min(100, Math.round((m.verb+d)/m.gel*100));
+  const over = rest<0;
+  return `
+   <div class="brow">
+     <div class="ic">${icon(m.ic, over?'#E0533D':'#41505F')}</div>
+     <div class="info">
+       <div class="posrow"><span class="poschip">Pos ${m.pos}</span>${m.bh?` <span class="bhchip">enthält: ${m.bh}</span>`:''}</div>
+       <div class="bn">${m.n}${this.matFx(m)?` <i class="fn">${this.matFx(m)}</i>`:''}</div>
+       <div class="bs">${m.s}</div>
+       <div class="pool"><span>${this.t('gLief')} <b>${num(m.gel)} ${m.u}</b></span><span>${this.t('gBer')} <b>${num(m.verb)}</b></span><span class="rest ${over?'neg':''}">${this.t('gRest')} <b>${num(rest)} ${m.u}</b></span></div>
+       <div class="bar"><i class="${over?'over':''}" style="width:${Math.min(100,doneP)}%"></i></div>
+     </div>
+     <div class="stepper">
+       <button onclick="app.step('${id}',-1)">−</button>
+       <div class="val">${d>0?'+':''}${num(d)}<span class="unit">${m.u} ${this.t('perWeek')}</span></div>
+       <button onclick="app.step('${id}',1)">+</button>
+     </div>
+   </div>`;
+};
+
+app.setMode = function(m){ this.mode=m; this.render(); };
+app.step = function(id, dir){
+  const step = this.materials.find(x=>x.id===id).u==='m'?1:1;
+  this.session[id] = Math.max(0,(this.session[id]||0)+dir*step);
+  if(!this.booking.includes(id)) this.booking.push(id);
+  this.render();
+};
+app.addFromDrop = function(id){
+  if(!id) return;
+  if(!this.booking.includes(id)) this.booking.push(id);
+  if(!this.session[id]) this.session[id]=0;
+  this.render();
+};
+app.simVoice = function(){
+  // simulate a spoken tally
+  const picks = [['m4',12],['m1',8],['m11',6]];
+  document.getElementById('said').textContent = '„DN 110 Bogen 45° zwölf … Rohr DN 110 acht Meter … Schelle DN 110 sechs"';
+  picks.forEach(([id,q])=>{ if(!this.booking.includes(id)) this.booking.push(id); this.session[id]=q; });
+  setTimeout(()=>this.render(), 650);
+};
+
+app.openSlate = function(){
+  this.slateTime = new Date();
+  const p=n=>String(n).padStart(2,'0'); const d=this.slateTime;
+  this.slateId = 'BURK-'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+Math.random().toString(36).slice(2,7).toUpperCase();
+  this.screen='slate'; this.render();
+};
+app.viewSlate = function(){
+  const d=this.slateTime;
+  const dt = d.toLocaleDateString('de-DE')+' · '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  const payload = `burk-mt|proj=HallenbadWGT|room=${this.room.id}|kw=27|id=${this.slateId}|ts=${d.toISOString()}`;
+  return `
+   <button class="backbtn" onclick="app.screen='book';app.render()">‹ ${this.t('back')}</button>
+   <div class="slate">
+     <div class="slate-h">🎬 ${this.t('slateTitle')}</div>
+     <div class="slate-qr">${pseudoQR(payload)}</div>
+     <div class="slate-hint">${this.t('slateHint')}</div>
+     <div class="slate-fields">
+       <div><span>${this.t('fldProjekt')}</span><b>Hallenbad Weingarten</b></div>
+       <div><span>${this.t('fldRaum')}</span><b>${this.room.n}</b></div>
+       <div><span>${this.t('fldKwDatum')}</span><b>KW 27 · ${dt}</b></div>
+       <div><span>${this.t('fldMonteur')}</span><b>M. Kovač</b></div>
+       <div><span>${this.t('fldId')}</span><b>${this.slateId}</b></div>
+     </div>
+     <div class="slate-off">${this.t('slateOff')}</div>
+   </div>
+   <div class="footcta">
+     <button class="primary" onclick="app.screen='photos';app.render()">${this.t('slateDone')}</button>
+     <button class="ghost" onclick="app.screen='book';app.render()">${this.t('cancel')}</button>
+   </div>`;
+};
+app.viewReorder = function(){
+  const tTag = t => t==='stunden'?'<span class="tag n">Stundenlohn</span>':'<span class="tag n">Material</span>';
+  const list = (this.reorders||[]).map(r=>`
+    <div class="reo">
+      <div><div class="mm">${r.mat}</div><div class="ms">${r.qty} · ${r.room} · ${r.besteller||'-'}${r.ts?' · '+r.ts:''}${r.signed?' · ✍︎ signiert':''}</div></div>
+      <div style="white-space:nowrap">${tTag(r.type)}${r.status==='geliefert'?'<span class="tag g">geliefert</span>':r.status==='bestellt'?'<span class="tag a">bestellt</span>':'<span class="tag r">angefragt</span>'}</div>
+    </div>`).join('') || `<div class="ms" style="padding:8px 0;">-</div>`;
+  const stunden = this.reType==='stunden';
+  return `
+   <button class="backbtn" onclick="app.screen='book';app.render()">‹ ${this.t('back')}</button>
+   <div style="font-weight:800;font-size:17px;">${this.t('nachtragTitle')}</div>
+   <div style="color:var(--muted);font-size:13px;margin:2px 0 14px;">${this.room.n} · KW 27</div>
+
+   <div class="sect">${this.t('reNew')}</div>
+   <div class="modes">
+     <div class="mode ${!stunden?'on':''}" onclick="app.setReType('material')">${this.t('typeMat')}</div>
+     <div class="mode ${stunden?'on':''}" onclick="app.setReType('stunden')">${this.t('typeStd')}</div>
+   </div>
+   ${stunden ? `
+   <div class="dropwrap"><label>${this.t('fldTaetigkeit')}</label><input id="reMat" class="ti" placeholder="z. B. Kernbohrung + Anpassung"></div>
+   <div class="dropwrap"><label>${this.t('fldStunden')}</label><input id="reStd" class="ti" placeholder="z. B. 2,5"></div>
+   ` : `
+   <div class="dropwrap"><label>${this.t('reMat')}</label><input id="reMat" class="ti" placeholder="z. B. Duschkopf"></div>
+   <div class="dropwrap"><label>${this.t('reQty')}</label><input id="reQty" class="ti" placeholder="z. B. 1 St"></div>
+   `}
+   <div class="dropwrap"><label>${this.t('reBest')}</label><input id="reBest" class="ti" placeholder="z. B. Bauleiter Fischer"></div>
+   <div class="dropwrap"><label>${this.t('reNote')}</label><input id="reNote" class="ti" placeholder="…"></div>
+   <div class="dropwrap">
+     <label style="display:flex;justify-content:space-between;align-items:center;">${this.t('reSign')} <span onclick="app.clearSig()" style="color:var(--muted);cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0;">${this.t('reClear')}</span></label>
+     <canvas id="sigpad" class="sigpad" width="620" height="180"></canvas>
+     <div style="font-size:10.5px;color:var(--muted);margin-top:4px;">Zeitstempel wird automatisch gesetzt.</div>
+   </div>
+   <button class="primary" onclick="app.addReorder()">${this.t('reCreate')}</button>
+   <button class="ghost" onclick="app.screen='book';app.render()">${this.t('cancel')}</button>
+
+   <div class="sect" style="margin-top:18px;">${this.t('nachtragOpen')}</div>
+   <div style="border:1px solid var(--line);border-radius:12px;padding:2px 12px;">${list}</div>`;
+};
+app.viewPhotos = function(){
+  let tiles=(this.photoList||[]).map((src,i)=> src
+    ? `<div class="ptile filled"><img src="${src}" alt=""><span>KW27 · Foto ${i+1}</span></div>`
+    : `<div class="ptile filled"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><rect x="3" y="6" width="18" height="13" rx="2"/><circle cx="12" cy="12.5" r="3.2"/><path d="M8 6l1.5-2h5L16 6"/></svg><span>KW27 · Foto ${i+1}</span></div>`).join('');
+  tiles+=`<div class="ptile addtile" onclick="app.addPhoto()">${this.t('addPhoto')}</div>`;
+  return `
+   <button class="backbtn" onclick="app.screen='book';app.render()">‹ ${this.t('backShort')}</button>
+   <div style="font-weight:800;font-size:17px;">${this.t('photoTitle')} · ${this.room.n}</div>
+   <div style="color:var(--muted);font-size:13px;margin:2px 0 14px;">${this.t('photoSub')}</div>
+   <div class="pgrid">${tiles}</div>
+   <div class="footcta"><button class="primary" onclick="app.commit()">${this.t('finish')}</button>
+   <button class="ghost" onclick="app.screen='book';app.render()">${this.t('backToBook')}</button></div>`;
+};
+
+app.commit = function(){
+  Object.entries(this.session).forEach(([id,d])=>{
+    const m=this.materials.find(x=>x.id===id); if(m) m.verb = Math.min(m.gel, m.verb + d);
+  });
+  this.lastSummary = Object.entries(this.session).filter(([,d])=>d>0).map(([id,d])=>{
+    const m=this.materials.find(x=>x.id===id); return {n:m.n, d, u:m.u};
+  });
+  this.screen='done'; this.render();
+};
+
+app.viewDone = function(){
+  const rows = (this.lastSummary||[]).map(s=>`<div class="sr"><span>${s.n}</span><b>+${num(s.d)} ${s.u}</b></div>`).join('') || `<div class="sr"><span>Keine Mengen erfasst</span><b>-</b></div>`;
+  return `<div class="done">
+     <div class="check">✓</div>
+     <h2>${this.t('doneTitle')}</h2>
+     <p>${this.room.n} · ${this.t('doneSub',{n:(this.photoList||[]).length})}</p>
+   </div>
+   <div class="summary">${rows}</div>
+   <button class="primary" onclick="app.screen='rooms';app.render()">${this.t('backToRooms')}</button>
+   <button class="ghost" onclick="app.setRole('pl')">${this.t('viewAsPL')}</button>`;
+};
+
+/* ---- PL dashboard ---- */
+app.setPlTab=function(t){this.plTab=t;this.renderPL();};
+app.plSearch=function(v){this.plQ=v;this.renderPL();var el=document.getElementById('plSearch');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}};
+app.setPlFilter=function(f){this.plFilter=f;this.renderPL();};
+app.setPlSort=function(s){this.plSort=s;this.renderPL();};
+app.togglePlGrp=function(g){g=decodeURIComponent(g);this.plOpenGrp=this.plOpenGrp||{};this.plOpenGrp[g]=!this.plOpenGrp[g];this.renderPL();};
+
+app.renderPL = function(){
+  const M = this.materials;
+  const gelW = M.reduce((a,m)=>a+m.gel*m.p,0);
+  const verbW = M.reduce((a,m)=>a+m.verb*m.p,0);
+  const prog = Math.round(verbW/gelW*100);
+  const cutA = M.filter(m=>m.cut);
+  const cutGel = cutA.reduce((a,m)=>a+m.gel,0), cutVerb=cutA.reduce((a,m)=>a+m.verb,0);
+  const verschnitt = cutGel>0?Math.round((cutGel-cutVerb)/cutGel*100):0;
+  const offeneRaeume = this.rooms.filter(r=>r.pct<100).length;
+  const openVal = m => Math.max(0,(m.gel-m.verb))*m.p;
+  const tab = this.plTab||'fortschritt';
+
+  const hist=[41,55,64,72,prog]; const kws=['KW23','KW24','KW25','KW26','KW27'];
+  const cw=440,ch=150,pad=24;
+  const pts=hist.map((v,i)=>[pad+(cw-2*pad)*i/(hist.length-1), ch-pad-(ch-2*pad)*v/100]);
+  const line=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const area=`M${pts[0][0]} ${ch-pad} `+pts.map(p=>'L'+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')+` L${pts[pts.length-1][0]} ${ch-pad} Z`;
+  const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i==pts.length-1?4.5:3}" fill="${i==pts.length-1?'#3B82C4':'#1E2632'}"/>`).join('');
+  const labels=kws.map((k,i)=>`<text x="${pts[i][0].toFixed(1)}" y="${ch-6}" font-size="10" fill="#71808F" text-anchor="middle">${k}</text>`).join('');
+  const chart=`<svg width="100%" viewBox="0 0 ${cw} ${ch}"><path d="${area}" fill="#3B82C422"/><path d="${line}" fill="none" stroke="#1E2632" stroke-width="2"/>${dots}${labels}<text x="${pts[4][0]-4}" y="${pts[4][1]-10}" font-size="11" font-weight="700" fill="#3B82C4" text-anchor="end">${prog}%</text></svg>`;
+
+  const roomsBars = this.rooms.map(r=>`<div class="rb"><div class="rt"><span style="color:var(--ink)">${r.n}</span><span>${r.pct}%</span></div><div class="tbar"><i style="width:${r.pct}%"></i></div></div>`).join('');
+  const stTag = s => s==='geliefert'?'<span class="tag g">geliefert</span>':s==='bestellt'?'<span class="tag a">bestellt</span>':'<span class="tag r">angefragt</span>';
+  const tType = t => t==='stunden'?'<span class="tag n">Stundenlohn</span>':'<span class="tag n">Material</span>';
+  const reorderHtml = (this.reorders||[]).map(r=>`<div class="reo"><div><div class="mm">${r.mat}</div><div class="ms">${r.qty} · ${r.room} · ${r.besteller||'-'}${r.ts?' · '+r.ts:''}${r.signed?' · signiert':''}</div></div><div style="white-space:nowrap">${tType(r.type)}${stTag(r.status)}</div></div>`).join('') || '<div class="ms" style="padding:8px 0;">Keine Nachträge.</div>';
+
+  /* ---------- Material ---------- */
+  const q=(this.plQ||'').trim().toLowerCase();
+  const f=this.plFilter||'arbeit';
+  const srt=this.plSort||'wert';
+  let list=M.slice();
+  if(f==='arbeit') list=list.filter(m=>m.gel>0||m.verb>0);
+  else if(f==='offen') list=list.filter(m=>(m.gel-m.verb)>0.001);
+  else if(f==='ueber') list=list.filter(m=>m.verb>m.gel+0.001);
+  else if(f==='nicht') list=list.filter(m=>m.verb<=0);
+  if(q) list=list.filter(m=>((m.cn+' '+m.n+' '+m.pos+' '+m.grp).toLowerCase().indexOf(q)>=0));
+  if(srt==='wert') list.sort((a,b)=>openVal(b)-openVal(a));
+  else if(srt==='fort') list.sort((a,b)=>(b.verb/(b.gel||1))-(a.verb/(a.gel||1)));
+  else list.sort((a,b)=>String(a.pos).localeCompare(String(b.pos),'de',{numeric:true}));
+
+  const mkRow = m => {
+    const pct=m.gel>0?Math.min(100,Math.round(m.verb/m.gel*100)):0;
+    const over=m.verb>m.gel+0.001;
+    return `<div class="mrow"><div class="mleft">
+      <div class="mn">${m.cn}${over?' <span class="tag r">über LV</span>':''}</div>
+      <div class="msub">Pos ${m.pos} · ${num(m.gel)} ${m.u} geliefert · ${num(m.verb)} aufgemessen${m.bh?` · <span class="rbh">enthält: ${m.bh}</span>`:''}</div>
+      <div class="mini2"><i class="${over?'over':''}" style="width:${pct}%"></i></div></div>
+      <div class="mval">${money(openVal(m))} €<span>offen</span></div></div>`;
+  };
+  const top = list.filter(m=>openVal(m)>0).slice().sort((a,b)=>openVal(b)-openVal(a)).slice(0,5);
+  const topHtml = top.map(mkRow).join('') || '<div class="note">Keine offenen Posten im aktuellen Filter.</div>';
+  const groups={}; list.forEach(m=>{(groups[m.grp]=groups[m.grp]||[]).push(m);});
+  const grpHtml = Object.keys(groups).map(g=>{
+    const items=groups[g];
+    const gOpen=items.reduce((a,m)=>a+openVal(m),0);
+    const gGel=items.reduce((a,m)=>a+m.gel*m.p,0), gVerb=items.reduce((a,m)=>a+m.verb*m.p,0);
+    const gp=gGel>0?Math.round(gVerb/gGel*100):0;
+    const isOpen=(this.plOpenGrp||{})[g];
+    return `<div class="mgrp"><button class="mgrph" onclick="app.togglePlGrp('${encodeURIComponent(g)}')">
+      <div><div class="gn">${isOpen?'▾':'▸'} ${g}</div><div class="gs">${items.length} Positionen · ${gp}% aufgemessen</div></div>
+      <div class="gv">${money(gOpen)} €<span>offen</span></div></button>
+      ${isOpen?`<div class="mlist">${items.map(mkRow).join('')}</div>`:''}</div>`;
+  }).join('') || '<div class="note">Nichts gefunden.</div>';
+  const chip=(id,label)=>`<button class="fchip ${f===id?'on':''}" onclick="app.setPlFilter('${id}')">${label}</button>`;
+  const sopt=(id,label)=>`<button class="fchip ${srt===id?'on':''}" onclick="app.setPlSort('${id}')">${label}</button>`;
+
+  const panels = {
+    fortschritt:`<div class="panel"><h3>Fortschritt über Zeit <small>· Ausbuch-Prozent je Woche (Liquiditätskurve)</small></h3>${chart}
+      <div class="note">Je häufiger ausgebucht wird, desto aktueller der verbaute Wert - Basis für frühere Abschlagsrechnungen.</div></div>`,
+    raeume:`<div class="panel"><h3>Räume</h3><div class="roomsbars">${roomsBars}</div></div>`,
+    material:`<div class="panel">
+      <h3>Material <small>· nach LV-Titel, sortiert nach offenem Wert</small></h3>
+      <div class="mtool">
+        <input id="plSearch" placeholder="Position suchen - z. B. 110, Bogen, Schelle" value="${(this.plQ||'').replace(/"/g,'&quot;')}" oninput="app.plSearch(this.value)">
+        ${chip('arbeit','In Arbeit')}${chip('offen','Rest offen')}${chip('ueber','Über LV')}${chip('nicht','Nicht begonnen')}${chip('alle','Alle')}
+      </div>
+      <div class="mtool"><span class="gs" style="margin-right:2px">Sortierung:</span>${sopt('wert','Offener Wert')}${sopt('fort','Fortschritt')}${sopt('pos','Positionsnummer')}</div>
+      <div class="topcard"><h4>Größte offene Posten</h4>${topHtml}</div>
+      ${grpHtml}
+      <div class="split3">
+        <div class="s"><div class="sl">Echter Verschnitt (Schnittware)</div><div class="sv">${verschnitt}%</div></div>
+        <div class="s"><div class="sl">Rückware (Stückware, wiederverwendbar)</div><div class="sv">~ ${money(M.filter(m=>!m.cut).reduce((a,m)=>a+Math.max(0,m.gel-m.verb)*m.p,0))} €</div></div>
+        <div class="s"><div class="sl">Schwund (Differenz ungeklärt)</div><div class="sv">offen</div></div>
+      </div></div>`,
+    nachtraege:`<div class="panel"><h3>Nachträge <small>· Material und Stundenlohn, mit Unterschrift</small></h3>
+      <div>${reorderHtml}</div>
+      <button class="act" style="margin:12px 0 0" onclick="app.reorders.unshift({type:'material',mat:'Neue Position (Demo)',qty:'-',room:'-',besteller:'-',ts:'jetzt',signed:false,status:'angefragt'});app.renderPL();">＋ Nachtrag erfassen</button></div>`,
+    fotos:`<div class="panel"><h3>Foto-Zeitleiste <small>· Rundum-Belege je Version</small></h3>
+      <div class="timeline">${['KW23','KW24','KW25','KW26','KW27'].map(k=>`<div class="tt"><div class="th"></div><div class="tl">${k}</div></div>`).join('')}</div>
+      <div class="note">Ein Klick auf eine Woche zeigt im Vollprodukt die Rundum-Fotos - Nachvollziehbarkeit ohne Baustellenbesuch.</div></div>`
+  };
+  const tabs=[['fortschritt','Fortschritt'],['raeume','Räume'],['material','Material'],['nachtraege','Nachträge'],['fotos','Foto-Zeitleiste']]
+    .map(t=>`<button class="pltab ${tab===t[0]?'on':''}" onclick="app.setPlTab('${t[0]}')">${t[1]}</button>`).join('');
+
+  document.getElementById('pl').innerHTML = `
+   <div class="pl-head"><div><h1>Projektleiter-Dashboard</h1><div class="sub">Hallenbad Weingarten · AG 00030004 · Stand KW 27</div></div></div>
+   <div class="kpis">
+     <div class="kpi accent"><div class="k-l">Verbauter Wert</div><div class="k-v">${money(verbW)} <span class="u">€</span></div><div class="k-s">von ${money(gelW)} € geliefert</div></div>
+     <div class="kpi"><div class="k-l">Fortschritt gesamt</div><div class="k-v">${prog}%</div><div class="k-s">wertgewichtet, verbaut zu geliefert</div></div>
+     <div class="kpi"><div class="k-l">Rest Schnittware</div><div class="k-v">${verschnitt}%</div><div class="k-s">Verschnitt und Rückware offen</div></div>
+     <div class="kpi"><div class="k-l">Offene Räume</div><div class="k-v">${offeneRaeume}<span class="u"> / ${this.rooms.length}</span></div><div class="k-s">noch nicht fertig</div></div>
+   </div>
+   <div class="pltabs">${tabs}</div>
+   ${panels[tab]}`;
+};
+
+app.demoPhotos = ['data:image/jpeg;base64,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','data:image/jpeg;base64,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','data:image/jpeg;base64,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'];
+app.render();
+</script>
+</body>
+</html>

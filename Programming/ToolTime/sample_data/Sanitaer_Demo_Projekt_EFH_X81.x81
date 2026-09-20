@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GAEB xmlns="http://www.gaeb.de/GAEB_DA_XML/3.2">
+  <GAEBInfo>
+    <Version>3.2</Version>
+    <Date>2026-09-19</Date>
+    <Description>Demo Sanitärprojekt EFH</Description>
+  </GAEBInfo>
+
+  <Award>
+    <ProjectName>EFH Musterstraße 12</ProjectName>
+    <Trade>Sanitärinstallation</Trade>
+
+    <BillOfQuantities>
+      <BoQBody>
+        <Item RNoPart="01.01.001">
+          <Description>Geberit Duofix WC-Element</Description>
+          <Quantity Unit="St">2</Quantity>
+          <Room>Bad EG; Gäste-WC</Room>
+        </Item>
+
+        <Item RNoPart="01.01.002">
+          <Description>Waschtisch 60 cm</Description>
+          <Quantity Unit="St">3</Quantity>
+          <Room>Bad EG; Gäste-WC</Room>
+        </Item>
+
+        <Item RNoPart="01.01.003">
+          <Description>Duscharmatur Unterputz</Description>
+          <Quantity Unit="St">1</Quantity>
+          <Room>Bad EG</Room>
+        </Item>
+
+        <Item RNoPart="01.01.004">
+          <Description>Küchenspülenanschluss</Description>
+          <Quantity Unit="St">1</Quantity>
+          <Room>Küche</Room>
+        </Item>
+
+        <Item RNoPart="01.02.001">
+          <Description>Mehrschichtverbundrohr DN16 Warmwasser</Description>
+          <Quantity Unit="m">24.5</Quantity>
+          <Room>Bad EG; Küche; Gäste-WC</Room>
+        </Item>
+
+        <Item RNoPart="01.02.002">
+          <Description>Mehrschichtverbundrohr DN16 Kaltwasser</Description>
+          <Quantity Unit="m">31.0</Quantity>
+          <Room>Bad EG; Küche; Gäste-WC</Room>
+        </Item>
+
+        <Item RNoPart="01.02.003">
+          <Description>Abwasserrohr DN50</Description>
+          <Quantity Unit="m">12.0</Quantity>
+          <Room>Bad EG; Küche</Room>
+        </Item>
+
+        <Item RNoPart="01.03.001">
+          <Description>Kugelhahn DN20</Description>
+          <Quantity Unit="St">6</Quantity>
+          <Room>Technikraum; Küche</Room>
+        </Item>
+
+        <Item RNoPart="01.03.002">
+          <Description>Warmwasserverteiler</Description>
+          <Quantity Unit="St">1</Quantity>
+          <Room>Technikraum</Room>
+        </Item>
+      </BoQBody>
+    </BillOfQuantities>
+  </Award>
+</GAEB>

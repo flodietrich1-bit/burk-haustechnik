@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="de"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Technischer Aufbau · MVP Aufmaß-App · Firmengruppe Burk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0A2540;--navy2:#0E3C63;--blue:#0082C9;--blueL:#3FA9E8;--sky:#8FD0F5;
+ --bg:#EEF3F8;--ink:#152534;--slate:#5C6B7A;--line:#D9E4EF;--amber:#E08A2B;--amberbg:#FBEEDD;--teal:#12897E;--tealbg:#E1F3F1;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Inter,system-ui,Arial,sans-serif;color:var(--ink);background:var(--bg);padding:34px 30px 46px}
+.wrap{max-width:1280px;margin:0 auto}
+.kick{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--blue);font-weight:700}
+h1{font-family:Sora;font-size:32px;font-weight:800;letter-spacing:-.5px;margin-top:8px}
+.sub{color:var(--slate);font-size:15px;margin-top:7px;max-width:900px;line-height:1.5}
+.rise{opacity:0;transform:translateY(18px);animation:rise .6s cubic-bezier(.2,.7,.2,1) forwards;animation-delay:calc(var(--i,0)*90ms + 100ms)}
+@keyframes rise{to{opacity:1;transform:none}}
+
+/* flow */
+.flow{display:grid;grid-template-columns:1fr 54px 1.15fr 54px 1fr;gap:0;align-items:stretch;margin-top:26px}
+.zone{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 18px 20px;box-shadow:0 8px 22px rgba(20,50,80,.06);display:flex;flex-direction:column}
+.zone.core{background:linear-gradient(160deg,var(--navy),var(--navy2));border:none;color:#fff;box-shadow:0 16px 36px rgba(10,37,64,.28)}
+.zlabel{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);margin-bottom:12px}
+.zone.core .zlabel{color:var(--sky)}
+.card{background:#F7FAFD;border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:10px}
+.zone.core .card{background:rgba(255,255,255,.07);border:1px solid rgba(143,208,245,.22)}
+.ct{font-family:Sora;font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:9px}
+.cd{font-size:12.5px;color:var(--slate);line-height:1.45;margin-top:5px}
+.zone.core .cd{color:#BFD9EE}
+.ico{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex:0 0 auto}
+.ico.g{background:var(--teal)}.ico.w{background:#fff;color:var(--navy)}
+.arrow{display:flex;align-items:center;justify-content:center;position:relative}
+.arrow:before{content:"";position:absolute;left:6px;right:6px;height:2px;background:linear-gradient(90deg,var(--line),var(--blue),var(--line))}
+.arrow i{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--blue);animation:travel 2.4s linear infinite}
+.arrow i:nth-child(2){animation-delay:.8s}.arrow i:nth-child(3){animation-delay:1.6s}
+@keyframes travel{from{left:4px;opacity:0}10%{opacity:1}90%{opacity:1}to{left:calc(100% - 12px);opacity:0}}
+.sync{text-align:center;font-size:11.5px;color:var(--sky);margin:2px 0 10px;letter-spacing:.03em}
+.sync b{display:block;font-size:17px;line-height:1;color:#fff;margin-bottom:3px}
+.badge{display:inline-block;margin-top:9px;background:var(--amberbg);color:#8a5216;font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:20px}
+
+/* panels */
+.panels{display:grid;grid-template-columns:1.1fr 1fr 1fr;gap:18px;margin-top:22px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 22px;box-shadow:0 8px 22px rgba(20,50,80,.06)}
+.panel.dark{background:linear-gradient(150deg,var(--navy),var(--navy2));border:none;color:#fff}
+.panel h3{font-family:Sora;font-size:16.5px;font-weight:800;margin-bottom:12px}
+.panel.dark h3{color:#fff}
+.opt{border:1px solid var(--line);border-radius:11px;padding:11px 13px;margin-bottom:9px}
+.opt.rec{border-color:var(--blue);background:#F2F8FD}
+.opt .oh{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px}
+.pill{font-size:10.5px;font-weight:700;background:var(--blue);color:#fff;padding:2px 8px;border-radius:12px}
+.opt .od{font-size:12.5px;color:var(--slate);line-height:1.45;margin-top:5px}
+ul{list-style:none}
+li{position:relative;padding-left:20px;margin:9px 0;font-size:13px;line-height:1.45;color:#33475b}
+li:before{content:"";position:absolute;left:2px;top:6px;width:8px;height:8px;border-radius:3px;background:var(--blue)}
+.panel.dark li{color:#cfe3f4}.panel.dark li:before{background:var(--sky)}
+.warn{margin-top:12px;background:var(--amberbg);border-radius:10px;padding:11px 13px;font-size:12.5px;line-height:1.45;color:#8a5216}
+.panel.dark .warn{background:rgba(224,138,43,.18);color:#F3C892}
+.foot{margin-top:22px;font-size:12px;color:var(--slate);text-align:right}
+@media(max-width:1100px){.flow{grid-template-columns:1fr}.arrow{height:38px}.arrow:before{left:50%;right:auto;top:4px;bottom:4px;width:2px;height:auto;background:linear-gradient(180deg,var(--line),var(--blue),var(--line))}.arrow i{animation:none;left:calc(50% - 4px);top:14px}.panels{grid-template-columns:1fr}}
+</style></head><body>
+<div class="wrap">
+  <div class="kick rise">Firmengruppe Burk · Tool-Time</div>
+  <h1 class="rise" style="--i:1">Technischer Aufbau des MVP</h1>
+  <div class="sub rise" style="--i:2">Monteure erfassen das Aufmaß mit dem eigenen Handy über eine mobile Web-App. Hier ist zu sehen, wo die Daten herkommen, wo sie liegen und wie sie zurück in eure Abrechnung gelangen.</div>
+
+  <div class="flow">
+    <div class="zone rise" style="--i:3">
+      <div class="zlabel">1 · Was reinkommt</div>
+      <div class="card"><div class="ct"><span class="ico">1</span>GAEB-Datei (Austauschformat für Leistungsverzeichnisse)</div>
+        <div class="cd">Das Leistungsverzeichnis vom Planungsbüro wird eingelesen: Positionsnummer, Kurz- und Langtext, Menge, Einheit. Am echten Sanitär-LV bereits nachgewiesen.</div></div>
+      <div class="card"><div class="ct"><span class="ico">2</span>Raumliste der Baustelle</div>
+        <div class="cd">Nicht Teil der GAEB. Wird einmal je Baustelle vom Projektleiter angelegt (Admin-Screen) oder aus einem Raumbuch importiert. Fehlende Räume kann der Monteur vor Ort nachtragen.</div></div>
+    </div>
+
+    <div class="arrow rise" style="--i:4"><i></i><i></i><i></i></div>
+
+    <div class="zone core rise" style="--i:5">
+      <div class="zlabel">2 · Die App</div>
+      <div class="card"><div class="ct"><span class="ico w">📱</span>Monteur-Handy</div>
+        <div class="cd">Responsive Web-App im Browser - kein App-Store, keine Installation. Link aufs Startbild legen, fertig. <b style="color:#fff">Offline-fähig:</b> Erfassung wird lokal zwischengespeichert und synchronisiert, sobald wieder Empfang da ist.</div></div>
+      <div class="sync"><b>&#8645;</b>verschlüsselt über HTTPS (gesicherte Web-Verbindung) · Abgleich bei Empfang</div>
+      <div class="card"><div class="ct"><span class="ico w">🖥</span>App-Server + Datenbank</div>
+        <div class="cd">PostgreSQL (relational). Tabellen: LV-Positionen, Räume, Aufmaß-Einträge (Position, Raum, Menge, Zeit, Erfasser). Aggregation je Positionsnummer für den Export.</div>
+        <span class="badge">Standort-Entscheidung: Cloud oder On-Prem?</span></div>
+    </div>
+
+    <div class="arrow rise" style="--i:6"><i></i><i></i><i></i></div>
+
+    <div class="zone rise" style="--i:7">
+      <div class="zlabel">3 · Was rauskommt</div>
+      <div class="card"><div class="ct"><span class="ico g">3</span>Excel in eurer Struktur</div>
+        <div class="cd">Export je Positionsnummer in die bestehende Kaufleute-Struktur. Die Excel ist Export-Ziel, nicht Voraussetzung fürs Erfassen - sie wird zusätzlich gebraucht, wenn die App gelieferte Mengen und Rest anzeigen soll.</div></div>
+      <div class="card"><div class="ct"><span class="ico g">4</span>Kaufmann → Streit → Rechnung</div>
+        <div class="cd">Ab hier läuft alles wie heute. <b>Im MVP bewusst keine Streit-Anbindung</b> - das reduziert Aufwand und Risiko.</div></div>
+    </div>
+  </div>
+
+  <div class="panels">
+    <div class="panel rise" style="--i:8">
+      <h3>Wo steht der Server?</h3>
+      <div class="opt rec"><div class="oh">EU-Cloud <span class="pill">Empfehlung für den Test</span></div>
+        <div class="od">Rechenzentrum in der EU (Europäische Union), z. B. Frankfurt. Managed Container oder VM (virtuelle Maschine), managed PostgreSQL, TLS-Verschlüsselung und Backup inklusive. Kein Eingriff in die interne Infrastruktur, jederzeit abschaltbar. AV-Vertrag (Auftragsverarbeitungsvertrag) erforderlich.</div></div>
+      <div class="opt"><div class="oh">On-Prem (Server bei euch)</div>
+        <div class="od">VM (virtuelle Maschine) in der DMZ (abgetrennte Netzzone ohne Weg ins interne Netz), Reverse Proxy (vorgelagerter Türsteher, z. B. nginx oder Traefik) mit TLS-Zertifikat (Transport Layer Security, Verschlüsselung), DNS-Eintrag (Domain Name System, Namensauflösung) auf die Subdomain, Firewall-Freigabe auf Port 443 (Standard-Port für verschlüsselte Web-Verbindungen), PostgreSQL, Backup und Patching im Haus.</div></div>
+      <div class="warn">Die Erfassung erfolgt mit privaten Geräten außerhalb des Firmennetzes. Ein interner Server ist von dort erst nach Veröffentlichung erreichbar; ein VPN (verschlüsselter Tunnel ins Firmennetz) auf privaten Geräten scheidet praktisch aus.</div>
+    </div>
+
+    <div class="panel rise" style="--i:9">
+      <h3>Was Burk organisiert</h3>
+      <ul>
+        <li><b>Entscheidung</b> Cloud oder On-Prem <i>(Micha)</i></li>
+        <li><b>Subdomain</b>, z. B. aufmass.burk-haustechnik.de</li>
+        <li><b>Testbaustelle</b> samt GAEB-Datei und Raumliste</li>
+        <li><b>BYOD</b> (Bring Your Own Device, Nutzung privater Geräte): Handys und mobiles Datenvolumen - Kostenträger und Abstimmung mit den Monteuren</li>
+        <li>Bei On-Prem (Server im eigenen Haus) zusätzlich: VM (virtuelle Maschine) in der DMZ (abgetrennte Netzzone), Reverse Proxy, TLS-Zertifikat (Verschlüsselung), DNS-Eintrag (Namensauflösung), Firewall-Freigabe auf Port 443, Backup und Patching</li>
+      </ul>
+    </div>
+
+    <div class="panel dark rise" style="--i:10">
+      <h3>Datenschutz &amp; offene Punkte</h3>
+      <ul>
+        <li>Personenbezug: <b>Name und Zeitstempel</b> je Buchung</li>
+        <li><b>Zweckbindung</b>: Abgrenzung zur Leistungskontrolle, Mitbestimmung</li>
+        <li>Löschfristen und AV-Vertrag mit dem Hoster</li>
+        <li>Fotos im MVP: ja oder nein (Personen im Bild)</li>
+      </ul>
+      <div class="warn">Abhängigkeiten für den Test: Netzabdeckung auf der Testbaustelle, Zustimmung zur Nutzung privater Geräte.</div>
+    </div>
+  </div>
+
+  <div class="foot">vonhelga · Tool-Time  ·  Stand: Juli 2026  ·  Entwurf zur Abstimmung mit Micha (IT) und Matthes (Datenschutz &amp; Prozesse)</div>
+</div>
+</body></html>
