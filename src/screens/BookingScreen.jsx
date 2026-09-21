@@ -51,6 +51,7 @@ export default function BookingScreen({
   const [showOverModal, setShowOverModal] = useState(false);
   const [pendingOverMat, setPendingOverMat] = useState(null); // { mat, nextDelta, exceededBy, planned, qu }
   const [overReason, setOverReason] = useState('');
+  const [overExtraQty, setOverExtraQty] = useState('1'); // User-adjustable extra quantity (e.g. +8m)
   const [overExplanations, setOverExplanations] = useState({}); // { [matId]: reasonText }
 
   // -------------------------------------------------------------
@@ -155,13 +156,16 @@ export default function BookingScreen({
 
     // Trigger Mehrverbrauch explanation if going over planned and not yet explained
     if (stepDelta > 0 && nextTotalVerb > planned && !overExplanations[matId]) {
+      const exceeded = Math.max(1, nextTotalVerb - planned);
       setPendingOverMat({
         mat,
         nextDelta,
-        exceededBy: nextTotalVerb - planned,
+        exceededBy: exceeded,
         planned,
+        installedBefore,
         qu: mat.qu,
       });
+      setOverExtraQty(String(exceeded % 1 === 0 ? exceeded : exceeded.toFixed(1)));
       setOverReason('');
       setShowOverModal(true);
       return;
@@ -170,33 +174,51 @@ export default function BookingScreen({
     onQuantityChange(matId, nextDelta);
   };
 
+  // Adjust extra quantity inside Mehrverbrauch modal via stepper
+  const handleStepOverExtra = (delta) => {
+    const current = parseFloat(overExtraQty) || 1;
+    const next = Math.max(0.5, current + delta);
+    setOverExtraQty(String(next % 1 === 0 ? next : Number(next.toFixed(1))));
+  };
+
   // Confirming Mehrverbrauch Overlay
   const handleConfirmOverReason = (reasonToUse) => {
     if (!pendingOverMat) return;
     const finalReason = (reasonToUse || overReason).trim() || 'Mehrverbrauch auf Baustelle';
+    const extraNum = Math.max(0.1, parseFloat(overExtraQty) || 1);
+
+    const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[pendingOverMat.mat.id]);
+    const installedBefore = pendingOverMat.installedBefore !== undefined
+      ? pendingOverMat.installedBefore
+      : (hasRoomPlan
+          ? Number(room.plannedItems[pendingOverMat.mat.id].installedQty || 0)
+          : Number(pendingOverMat.mat.installedQty || 0));
+
+    const neededToReachPlan = Math.max(0, pendingOverMat.planned - installedBefore);
+    const finalDelta = neededToReachPlan + extraNum;
 
     setOverExplanations((prev) => ({
       ...prev,
       [pendingOverMat.mat.id]: finalReason,
     }));
 
-    onQuantityChange(pendingOverMat.mat.id, pendingOverMat.nextDelta);
+    onQuantityChange(pendingOverMat.mat.id, finalDelta);
 
     if (onOverConsumptionAlert) {
       onOverConsumptionAlert({
+        id: `alert_${Date.now()}_${pendingOverMat.mat.id}`,
+        timestamp: new Date().toISOString(),
         roomId: room.id,
         roomName: room.name,
         materialId: pendingOverMat.mat.id,
         materialPos: pendingOverMat.mat.pos,
         materialName: pendingOverMat.mat.cleanName || pendingOverMat.mat.name,
         plannedQty: pendingOverMat.planned,
-        requestedTotal: (room.plannedItems?.[pendingOverMat.mat.id]?.installedQty || 0) + pendingOverMat.nextDelta,
-        exceededBy: pendingOverMat.exceededBy,
+        requestedTotal: installedBefore + finalDelta,
+        exceededBy: extraNum,
         qu: pendingOverMat.qu,
         reason: finalReason,
         monteurName: monteur?.name || 'Monteur',
-        createdAt: new Date().toISOString(),
-        needsReorder: true,
       });
     }
 
@@ -707,8 +729,10 @@ export default function BookingScreen({
                             nextDelta: delta,
                             exceededBy,
                             planned: baseTarget,
+                            installedBefore,
                             qu: mat.qu,
                           });
+                          setOverExtraQty(String(exceededBy > 0 ? (exceededBy % 1 === 0 ? exceededBy : exceededBy.toFixed(1)) : '1'));
                           setOverReason(userReason);
                           setShowOverModal(true);
                         }}
@@ -1014,104 +1038,234 @@ export default function BookingScreen({
       </Modal>
 
       {/* ------------------------------------------------------------- */}
-      {/* MODAL: MEHRVERBRAUCH ERFASSEN (OVER-CONSUMPTION OVERLAY)     */}
+      {/* FULLSCREEN OVERLAY: MEHRVERBRAUCH ERFASSEN                   */}
       {/* ------------------------------------------------------------- */}
-      <Modal visible={showOverModal} transparent animationType="fade">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.overModalCard}>
-            <View style={styles.overModalHeader}>
-              <Text style={styles.overModalTitle}>⚠️ Geplante Menge überschritten</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowOverModal(false);
-                  setPendingOverMat(null);
-                }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={styles.overModalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.overModalSub}>
-              Pos {pendingOverMat?.mat?.pos} · {pendingOverMat?.mat?.cleanName}
-            </Text>
-
-            <View style={styles.overStatsBox}>
-              <Text style={styles.overStatsText}>
-                Geplant: <Text style={{ fontWeight: '800' }}>{pendingOverMat?.planned} {pendingOverMat?.qu}</Text>
-                {'  →  '}
-                Neu: <Text style={{ fontWeight: '800', color: COLORS.red }}>
-                  +{(Number(pendingOverMat?.exceededBy) || 0).toFixed(1)} {pendingOverMat?.qu} Mehrverbrauch
-                </Text>
+      <Modal visible={showOverModal} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={styles.modalFullscreen}>
+          {/* Header with Title and Close '✕' Button */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleBox}>
+              <Text style={styles.modalMainTitle}>⚠️ Mehraufwand / Mehrverbrauch</Text>
+              <Text style={styles.modalSubTitle}>
+                {room.name} ({room.code}) · Pos {pendingOverMat?.mat?.pos}
               </Text>
             </View>
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => {
+                setShowOverModal(false);
+                setPendingOverMat(null);
+              }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.modalCloseIcon}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
-            <Text style={styles.overFieldLabel}>
-              Grund für den Bauleiter auswählen oder eingeben:
-            </Text>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Product Info & Calculation Card */}
+              <View style={styles.overSummaryCard}>
+                <View style={styles.overCardHeaderRow}>
+                  <View style={styles.iconBoxOver}>
+                    <Text style={styles.iconSymbolOver}>
+                      {getMatIconSymbol(pendingOverMat?.mat?.icon)}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.posRow}>
+                      <View style={styles.posChip}>
+                        <Text style={styles.posChipText}>Pos {pendingOverMat?.mat?.pos}</Text>
+                      </View>
+                      <View style={styles.overBadge}>
+                        <Text style={styles.overBadgeText}>
+                          +{parseFloat(overExtraQty) || 0} {pendingOverMat?.qu} Mehr
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.overMatTitle}>
+                      {pendingOverMat?.mat?.cleanName || pendingOverMat?.mat?.name}
+                    </Text>
+                    {pendingOverMat?.mat?.name !== pendingOverMat?.mat?.cleanName ? (
+                      <Text style={styles.overMatSubtitle} numberOfLines={2}>
+                        {pendingOverMat?.mat?.name}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
 
-            {/* Quick Reason Pills */}
-            <View style={styles.quickPillsGrid}>
-              {[
-                'Planänderung Bauherr',
-                'Altbau-Hindernis / Versprung',
-                'Verschnitt / Beschädigung',
-                'Zusätzlicher Anschluss',
-              ].map((reasonOption) => (
+                {/* Live Calculation Matrix: Geplant -> Neu verbaut -> Mehrverbrauch */}
+                <View style={styles.overCalcBox}>
+                  <View style={styles.overCalcCol}>
+                    <Text style={styles.overCalcLabel}>Geplant Raum</Text>
+                    <Text style={styles.overCalcVal}>
+                      {pendingOverMat?.planned} {pendingOverMat?.qu}
+                    </Text>
+                  </View>
+                  <Text style={styles.overCalcArrow}>→</Text>
+                  <View style={styles.overCalcCol}>
+                    <Text style={styles.overCalcLabel}>Neu verbaut</Text>
+                    <Text style={styles.overCalcVal}>
+                      {((pendingOverMat?.planned || 0) + (parseFloat(overExtraQty) || 0)).toFixed(1).replace(/\.0$/, '')} {pendingOverMat?.qu}
+                    </Text>
+                  </View>
+                  <Text style={styles.overCalcArrow}>=</Text>
+                  <View style={styles.overCalcCol}>
+                    <Text style={[styles.overCalcLabel, { color: COLORS.red }]}>Mehrverbrauch</Text>
+                    <Text style={[styles.overCalcVal, { color: COLORS.red, fontWeight: '900' }]}>
+                      +{(parseFloat(overExtraQty) || 0).toFixed(1).replace(/\.0$/, '')} {pendingOverMat?.qu}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Quantity Controls: Stepper [−] [Input] [+] and Quick Select Pills */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>
+                  Zusätzlich benötigte Menge ({pendingOverMat?.qu === 'm' ? 'Meter' : 'Stück'}):
+                </Text>
+
+                <View style={styles.overQtyControlRow}>
+                  <TouchableOpacity
+                    style={styles.overStepBtn}
+                    onPress={() => handleStepOverExtra(-1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.overStepBtnText}>−</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.overInputWrap}>
+                    <Text style={styles.overPlusSign}>+</Text>
+                    <TextInput
+                      style={styles.overQtyInput}
+                      value={overExtraQty}
+                      onChangeText={(val) => setOverExtraQty(val.replace(',', '.'))}
+                      keyboardType="decimal-pad"
+                      placeholder="z. B. 8"
+                      placeholderTextColor={COLORS.muted}
+                      selectTextOnFocus
+                    />
+                    <Text style={styles.overUnitSuffix}>{pendingOverMat?.qu}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.overStepBtn}
+                    onPress={() => handleStepOverExtra(1)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.overStepBtnText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Quick Pills for 1-tap setting (+1, +2, +3, +5, +8, +10, +15) */}
+                <Text style={styles.overQuickLabel}>Schnellauswahl für Mehraufwand:</Text>
+                <View style={styles.overQuickPillsRow}>
+                  {['1', '2', '3', '5', '8', '10', '15'].map((val) => {
+                    const isSelected = String(parseFloat(overExtraQty)) === val;
+                    return (
+                      <TouchableOpacity
+                        key={val}
+                        style={[styles.overQuickPill, isSelected && styles.overQuickPillActive]}
+                        onPress={() => setOverExtraQty(val)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.overQuickPillText,
+                            isSelected && styles.overQuickPillTextActive,
+                          ]}
+                        >
+                          +{val} {pendingOverMat?.qu}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Reason Selection */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>
+                  Grund für Bauleiter & Nachtrag wählen:
+                </Text>
+
+                <View style={styles.quickPillsGrid}>
+                  {[
+                    'Planänderung Bauherr',
+                    'Altbau-Hindernis / Versprung',
+                    'Verschnitt / Beschädigung',
+                    'Zusätzlicher Anschluss',
+                  ].map((reasonOption) => (
+                    <TouchableOpacity
+                      key={reasonOption}
+                      style={[
+                        styles.reasonPill,
+                        overReason === reasonOption && styles.reasonPillActive,
+                      ]}
+                      onPress={() => setOverReason(reasonOption)}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.reasonPillText,
+                          overReason === reasonOption && styles.reasonPillTextActive,
+                        ]}
+                      >
+                        {reasonOption}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* 3-line Comment / Reason field */}
+                <Text style={styles.modalFieldLabel}>
+                  Detail-Begründung (3 Zeilen für Baustellen-Notizen):
+                </Text>
+                <TextInput
+                  style={styles.overReasonInputFullscreen}
+                  placeholder="Begründung für Mehraufwand eingeben (erscheint im Bauleiter-Dashboard)..."
+                  placeholderTextColor={COLORS.muted}
+                  multiline={true}
+                  numberOfLines={3}
+                  value={overReason}
+                  onChangeText={setOverReason}
+                />
+              </View>
+
+              {/* Fullscreen Action Buttons */}
+              <View style={styles.overFullscreenActionRow}>
                 <TouchableOpacity
-                  key={reasonOption}
-                  style={[
-                    styles.reasonPill,
-                    overReason === reasonOption && styles.reasonPillActive,
-                  ]}
-                  onPress={() => setOverReason(reasonOption)}
+                  style={styles.overCancelBtnLarge}
+                  onPress={() => {
+                    setShowOverModal(false);
+                    setPendingOverMat(null);
+                  }}
                   activeOpacity={0.7}
                 >
-                  <Text
-                    style={[
-                      styles.reasonPillText,
-                      overReason === reasonOption && styles.reasonPillTextActive,
-                    ]}
-                  >
-                    {reasonOption}
+                  <Text style={styles.overCancelTextLarge}>Abbrechen</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.overConfirmBtnLarge}
+                  onPress={() => handleConfirmOverReason()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.overConfirmTextLarge}>
+                    ✓ Mehraufwand (+{overExtraQty || 0} {pendingOverMat?.qu}) buchen
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Multiline Reason Input */}
-            <TextInput
-              style={styles.overReasonInput}
-              placeholder="Begründung für Mehraufwand & Bauleiter-Alert (3 Zeilen)..."
-              placeholderTextColor={COLORS.muted}
-              multiline={true}
-              numberOfLines={3}
-              value={overReason}
-              onChangeText={setOverReason}
-            />
-
-            <View style={styles.overActionRow}>
-              <TouchableOpacity
-                style={styles.overCancelBtn}
-                onPress={() => {
-                  setShowOverModal(false);
-                  setPendingOverMat(null);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.overCancelText}>Abbrechen</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.overConfirmBtn}
-                onPress={() => handleConfirmOverReason()}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.overConfirmText}>Mehraufwand buchen</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
 
       {/* ------------------------------------------------------------- */}
@@ -2010,56 +2164,151 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 18,
   },
-  overModalCard: {
-    width: '100%',
+  // Fullscreen Mehrverbrauch Overlay Styles
+  overSummaryCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-  },
-  overModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  overModalTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: COLORS.ink,
-  },
-  overModalClose: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.muted,
-    padding: 4,
-  },
-  overModalSub: {
-    fontSize: 13,
-    color: COLORS.muted,
-    marginBottom: 12,
-  },
-  overStatsBox: {
-    backgroundColor: '#FFF5F5',
-    borderWidth: 1,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: '#FED7D7',
-    borderRadius: 10,
-    padding: 10,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
+  overCardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
     marginBottom: 14,
   },
-  overStatsText: {
+  overMatTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: COLORS.ink,
+    marginBottom: 2,
+  },
+  overMatSubtitle: {
+    fontSize: 12.5,
+    color: COLORS.muted,
+  },
+  overCalcBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFF5F5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FED7D7',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  overCalcCol: {
+    alignItems: 'center',
+  },
+  overCalcLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.muted,
+    marginBottom: 2,
+  },
+  overCalcVal: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: COLORS.ink,
+  },
+  overCalcArrow: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.muted,
+  },
+  overQtyControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  overStepBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overStepBtnText: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: COLORS.primary,
+    lineHeight: 28,
+  },
+  overInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 52,
+  },
+  overPlusSign: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.primary,
+    marginRight: 6,
+  },
+  overQtyInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.ink,
+    paddingVertical: 0,
+  },
+  overUnitSuffix: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.muted,
+    marginLeft: 6,
+  },
+  overQuickLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  overQuickPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  overQuickPill: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 20,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+  },
+  overQuickPillActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: COLORS.primary,
+  },
+  overQuickPillText: {
     fontSize: 13,
+    fontWeight: '700',
     color: COLORS.inkSoft,
   },
-  overFieldLabel: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: COLORS.ink,
-    marginBottom: 8,
+  overQuickPillTextActive: {
+    color: COLORS.primary,
+    fontWeight: '900',
   },
   quickPillsGrid: {
     flexDirection: 'row',
@@ -2088,46 +2337,53 @@ const styles = StyleSheet.create({
     color: '#744210',
     fontWeight: '800',
   },
-  overReasonInput: {
+  overReasonInputFullscreen: {
     backgroundColor: '#F8FAFC',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.line,
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 13,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
     color: COLORS.ink,
-    minHeight: 70,
+    minHeight: 80,
     textAlignVertical: 'top',
-    marginBottom: 14,
+    marginBottom: 16,
   },
-  overActionRow: {
+  overFullscreenActionRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
+    marginTop: 8,
+    marginBottom: 30,
   },
-  overCancelBtn: {
+  overCancelBtnLarge: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: COLORS.line,
     alignItems: 'center',
     backgroundColor: '#F8FAFC',
   },
-  overCancelText: {
-    fontSize: 13.5,
+  overCancelTextLarge: {
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.muted,
   },
-  overConfirmBtn: {
-    flex: 1.6,
-    paddingVertical: 12,
-    borderRadius: 10,
+  overConfirmBtnLarge: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 12,
     backgroundColor: COLORS.amber,
     alignItems: 'center',
+    shadowColor: COLORS.amber,
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 3,
   },
-  overConfirmText: {
-    fontSize: 13.5,
-    fontWeight: '800',
+  overConfirmTextLarge: {
+    fontSize: 14,
+    fontWeight: '900',
     color: '#FFFFFF',
   },
 
