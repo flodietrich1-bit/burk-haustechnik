@@ -39,6 +39,9 @@ export default function BookingScreen({
   const [showUnclearForm, setShowUnclearForm] = useState(false);
   const [unclearText, setUnclearText] = useState('');
   const [unclearQty, setUnclearQty] = useState('');
+  const [unclearUnit, setUnclearUnit] = useState('Stk'); // 'Stk' | 'm'
+  const [selectedUnclearMat, setSelectedUnclearMat] = useState(null);
+  const [showUnclearSuggestions, setShowUnclearSuggestions] = useState(false);
 
   // -------------------------------------------------------------
   // Nachtrag Modal & Independent Form States
@@ -84,6 +87,14 @@ export default function BookingScreen({
       ).slice(0, 8)
     : [];
 
+  // Unclear Product Autosuggester (Durchsucht alle bestellten / GAEB-Positionen)
+  const uq = unclearText.trim().toLowerCase();
+  const unclearSuggestions = (showUnclearSuggestions && uq.length >= 1)
+    ? materials.filter((m) =>
+        (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
+      ).slice(0, 6)
+    : [];
+
   const handlePickMaterial = (id) => {
     if (!activeMaterialIds.includes(id)) {
       setActiveMaterialIds([id, ...activeMaterialIds]);
@@ -102,6 +113,17 @@ export default function BookingScreen({
     setShowMatSuggestions(false);
   };
 
+  const handleSelectUnclearSuggestion = (item) => {
+    setUnclearText(item.cleanName || item.name);
+    setSelectedUnclearMat(item);
+    if (item.qu === 'm') {
+      setUnclearUnit('m');
+    } else {
+      setUnclearUnit('Stk');
+    }
+    setShowUnclearSuggestions(false);
+  };
+
   const handleStep = (id, delta) => {
     const current = Number(sessionQuantities[id]) || 0;
     const next = Math.max(0, current + delta);
@@ -110,15 +132,23 @@ export default function BookingScreen({
 
   const handleSaveUnclear = () => {
     if (!unclearText.trim()) return;
+    const cleanQty = unclearQty.trim() || '1';
     onAddUnclearItem({
       txt: unclearText.trim(),
-      qty: unclearQty.trim() || '1 Stk',
+      qty: `${cleanQty} ${unclearUnit}`,
+      qu: unclearUnit,
+      itemOz: selectedUnclearMat ? selectedUnclearMat.pos : 'UNKLAR',
+      pos: selectedUnclearMat ? selectedUnclearMat.pos : null,
+      materialId: selectedUnclearMat ? selectedUnclearMat.id : null,
+      isOrdered: !!selectedUnclearMat,
       roomId: room.id,
       roomName: room.name,
     });
     setUnclearText('');
     setUnclearQty('');
+    setSelectedUnclearMat(null);
     setShowUnclearForm(false);
+    setShowUnclearSuggestions(false);
   };
 
   // Save Nachtrag (dispatches according to active tab with separate payloads)
@@ -255,22 +285,107 @@ export default function BookingScreen({
           {/* Inline Unclear Form */}
           {showUnclearForm && (
             <View style={styles.unclearFormCard}>
-              <Text style={styles.unclearFormTitle}>{t('unclearTitle', currentLang)}</Text>
+              <View style={styles.unclearHeaderRow}>
+                <Text style={styles.unclearFormTitle}>{t('unclearTitle', currentLang)}</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowUnclearForm(false);
+                    setShowUnclearSuggestions(false);
+                  }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Text style={styles.unclearCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.unclearSubInfo}>
+                Erfassen Sie ein verbautes Produkt. Beim Tippen werden auch bereits bestellte Materialien vorgeschlagen.
+              </Text>
+
+              {/* Product input with Autosuggest */}
+              <View style={{ position: 'relative', zIndex: 10 }}>
+                <TextInput
+                  style={styles.unclearInput}
+                  placeholder={t('unclearWhat', currentLang)}
+                  placeholderTextColor={COLORS.muted}
+                  value={unclearText}
+                  onChangeText={(text) => {
+                    setUnclearText(text);
+                    setSelectedUnclearMat(null);
+                    setShowUnclearSuggestions(text.trim().length >= 1);
+                  }}
+                  onFocus={() => {
+                    if (unclearText.trim().length >= 1) {
+                      setShowUnclearSuggestions(true);
+                    }
+                  }}
+                />
+
+                {/* Suggestions List */}
+                {unclearSuggestions.length > 0 && (
+                  <View style={styles.unclearSuggestionsBox}>
+                    <Text style={styles.unclearSugHeader}>
+                      Bestellte / GAEB-Positionen:
+                    </Text>
+                    {unclearSuggestions.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.unclearSugItem}
+                        onPress={() => handleSelectUnclearSuggestion(item)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.unclearSugName} numberOfLines={1}>
+                            {item.cleanName || item.name}
+                          </Text>
+                          <Text style={styles.unclearSugMeta}>
+                            Pos {item.pos} · {item.group}
+                            {item.deliveredQty ? ` · Geliefert: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
+                          </Text>
+                        </View>
+                        <View style={styles.unclearSugBadge}>
+                          <Text style={styles.unclearSugBadgeText}>Bestellt</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Unit Toggle: Stück (Menge) vs Meter (Meterzahl) */}
+              <View style={styles.unclearUnitToggleRow}>
+                <TouchableOpacity
+                  style={[styles.unclearUnitBtn, unclearUnit === 'Stk' && styles.unclearUnitBtnActive]}
+                  onPress={() => setUnclearUnit('Stk')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.unclearUnitBtnText, unclearUnit === 'Stk' && styles.unclearUnitBtnTextActive]}>
+                    Stück (Menge)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.unclearUnitBtn, unclearUnit === 'm' && styles.unclearUnitBtnActive]}
+                  onPress={() => setUnclearUnit('m')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.unclearUnitBtnText, unclearUnit === 'm' && styles.unclearUnitBtnTextActive]}>
+                    Meter (Meterzahl)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Quantity Input */}
               <TextInput
                 style={styles.unclearInput}
-                placeholder={t('unclearWhat', currentLang)}
+                placeholder={unclearUnit === 'm' ? "Meterzahl (z. B. 12.5)" : "Menge in Stück (z. B. 10)"}
                 placeholderTextColor={COLORS.muted}
-                value={unclearText}
-                onChangeText={setUnclearText}
-              />
-              <TextInput
-                style={styles.unclearInput}
-                placeholder={t('unclearQty', currentLang)}
-                placeholderTextColor={COLORS.muted}
+                keyboardType="decimal-pad"
                 value={unclearQty}
                 onChangeText={setUnclearQty}
               />
-              <TouchableOpacity style={styles.unclearSaveBtn} onPress={handleSaveUnclear}>
+
+              <TouchableOpacity style={styles.unclearSaveBtn} onPress={handleSaveUnclear} activeOpacity={0.8}>
                 <Text style={styles.unclearSaveText}>{t('unclearRecord', currentLang)}</Text>
               </TouchableOpacity>
             </View>
@@ -285,7 +400,9 @@ export default function BookingScreen({
               <View key={i} style={styles.unclearRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.uName}>{u.txt}</Text>
-                  <Text style={styles.uSub}>{u.qty} · {room.name}</Text>
+                  <Text style={styles.uSub}>
+                    {u.pos ? `Pos ${u.pos} · ` : ''}{u.qty} · {room.name}
+                  </Text>
                 </View>
                 <View style={styles.uBadge}>
                   <Text style={styles.uBadgeText}>Zuordnung offen</Text>
@@ -769,7 +886,109 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: COLORS.ink,
+  },
+  unclearHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  unclearCloseText: {
+    fontSize: 16,
+    color: COLORS.muted,
+    fontWeight: '800',
+    padding: 4,
+  },
+  unclearSubInfo: {
+    fontSize: 11.5,
+    color: COLORS.muted,
+    marginBottom: 10,
+    lineHeight: 16,
+  },
+  unclearSuggestionsBox: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#90CDF4',
+    borderRadius: 10,
+    marginBottom: 10,
+    maxHeight: 200,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    overflow: 'hidden',
+  },
+  unclearSugHeader: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: COLORS.blue,
+    backgroundColor: '#EBF8FF',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  unclearSugItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+    backgroundColor: '#FFFFFF',
+  },
+  unclearSugName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  unclearSugMeta: {
+    fontSize: 11,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
+  unclearSugBadge: {
+    backgroundColor: '#E6FFFA',
+    borderWidth: 1,
+    borderColor: '#38B2AC',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  unclearSugBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#234E52',
+  },
+  unclearUnitToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 8,
+  },
+  unclearUnitBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: '#FAFCFE',
+  },
+  unclearUnitBtnActive: {
+    backgroundColor: '#FEFCBF',
+    borderColor: COLORS.amber,
+  },
+  unclearUnitBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  unclearUnitBtnTextActive: {
+    color: COLORS.amberDark,
+    fontWeight: '800',
   },
   unclearInput: {
     backgroundColor: '#FAFCFE',

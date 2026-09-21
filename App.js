@@ -286,7 +286,33 @@ export default function App() {
         });
       }
 
+      // Save unclear / unassigned items if any
+      for (const u of unclearItems) {
+        await enqueueBooking({
+          projectId: project.id || 'hallenbad-weingarten',
+          roomId: selectedRoom.id,
+          roomName: selectedRoom.name,
+          itemId: u.materialId || `unclear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          itemOz: u.itemOz || u.pos || 'UNKLAR',
+          itemText: u.txt,
+          quantity: u.qty,
+          qu: u.qu || (String(u.qty).includes('m') ? 'm' : 'Stk'),
+          photoUris: sessionPhotos,
+          createdBy: monteur?.name || 'Monteur',
+          calendarWeek: project.calendarWeek || 27,
+          isUnclear: true,
+          status: 'pending_assignment',
+        });
+
+        summary.push({
+          name: `${u.txt} (Zuordnung offen)`,
+          quantity: u.qty,
+          qu: '',
+        });
+      }
+
       setLastSummary(summary);
+      setUnclearItems([]);
       await refreshData();
       setCurrentScreen('done');
     } catch (error) {
