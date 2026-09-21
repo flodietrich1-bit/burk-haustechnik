@@ -75,6 +75,11 @@ export default function RoomListScreen({
               <View style={styles.roomInfo}>
                 <View style={styles.nameRow}>
                   <Text style={styles.roomName}>{room.name}</Text>
+                  {room.isCompleted || room.pct === 100 ? (
+                    <View style={styles.completedBadge}>
+                      <Text style={styles.completedBadgeText}>✓ 100 %</Text>
+                    </View>
+                  ) : null}
                   {transName ? (
                     <Text style={styles.translatedName}>({transName})</Text>
                   ) : null}
@@ -209,6 +214,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: COLORS.ink,
+  },
+  completedBadge: {
+    backgroundColor: '#E6FFFA',
+    borderWidth: 1,
+    borderColor: '#38B2AC',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  completedBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#234E52',
   },
   translatedName: {
     fontSize: 13,

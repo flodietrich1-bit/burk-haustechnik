@@ -13,6 +13,7 @@ import { getLanguage, setLanguage } from './src/services/storageService';
 import { getActiveMonteur } from './src/services/authService';
 import {
   getRooms,
+  saveRooms,
   getMaterials,
   getProjectInfo,
   getPendingBookings,
@@ -228,6 +229,95 @@ export default function App() {
     }
   };
 
+  const handleCompleteRoom = async (roomId, deltaSummary) => {
+    try {
+      const updatedRooms = rooms.map((r) => {
+        if (r.id === roomId) {
+          return {
+            ...r,
+            pct: 100,
+            isCompleted: true,
+            status: 'completed',
+            completedAt: new Date().toISOString(),
+            completedBy: monteur?.name || 'Monteur',
+            completionDelta: deltaSummary,
+          };
+        }
+        return r;
+      });
+
+      setRooms(updatedRooms);
+      await saveRooms(updatedRooms);
+
+      if (selectedRoom && selectedRoom.id === roomId) {
+        setSelectedRoom({
+          ...selectedRoom,
+          pct: 100,
+          isCompleted: true,
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          completedBy: monteur?.name || 'Monteur',
+          completionDelta: deltaSummary,
+        });
+      }
+
+      // Enqueue room completion event to offline outbox
+      await enqueueBooking({
+        projectId: project.id || 'hallenbad-weingarten',
+        roomId,
+        roomName: selectedRoom?.name || 'Raum',
+        type: 'room_completion',
+        itemId: 'room_completion',
+        itemOz: 'FERTIG',
+        itemText: `Raum ${selectedRoom?.name || roomId} zu 100% fertiggestellt`,
+        quantity: 1,
+        qu: 'Raum',
+        deltaSummary,
+        createdBy: monteur?.name || 'Monteur',
+        calendarWeek: project.calendarWeek || 27,
+        isCompleted: true,
+      });
+
+      const pending = await getPendingBookings();
+      setPendingCount(pending.length);
+
+      Alert.alert(
+        'Raum fertiggestellt',
+        `Der Raum ${selectedRoom?.name || ''} wurde erfolgreich auf 100 % gesetzt. Das Mengen-Delta wurde für den Bauleiter hinterlegt.`
+      );
+    } catch (e) {
+      console.warn('Error completing room:', e);
+    }
+  };
+
+  const handleOverConsumptionAlert = async (alertData) => {
+    try {
+      await enqueueBooking({
+        projectId: project.id || 'hallenbad-weingarten',
+        type: 'over_consumption_alert',
+        roomId: alertData.roomId,
+        roomName: alertData.roomName,
+        itemId: alertData.materialId,
+        itemOz: alertData.materialPos,
+        itemText: alertData.materialName,
+        quantity: alertData.exceededBy,
+        qu: alertData.qu,
+        plannedQty: alertData.plannedQty,
+        requestedTotal: alertData.requestedTotal,
+        reason: alertData.reason,
+        createdBy: alertData.monteurName,
+        calendarWeek: project.calendarWeek || 27,
+        needsReorder: true,
+        isAlert: true,
+      });
+
+      const pending = await getPendingBookings();
+      setPendingCount(pending.length);
+    } catch (e) {
+      console.warn('Error queuing over-consumption alert:', e);
+    }
+  };
+
   // 8. Commit Booking & Outbox Queueing
   const handleFinishBooking = async () => {
     if (!selectedRoom) return;
@@ -407,6 +497,8 @@ export default function App() {
             unclearItems={unclearItems}
             onAddUnclearItem={handleAddUnclearItem}
             onAddNachtrag={handleAddNachtrag}
+            onCompleteRoom={handleCompleteRoom}
+            onOverConsumptionAlert={handleOverConsumptionAlert}
           />
         )}
 

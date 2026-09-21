@@ -25,6 +25,15 @@ export const INITIAL_ROOMS = [
     pct: 82,
     translations: { ro: 'Zonă WC (Subsol)', pl: 'Strefa WC (Piwnica)', hr: 'WC zona (Podrum)' },
     defaultMaterialIds: ['m1', 'm2', 'm4', 'm5', 'm7', 'm18', 'm43'],
+    plannedItems: {
+      m1: { plannedQty: 6.0, installedQty: 3.0 },
+      m2: { plannedQty: 25.0, installedQty: 20.0 },
+      m4: { plannedQty: 15.0, installedQty: 10.0 },
+      m5: { plannedQty: 35.0, installedQty: 25.0 },
+      m7: { plannedQty: 30.0, installedQty: 22.0 },
+      m18: { plannedQty: 4.0, installedQty: 3.0 },
+      m43: { plannedQty: 20.0, installedQty: 16.0 },
+    },
   },
   {
     id: 'room_ug_102',
@@ -35,16 +44,26 @@ export const INITIAL_ROOMS = [
     pct: 63,
     translations: { ro: 'Cameră tehnică (Subsol)', pl: 'Pom. techniczne (Piwnica)', hr: 'Tehnička prostorija (Podrum)' },
     defaultMaterialIds: ['m1', 'm2', 'm23', 'm24', 'm36', 'm37', 'm42', 'm47', 'm48'],
+    plannedItems: {
+      m1: { plannedQty: 3.0, installedQty: 2.0 },
+      m2: { plannedQty: 18.0, installedQty: 12.0 },
+      m23: { plannedQty: 8.0, installedQty: 6.0 },
+      m24: { plannedQty: 6.0, installedQty: 4.0 },
+      m36: { plannedQty: 4.0, installedQty: 2.0 },
+      m37: { plannedQty: 4.0, installedQty: 3.0 },
+      m42: { plannedQty: 12.0, installedQty: 8.0 },
+    },
   },
   {
     id: 'room_ug_103',
     code: 'UG-103',
-    name: 'Flur UG',
-    sub: 'Sammelleitungen Trinkwasser',
+    name: 'Flur UG (Nur GAEB)',
+    sub: 'Sammelleitungen Trinkwasser (ohne Raumplanung)',
     floor: 'UG',
     pct: 71,
     translations: { ro: 'Hol (Subsol)', pl: 'Korytarz (Piwnica)', hr: 'Hodnik (Podrum)' },
     defaultMaterialIds: ['m2', 'm3', 'm4', 'm43', 'm44', 'm45', 'm66', 'm67', 'm68'],
+    plannedItems: null, // GAEB-Only Fallback
   },
   {
     id: 'room_ug_104',
@@ -55,6 +74,15 @@ export const INITIAL_ROOMS = [
     pct: 38,
     translations: { ro: 'Dușuri (Subsol)', pl: 'Prysznice (Piwnica)', hr: 'Tuševi (Podrum)' },
     defaultMaterialIds: ['m2', 'm3', 'm7', 'm11', 'm14', 'm18', 'm43', 'm66', 'm67'],
+    plannedItems: {
+      m2: { plannedQty: 20.0, installedQty: 8.0 },
+      m3: { plannedQty: 10.0, installedQty: 4.0 },
+      m7: { plannedQty: 25.0, installedQty: 10.0 },
+      m11: { plannedQty: 15.0, installedQty: 6.0 },
+      m14: { plannedQty: 8.0, installedQty: 3.0 },
+      m18: { plannedQty: 6.0, installedQty: 2.0 },
+      m43: { plannedQty: 16.0, installedQty: 6.0 },
+    },
   },
   {
     id: 'room_ug_105',
@@ -65,6 +93,14 @@ export const INITIAL_ROOMS = [
     pct: 20,
     translations: { ro: 'Ghenă A (Coloane)', pl: 'Szacht A (Piony)', hr: 'Vertikalni kanal A' },
     defaultMaterialIds: ['m1', 'm2', 'm8', 'm12', 'm18', 'm42', 'm68', 'm70', 'm72'],
+    plannedItems: {
+      m1: { plannedQty: 10.0, installedQty: 2.0 },
+      m2: { plannedQty: 30.0, installedQty: 6.0 },
+      m8: { plannedQty: 12.0, installedQty: 2.0 },
+      m12: { plannedQty: 8.0, installedQty: 1.0 },
+      m18: { plannedQty: 6.0, installedQty: 1.0 },
+      m42: { plannedQty: 15.0, installedQty: 3.0 },
+    },
   },
 ];
 

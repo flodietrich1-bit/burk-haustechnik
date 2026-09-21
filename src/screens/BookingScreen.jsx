@@ -29,6 +29,8 @@ export default function BookingScreen({
   unclearItems = [],
   onAddUnclearItem,
   onAddNachtrag,
+  onCompleteRoom,
+  onOverConsumptionAlert,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMaterialIds, setActiveMaterialIds] = useState(
@@ -42,6 +44,19 @@ export default function BookingScreen({
   const [unclearUnit, setUnclearUnit] = useState('Stk'); // 'Stk' | 'm'
   const [selectedUnclearMat, setSelectedUnclearMat] = useState(null);
   const [showUnclearSuggestions, setShowUnclearSuggestions] = useState(false);
+
+  // -------------------------------------------------------------
+  // Mehrverbrauch (Over-Consumption) Overlay & Reasons
+  // -------------------------------------------------------------
+  const [showOverModal, setShowOverModal] = useState(false);
+  const [pendingOverMat, setPendingOverMat] = useState(null); // { mat, nextDelta, exceededBy, planned, qu }
+  const [overReason, setOverReason] = useState('');
+  const [overExplanations, setOverExplanations] = useState({}); // { [matId]: reasonText }
+
+  // -------------------------------------------------------------
+  // Raum/Ort fertigstellen (100% Completion) Modal
+  // -------------------------------------------------------------
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
 
   // -------------------------------------------------------------
   // Nachtrag Modal & Independent Form States
@@ -104,7 +119,6 @@ export default function BookingScreen({
 
   const handleSelectMatSuggestion = (item) => {
     setMatTitle(item.cleanName || item.name);
-    // Auto-detect GAEB unit: meter or piece
     if (item.qu === 'm') {
       setMatUnit('m');
     } else {
@@ -124,10 +138,105 @@ export default function BookingScreen({
     setShowUnclearSuggestions(false);
   };
 
-  const handleStep = (id, delta) => {
-    const current = Number(sessionQuantities[id]) || 0;
-    const next = Math.max(0, current + delta);
-    onQuantityChange(id, next);
+  // Stepper with Over-Quantity / Mehrverbrauch check
+  const handleStep = (matId, stepDelta) => {
+    const mat = materials.find((m) => m.id === matId);
+    if (!mat) return;
+
+    const currentDelta = Number(sessionQuantities[matId]) || 0;
+    const nextDelta = Math.max(0, currentDelta + stepDelta);
+
+    const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
+    const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : Number(mat.deliveredQty || 0);
+    const installedBefore = hasRoomPlan
+      ? Number(room.plannedItems[matId].installedQty || 0)
+      : Number(mat.installedQty || 0);
+    const nextTotalVerb = installedBefore + nextDelta;
+
+    // Trigger Mehrverbrauch explanation if going over planned and not yet explained
+    if (stepDelta > 0 && nextTotalVerb > planned && !overExplanations[matId]) {
+      setPendingOverMat({
+        mat,
+        nextDelta,
+        exceededBy: nextTotalVerb - planned,
+        planned,
+        qu: mat.qu,
+      });
+      setOverReason('');
+      setShowOverModal(true);
+      return;
+    }
+
+    onQuantityChange(matId, nextDelta);
+  };
+
+  // Confirming Mehrverbrauch Overlay
+  const handleConfirmOverReason = (reasonToUse) => {
+    if (!pendingOverMat) return;
+    const finalReason = (reasonToUse || overReason).trim() || 'Mehrverbrauch auf Baustelle';
+
+    setOverExplanations((prev) => ({
+      ...prev,
+      [pendingOverMat.mat.id]: finalReason,
+    }));
+
+    onQuantityChange(pendingOverMat.mat.id, pendingOverMat.nextDelta);
+
+    if (onOverConsumptionAlert) {
+      onOverConsumptionAlert({
+        roomId: room.id,
+        roomName: room.name,
+        materialId: pendingOverMat.mat.id,
+        materialPos: pendingOverMat.mat.pos,
+        materialName: pendingOverMat.mat.cleanName || pendingOverMat.mat.name,
+        plannedQty: pendingOverMat.planned,
+        requestedTotal: (room.plannedItems?.[pendingOverMat.mat.id]?.installedQty || 0) + pendingOverMat.nextDelta,
+        exceededBy: pendingOverMat.exceededBy,
+        qu: pendingOverMat.qu,
+        reason: finalReason,
+        monteurName: monteur?.name || 'Monteur',
+        createdAt: new Date().toISOString(),
+        needsReorder: true,
+      });
+    }
+
+    setShowOverModal(false);
+    setPendingOverMat(null);
+  };
+
+  // Confirming 100% Room Completion & Calculating Delta
+  const handleConfirmCompleteRoom = () => {
+    const deltaSummary = [];
+    activeMaterialIds.forEach((matId) => {
+      const mat = materials.find((m) => m.id === matId);
+      if (!mat) return;
+
+      const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
+      const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+      const installedBefore = hasRoomPlan
+        ? Number(room.plannedItems[matId].installedQty || 0)
+        : Number(mat.installedQty || 0);
+      const delta = Number(sessionQuantities[matId]) || 0;
+      const totalInstalled = installedBefore + delta;
+
+      deltaSummary.push({
+        materialId: mat.id,
+        pos: mat.pos,
+        name: mat.cleanName || mat.name,
+        qu: mat.qu,
+        plannedQty: planned,
+        installedQty: totalInstalled,
+        diff: planned !== null ? Number((planned - totalInstalled).toFixed(2)) : 0,
+        status: planned !== null
+          ? (totalInstalled > planned ? 'over' : totalInstalled < planned ? 'under' : 'exact')
+          : 'documented',
+      });
+    });
+
+    if (onCompleteRoom) {
+      onCompleteRoom(room.id, deltaSummary);
+    }
+    setShowCompleteModal(false);
   };
 
   const handleSaveUnclear = () => {
@@ -241,6 +350,30 @@ export default function BookingScreen({
           >
             <Text style={styles.nachtragBtnText}>＋ {t('nachtrag', currentLang)}</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Room Status & Complete Room CTA */}
+        <View style={styles.roomCompleteSection}>
+          {room.isCompleted || room.pct === 100 ? (
+            <View style={styles.roomCompletedBadge}>
+              <Text style={styles.roomCompletedIcon}>✓</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.roomCompletedTitle}>Raum zu 100 % fertiggestellt</Text>
+                <Text style={styles.roomCompletedSub}>
+                  Mengen-Delta im Bauleiter-Admin-Panel hinterlegt
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.completeRoomBtn}
+              onPress={() => setShowCompleteModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.completeRoomIcon}>✓</Text>
+              <Text style={styles.completeRoomBtnText}>Raum/Ort fertigstellen (100 %)</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Search / Add Material Input */}
@@ -419,88 +552,205 @@ export default function BookingScreen({
             if (!mat) return null;
 
             const delta = Number(sessionQuantities[matId]) || 0;
-            const currentTotalVerb = (Number(mat.installedQty) || 0) + delta;
-            const remaining = (Number(mat.deliveredQty) || 0) - currentTotalVerb;
-            const isOver = remaining < 0;
-            const donePct = mat.deliveredQty > 0
-              ? Math.min(100, Math.round((currentTotalVerb / mat.deliveredQty) * 100))
+            const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
+            const roomPlanned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+            const roomInstalledBefore = hasRoomPlan
+              ? Number(room.plannedItems[matId].installedQty || 0)
+              : Number(mat.installedQty || 0);
+
+            const currentRoomVerb = roomInstalledBefore + delta;
+            const projectDelivered = Number(mat.deliveredQty || 0);
+
+            // Remaining for this room: planned - verbaut (or delivered - verbaut if pure GAEB)
+            const roomRemaining = hasRoomPlan
+              ? Math.max(0, roomPlanned - currentRoomVerb)
+              : Math.max(0, projectDelivered - currentRoomVerb);
+
+            const isOver = hasRoomPlan
+              ? currentRoomVerb > roomPlanned
+              : currentRoomVerb > projectDelivered;
+
+            const exceededBy = hasRoomPlan
+              ? Math.max(0, currentRoomVerb - roomPlanned)
+              : Math.max(0, currentRoomVerb - projectDelivered);
+
+            // Progress percentage: strictly capped at 100%
+            const baseTarget = hasRoomPlan ? roomPlanned : projectDelivered;
+            const progressPct = baseTarget > 0
+              ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100))
               : 0;
 
             const gloss = getForeignGloss(mat);
+            const userReason = overExplanations[mat.id];
 
             return (
-              <View key={mat.id} style={styles.bookRow}>
-                {/* Icon box */}
-                <View style={[styles.iconBox, isOver && styles.iconBoxOver]}>
-                  <Text style={[styles.iconSymbol, isOver && styles.iconSymbolOver]}>
-                    {getMatIconSymbol(mat.icon)}
+              <View
+                key={mat.id}
+                style={[
+                  styles.bookCard,
+                  isOver && styles.bookCardOver,
+                  room.isCompleted && styles.bookCardCompleted,
+                ]}
+              >
+                {/* 1. TOP: Icon left + Full-width Title & Subtitle */}
+                <View style={styles.cardHeaderRow}>
+                  <View style={[styles.iconBox, isOver && styles.iconBoxOver]}>
+                    <Text style={[styles.iconSymbol, isOver && styles.iconSymbolOver]}>
+                      {getMatIconSymbol(mat.icon)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardHeaderCol}>
+                    <View style={styles.posRow}>
+                      <View style={styles.posChip}>
+                        <Text style={styles.posChipText}>Pos {mat.pos}</Text>
+                      </View>
+                      {mat.containsHint ? (
+                        <View style={styles.hintChip}>
+                          <Text style={styles.hintChipText} numberOfLines={1}>
+                            {mat.containsHint}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {isOver ? (
+                        <View style={styles.overBadge}>
+                          <Text style={styles.overBadgeText}>
+                            +{exceededBy.toFixed(1)} {mat.qu} Mehrverbrauch
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.matName}>
+                      {mat.cleanName}
+                      {gloss ? <Text style={styles.matGloss}> ({gloss})</Text> : null}
+                    </Text>
+                    <Text style={styles.matGroup}>{mat.group}</Text>
+                  </View>
+                </View>
+
+                {/* 2. 4-Metrics Matrix: Geliefert | Geplant | Verbaut | Rest */}
+                <View style={styles.metricsContainer}>
+                  {/* Geliefert (Gesamtbaustelle) */}
+                  <View style={styles.metricCell}>
+                    <Text style={styles.metricLabel}>Geliefert</Text>
+                    <Text style={styles.metricValue}>
+                      {projectDelivered} <Text style={styles.metricUnit}>{mat.qu}</Text>
+                    </Text>
+                    <Text style={styles.metricSub}>Gesamt</Text>
+                  </View>
+
+                  <View style={styles.metricDivider} />
+
+                  {/* Geplant (Raum oder GAEB-Fallback) */}
+                  <View style={styles.metricCell}>
+                    <Text style={styles.metricLabel}>Geplant</Text>
+                    <Text style={styles.metricValue}>
+                      {hasRoomPlan ? `${roomPlanned} ` : '–'}
+                      {hasRoomPlan ? <Text style={styles.metricUnit}>{mat.qu}</Text> : ''}
+                    </Text>
+                    <Text style={styles.metricSub}>{hasRoomPlan ? 'Raum' : 'Nur GAEB'}</Text>
+                  </View>
+
+                  <View style={styles.metricDivider} />
+
+                  {/* Verbaut (In Raum) */}
+                  <View style={styles.metricCell}>
+                    <Text style={styles.metricLabel}>Verbaut</Text>
+                    <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
+                      {currentRoomVerb} <Text style={styles.metricUnit}>{mat.qu}</Text>
+                    </Text>
+                    <Text style={styles.metricSub}>In Raum</Text>
+                  </View>
+
+                  <View style={styles.metricDivider} />
+
+                  {/* Rest (Im Raum noch zu verbauen) */}
+                  <View style={styles.metricCell}>
+                    <Text style={styles.metricLabel}>Rest</Text>
+                    <Text
+                      style={[
+                        styles.metricValue,
+                        isOver
+                          ? styles.metricValOver
+                          : roomRemaining === 0
+                          ? styles.metricValDone
+                          : null,
+                      ]}
+                    >
+                      {isOver ? `-${exceededBy.toFixed(1)}` : roomRemaining.toFixed(1)}{' '}
+                      <Text style={styles.metricUnit}>{mat.qu}</Text>
+                    </Text>
+                    <Text style={styles.metricSub}>{isOver ? 'Über Soll' : 'Offen'}</Text>
+                  </View>
+                </View>
+
+                {/* 3. Progress Bar (Capped at 100%) */}
+                <View style={styles.progressRow}>
+                  <View style={{ flex: 1 }}>
+                    <ProgressBar progress={progressPct} isOver={isOver} height={6} />
+                  </View>
+                  <Text style={[styles.progressPctText, isOver && styles.progressPctTextOver]}>
+                    {progressPct} %
                   </Text>
                 </View>
 
-                {/* Details */}
-                <View style={styles.infoCol}>
-                  <View style={styles.posRow}>
-                    <View style={styles.posChip}>
-                      <Text style={styles.posChipText}>Pos {mat.pos}</Text>
-                    </View>
-                    {mat.containsHint ? (
-                      <View style={styles.hintChip}>
-                        <Text style={styles.hintChipText} numberOfLines={1}>
-                          {mat.containsHint}
+                {/* 4. Bottom Row: Reason note (if over) + Stepper bottom right */}
+                <View style={styles.cardFooterRow}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    {userReason ? (
+                      <TouchableOpacity
+                        style={styles.reasonBadge}
+                        onPress={() => {
+                          setPendingOverMat({
+                            mat,
+                            nextDelta: delta,
+                            exceededBy,
+                            planned: baseTarget,
+                            qu: mat.qu,
+                          });
+                          setOverReason(userReason);
+                          setShowOverModal(true);
+                        }}
+                      >
+                        <Text style={styles.reasonBadgeText} numberOfLines={1}>
+                          ⚠️ {userReason}
                         </Text>
-                      </View>
+                      </TouchableOpacity>
+                    ) : isOver ? (
+                      <Text style={styles.overWarningText}>
+                        ⚠️ Mehrverbrauch erfasst
+                      </Text>
                     ) : null}
                   </View>
 
-                  <Text style={styles.matName}>
-                    {mat.cleanName}
-                    {gloss ? <Text style={styles.matGloss}> ({gloss})</Text> : null}
-                  </Text>
-                  <Text style={styles.matGroup}>{mat.group}</Text>
+                  {/* Stepper (+ / −) */}
+                  <View style={styles.stepperWrapper}>
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => handleStep(mat.id, -1)}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.stepperBtnText}>−</Text>
+                    </TouchableOpacity>
 
-                  {/* Quantity Pool Counters */}
-                  <View style={styles.poolRow}>
-                    <Text style={styles.poolText}>
-                      {t('gLief', currentLang)} <Text style={styles.poolBold}>{mat.deliveredQty} {mat.qu}</Text>
-                    </Text>
-                    <Text style={styles.poolText}>
-                      {t('gBer', currentLang)} <Text style={styles.poolBold}>{currentTotalVerb}</Text>
-                    </Text>
-                    <Text style={[styles.poolText, isOver && styles.poolTextOver]}>
-                      {t('gRest', currentLang)} <Text style={[styles.poolBold, isOver && styles.poolTextOver]}>{remaining.toFixed(1)} {mat.qu}</Text>
-                    </Text>
+                    <View style={styles.stepperValBox}>
+                      <Text style={styles.stepperValText}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </Text>
+                      <Text style={styles.stepperUnitText}>
+                        {mat.qu} {t('perWeek', currentLang)}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => handleStep(mat.id, 1)}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.stepperBtnText}>+</Text>
+                    </TouchableOpacity>
                   </View>
-
-                  {/* Progress bar */}
-                  <ProgressBar progress={donePct} isOver={isOver} height={6} style={{ marginTop: 6 }} />
-                </View>
-
-                {/* Stepper (+ / -) */}
-                <View style={styles.stepperWrapper}>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleStep(mat.id, -1)}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={styles.stepperBtnText}>−</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.stepperValBox}>
-                    <Text style={styles.stepperValText}>
-                      {delta > 0 ? `+${delta}` : delta}
-                    </Text>
-                    <Text style={styles.stepperUnitText}>
-                      {mat.qu} {t('perWeek', currentLang)}
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => handleStep(mat.id, 1)}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={styles.stepperBtnText}>+</Text>
-                  </TouchableOpacity>
                 </View>
               </View>
             );
@@ -761,6 +1011,211 @@ export default function BookingScreen({
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: MEHRVERBRAUCH ERFASSEN (OVER-CONSUMPTION OVERLAY)     */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={showOverModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.overModalCard}>
+            <View style={styles.overModalHeader}>
+              <Text style={styles.overModalTitle}>⚠️ Geplante Menge überschritten</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowOverModal(false);
+                  setPendingOverMat(null);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.overModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.overModalSub}>
+              Pos {pendingOverMat?.mat?.pos} · {pendingOverMat?.mat?.cleanName}
+            </Text>
+
+            <View style={styles.overStatsBox}>
+              <Text style={styles.overStatsText}>
+                Geplant: <Text style={{ fontWeight: '800' }}>{pendingOverMat?.planned} {pendingOverMat?.qu}</Text>
+                {'  →  '}
+                Neu: <Text style={{ fontWeight: '800', color: COLORS.red }}>
+                  +{(Number(pendingOverMat?.exceededBy) || 0).toFixed(1)} {pendingOverMat?.qu} Mehrverbrauch
+                </Text>
+              </Text>
+            </View>
+
+            <Text style={styles.overFieldLabel}>
+              Grund für den Bauleiter auswählen oder eingeben:
+            </Text>
+
+            {/* Quick Reason Pills */}
+            <View style={styles.quickPillsGrid}>
+              {[
+                'Planänderung Bauherr',
+                'Altbau-Hindernis / Versprung',
+                'Verschnitt / Beschädigung',
+                'Zusätzlicher Anschluss',
+              ].map((reasonOption) => (
+                <TouchableOpacity
+                  key={reasonOption}
+                  style={[
+                    styles.reasonPill,
+                    overReason === reasonOption && styles.reasonPillActive,
+                  ]}
+                  onPress={() => setOverReason(reasonOption)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[
+                      styles.reasonPillText,
+                      overReason === reasonOption && styles.reasonPillTextActive,
+                    ]}
+                  >
+                    {reasonOption}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Multiline Reason Input */}
+            <TextInput
+              style={styles.overReasonInput}
+              placeholder="Begründung für Mehraufwand & Bauleiter-Alert (3 Zeilen)..."
+              placeholderTextColor={COLORS.muted}
+              multiline={true}
+              numberOfLines={3}
+              value={overReason}
+              onChangeText={setOverReason}
+            />
+
+            <View style={styles.overActionRow}>
+              <TouchableOpacity
+                style={styles.overCancelBtn}
+                onPress={() => {
+                  setShowOverModal(false);
+                  setPendingOverMat(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.overCancelText}>Abbrechen</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.overConfirmBtn}
+                onPress={() => handleConfirmOverReason()}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.overConfirmText}>Mehraufwand buchen</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* MODAL: RAUM/ORT FERTIGSTELLEN (100% ABSCHLUSS MIT DELTA)     */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={showCompleteModal} transparent animationType="slide">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.completeModalCard}>
+            <View style={styles.completeModalHeader}>
+              <Text style={styles.completeModalTitle}>✓ Raum/Ort fertigstellen</Text>
+              <TouchableOpacity
+                onPress={() => setShowCompleteModal(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.overModalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.completeModalSub}>
+              {room.name} ({room.code}) · 100 % Abschluss
+            </Text>
+
+            <Text style={styles.completeNoticeText}>
+              Die Fertigstellung setzt den Raum auf 100 %. Das Mengen-Delta (Minder- oder Mehrverbrauch) wird für den Bauleiter im Admin-Panel zur VOB-Abrechnung hinterlegt:
+            </Text>
+
+            {/* Delta Summary List */}
+            <ScrollView style={styles.deltaScrollList}>
+              {activeMaterialIds.map((matId) => {
+                const mat = materials.find((m) => m.id === matId);
+                if (!mat) return null;
+
+                const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
+                const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+                const installedBefore = hasRoomPlan
+                  ? Number(room.plannedItems[matId].installedQty || 0)
+                  : Number(mat.installedQty || 0);
+                const delta = Number(sessionQuantities[matId]) || 0;
+                const totalVerb = installedBefore + delta;
+
+                const diff = planned !== null ? planned - totalVerb : 0;
+                const isOver = planned !== null && totalVerb > planned;
+                const isUnder = planned !== null && totalVerb < planned;
+
+                return (
+                  <View key={mat.id} style={styles.deltaRow}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={styles.deltaMatName} numberOfLines={1}>
+                        Pos {mat.pos} · {mat.cleanName}
+                      </Text>
+                      <Text style={styles.deltaMatSub}>
+                        {hasRoomPlan
+                          ? `Soll: ${planned} ${mat.qu}  |  Ist: ${totalVerb} ${mat.qu}`
+                          : `Verbaut: ${totalVerb} ${mat.qu} (GAEB-Bestand)`}
+                      </Text>
+                    </View>
+
+                    {hasRoomPlan ? (
+                      isUnder ? (
+                        <View style={styles.deltaBadgeUnder}>
+                          <Text style={styles.deltaBadgeUnderText}>
+                            +{diff.toFixed(1)} {mat.qu} unverbaut
+                          </Text>
+                        </View>
+                      ) : isOver ? (
+                        <View style={styles.deltaBadgeOver}>
+                          <Text style={styles.deltaBadgeOverText}>
+                            -{Math.abs(diff).toFixed(1)} {mat.qu} Mehraufwand
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.deltaBadgeExact}>
+                          <Text style={styles.deltaBadgeExactText}>Exakt nach Plan</Text>
+                        </View>
+                      )
+                    ) : (
+                      <View style={styles.deltaBadgeExact}>
+                        <Text style={styles.deltaBadgeExactText}>{totalVerb} {mat.qu}</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.completeActionRow}>
+              <TouchableOpacity
+                style={styles.overCancelBtn}
+                onPress={() => setShowCompleteModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.overCancelText}>Weiter bearbeiten</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.completeConfirmBtn}
+                onPress={handleConfirmCompleteRoom}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.completeConfirmText}>Raum jetzt abschließen (100 %)</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -1055,97 +1510,197 @@ const styles = StyleSheet.create({
   rowsWrapper: {
     gap: 12,
   },
-  bookRow: {
+  // Room Completion Section
+  roomCompleteSection: {
+    marginBottom: 14,
+  },
+  roomCompletedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#E6FFFA',
+    borderWidth: 1.5,
+    borderColor: '#38B2AC',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.line,
     padding: 12,
-    gap: 10,
+    gap: 12,
   },
-  iconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: '#F1F4F7',
-    justifyContent: 'center',
+  roomCompletedIcon: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#234E52',
+  },
+  roomCompletedTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#234E52',
+  },
+  roomCompletedSub: {
+    fontSize: 11.5,
+    color: '#285E61',
+    marginTop: 1,
+  },
+  completeRoomBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#38B2AC',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 8,
+    elevation: 1,
+    shadowColor: '#38B2AC',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
   },
-  iconBoxOver: {
-    backgroundColor: COLORS.redBg,
+  completeRoomIcon: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#319795',
   },
-  iconSymbol: {
-    fontSize: 20,
-    color: COLORS.inkSoft,
-    fontWeight: 'bold',
+  completeRoomBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#285E61',
   },
-  iconSymbolOver: {
-    color: COLORS.red,
+
+  // -------------------------------------------------------------
+  // Redesigned Material Card Styles
+  // -------------------------------------------------------------
+  bookCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
   },
-  infoCol: {
+  bookCardOver: {
+    borderColor: '#FEB2B2',
+    backgroundColor: '#FFF5F5',
+  },
+  bookCardCompleted: {
+    borderColor: '#B2F5EA',
+    backgroundColor: '#F7FFFD',
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 12,
+  },
+  cardHeaderCol: {
     flex: 1,
   },
-  posRow: {
+  overBadge: {
+    backgroundColor: '#FED7D7',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginLeft: 4,
+  },
+  overBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#9B2C2C',
+  },
+  // 4-Metrics Matrix: Geliefert | Geplant | Verbaut | Rest
+  metricsContainer: {
     flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginBottom: 10,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-around',
+  },
+  metricCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
     marginBottom: 2,
   },
-  posChip: {
-    backgroundColor: '#EAF4FB',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  posChipText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#0082C9',
-  },
-  hintChip: {
-    backgroundColor: '#E1F3F1',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    flexShrink: 1,
-  },
-  hintChipText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#12897E',
-  },
-  matName: {
+  metricValue: {
     fontSize: 13.5,
-    fontWeight: '700',
+    fontWeight: '800',
     color: COLORS.ink,
   },
-  matGloss: {
-    fontSize: 12,
-    fontStyle: 'italic',
+  metricUnit: {
+    fontSize: 10,
+    fontWeight: '600',
     color: COLORS.muted,
   },
-  matGroup: {
-    fontSize: 11,
+  metricSub: {
+    fontSize: 9.5,
     color: COLORS.muted,
     marginTop: 1,
   },
-  poolRow: {
+  metricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E8F0',
+  },
+  metricValOver: {
+    color: COLORS.red,
+  },
+  metricValDone: {
+    color: '#276749',
+  },
+  progressRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
-    flexWrap: 'wrap',
-    marginTop: 4,
+    marginBottom: 10,
   },
-  poolText: {
-    fontSize: 11,
+  progressPctText: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: COLORS.inkSoft,
+    minWidth: 42,
+    textAlign: 'right',
   },
-  poolBold: {
+  progressPctTextOver: {
+    color: COLORS.red,
+  },
+  cardFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  reasonBadge: {
+    backgroundColor: '#FEFCBF',
+    borderWidth: 1,
+    borderColor: '#ECC94B',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  reasonBadgeText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: COLORS.ink,
+    color: '#744210',
   },
-  poolTextOver: {
+  overWarningText: {
+    fontSize: 11,
+    fontWeight: '700',
     color: COLORS.red,
   },
   stepperWrapper: {
@@ -1443,5 +1998,252 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 16,
+  },
+
+  // -------------------------------------------------------------
+  // Modals (Mehrverbrauch & Complete Room) Styles
+  // -------------------------------------------------------------
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  overModalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+  },
+  overModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  overModalTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: COLORS.ink,
+  },
+  overModalClose: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.muted,
+    padding: 4,
+  },
+  overModalSub: {
+    fontSize: 13,
+    color: COLORS.muted,
+    marginBottom: 12,
+  },
+  overStatsBox: {
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FED7D7',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 14,
+  },
+  overStatsText: {
+    fontSize: 13,
+    color: COLORS.inkSoft,
+  },
+  overFieldLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.ink,
+    marginBottom: 8,
+  },
+  quickPillsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  reasonPill: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  reasonPillActive: {
+    backgroundColor: '#FEFCBF',
+    borderColor: '#D69E2E',
+  },
+  reasonPillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: COLORS.inkSoft,
+  },
+  reasonPillTextActive: {
+    color: '#744210',
+    fontWeight: '800',
+  },
+  overReasonInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 13,
+    color: COLORS.ink,
+    minHeight: 70,
+    textAlignVertical: 'top',
+    marginBottom: 14,
+  },
+  overActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  overCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  overCancelText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  overConfirmBtn: {
+    flex: 1.6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: COLORS.amber,
+    alignItems: 'center',
+  },
+  overConfirmText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  // Complete Room Modal Styles
+  completeModalCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '85%',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+  },
+  completeModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  completeModalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#234E52',
+  },
+  completeModalSub: {
+    fontSize: 13,
+    color: COLORS.muted,
+    marginBottom: 10,
+  },
+  completeNoticeText: {
+    fontSize: 12,
+    color: COLORS.inkSoft,
+    lineHeight: 17,
+    marginBottom: 12,
+  },
+  deltaScrollList: {
+    maxHeight: 250,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    marginBottom: 16,
+  },
+  deltaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+  },
+  deltaMatName: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  deltaMatSub: {
+    fontSize: 11,
+    color: COLORS.muted,
+    marginTop: 1,
+  },
+  deltaBadgeUnder: {
+    backgroundColor: '#E6FFFA',
+    borderWidth: 1,
+    borderColor: '#38B2AC',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  deltaBadgeUnderText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#234E52',
+  },
+  deltaBadgeOver: {
+    backgroundColor: '#FFF5F5',
+    borderWidth: 1,
+    borderColor: '#FEB2B2',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  deltaBadgeOverText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#9B2C2C',
+  },
+  deltaBadgeExact: {
+    backgroundColor: '#EDF2F7',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  deltaBadgeExactText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  completeActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  completeConfirmBtn: {
+    flex: 1.6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#319795',
+    alignItems: 'center',
+  },
+  completeConfirmText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });
