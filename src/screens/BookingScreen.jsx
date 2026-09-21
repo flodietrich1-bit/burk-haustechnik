@@ -38,8 +38,8 @@ export default function BookingScreen({
     room.defaultMaterialIds || ['m2', 'm3', 'm4', 'm5']
   );
 
-  // Unclear item inline form
-  const [showUnclearForm, setShowUnclearForm] = useState(false);
+  // Unclear item Fullscreen Modal
+  const [showUnclearModal, setShowUnclearModal] = useState(false);
   const [unclearText, setUnclearText] = useState('');
   const [unclearQty, setUnclearQty] = useState('');
   const [unclearUnit, setUnclearUnit] = useState('Stk'); // 'Stk' | 'm'
@@ -287,7 +287,7 @@ export default function BookingScreen({
     setUnclearText('');
     setUnclearQty('');
     setSelectedUnclearMat(null);
-    setShowUnclearForm(false);
+    setShowUnclearModal(false);
     setShowUnclearSuggestions(false);
   };
 
@@ -370,7 +370,7 @@ export default function BookingScreen({
         <View style={styles.headerRowClean}>
           <Text style={styles.roomTitle}>{room.name}</Text>
           <Text style={styles.roomSubtitle}>
-            {t('bookHead', currentLang)} · KW 27
+            {t('bookHead', currentLang)} · {t('kw', currentLang)} 27
           </Text>
         </View>
 
@@ -385,13 +385,13 @@ export default function BookingScreen({
             <Text style={styles.actionBtnNachtragText}>＋ {t('nachtrag', currentLang)}</Text>
           </TouchableOpacity>
 
-          {/* Button 2: Position unklar */}
+          {/* Button 2: Position unklar (Öffnet Fullscreen Overlay) */}
           <TouchableOpacity
-            style={[styles.actionBtnUnclear, showUnclearForm && styles.actionBtnUnclearActive]}
-            onPress={() => setShowUnclearForm(!showUnclearForm)}
+            style={styles.actionBtnUnclear}
+            onPress={() => setShowUnclearModal(true)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.actionBtnUnclearText, showUnclearForm && styles.actionBtnUnclearTextActive]}>
+            <Text style={styles.actionBtnUnclearText}>
               ❓ {t('unclearBtnShort', currentLang)}
             </Text>
           </TouchableOpacity>
@@ -416,115 +416,6 @@ export default function BookingScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Inline Unclear Form (falls 'Pos. unklar' geöffnet) */}
-        {showUnclearForm && (
-          <View style={styles.unclearFormCard}>
-            <View style={styles.unclearHeaderRow}>
-              <Text style={styles.unclearFormTitle}>{t('unclearTitle', currentLang)}</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowUnclearForm(false);
-                  setShowUnclearSuggestions(false);
-                }}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Text style={styles.unclearCloseText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.unclearSubInfo}>
-              Erfassen Sie ein verbautes Produkt. Beim Tippen werden auch bereits bestellte Materialien vorgeschlagen.
-            </Text>
-
-            {/* Product input with Autosuggest */}
-            <View style={{ position: 'relative', zIndex: 10 }}>
-              <TextInput
-                style={styles.unclearInput}
-                placeholder={t('unclearWhat', currentLang)}
-                placeholderTextColor={COLORS.muted}
-                value={unclearText}
-                onChangeText={(text) => {
-                  setUnclearText(text);
-                  setSelectedUnclearMat(null);
-                  setShowUnclearSuggestions(text.trim().length >= 1);
-                }}
-                onFocus={() => {
-                  if (unclearText.trim().length >= 1) {
-                    setShowUnclearSuggestions(true);
-                  }
-                }}
-              />
-
-              {/* Suggestions List */}
-              {unclearSuggestions.length > 0 && (
-                <View style={styles.unclearSuggestionsBox}>
-                  <Text style={styles.unclearSugHeader}>
-                    Bestellte / GAEB-Positionen:
-                  </Text>
-                  {unclearSuggestions.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.unclearSugItem}
-                      onPress={() => handleSelectUnclearSuggestion(item)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.unclearSugName} numberOfLines={1}>
-                          {item.cleanName || item.name}
-                        </Text>
-                        <Text style={styles.unclearSugMeta}>
-                          Pos {item.pos} · {item.group}
-                          {item.deliveredQty ? ` · Geliefert: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
-                        </Text>
-                      </View>
-                      <View style={styles.unclearSugBadge}>
-                        <Text style={styles.unclearSugBadgeText}>Bestellt</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </View>
-
-            {/* Unit Toggle: Stück (Menge) vs Meter (Meterzahl) */}
-            <View style={styles.unclearUnitToggleRow}>
-              <TouchableOpacity
-                style={[styles.unclearUnitBtn, unclearUnit === 'Stk' && styles.unclearUnitBtnActive]}
-                onPress={() => setUnclearUnit('Stk')}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.unclearUnitBtnText, unclearUnit === 'Stk' && styles.unclearUnitBtnTextActive]}>
-                  Stück (Menge)
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.unclearUnitBtn, unclearUnit === 'm' && styles.unclearUnitBtnActive]}
-                onPress={() => setUnclearUnit('m')}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.unclearUnitBtnText, unclearUnit === 'm' && styles.unclearUnitBtnTextActive]}>
-                  Meter (Meterzahl)
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Quantity Input */}
-            <TextInput
-              style={styles.unclearInput}
-              placeholder={unclearUnit === 'm' ? "Meterzahl (z. B. 12.5)" : "Menge in Stück (z. B. 10)"}
-              placeholderTextColor={COLORS.muted}
-              keyboardType="decimal-pad"
-              value={unclearQty}
-              onChangeText={setUnclearQty}
-            />
-
-            <TouchableOpacity style={styles.unclearSaveBtn} onPress={handleSaveUnclear} activeOpacity={0.8}>
-              <Text style={styles.unclearSaveText}>{t('unclearRecord', currentLang)}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Unclear items list */}
         {unclearItems.length > 0 && (
           <View style={styles.unclearSectionWrapper}>
@@ -538,7 +429,9 @@ export default function BookingScreen({
                   </Text>
                 </View>
                 <View style={styles.uBadge}>
-                  <Text style={styles.uBadgeText}>Zuordnung offen</Text>
+                  <Text style={styles.uBadgeText}>
+                    {t('unclearOpenBadge', currentLang)}
+                  </Text>
                 </View>
               </View>
             ))}
@@ -551,7 +444,7 @@ export default function BookingScreen({
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               style={styles.searchInputField}
-              placeholder={t('searchPlaceholder', currentLang) || "Position suchen – z. B. 1.002, Rohr, Bogen..."}
+              placeholder={t('searchPlaceholder', currentLang)}
               placeholderTextColor={COLORS.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -577,7 +470,7 @@ export default function BookingScreen({
           {searchResults.length > 0 && (
             <View style={styles.resultsList}>
               <View style={styles.resultsHeaderRow}>
-                <Text style={styles.resultsHeaderText}>Gefundene Positionen (Klick verschiebt nach ganz oben):</Text>
+                <Text style={styles.resultsHeaderText}>{t('foundPositionsHeader', currentLang)}</Text>
               </View>
               {searchResults.map((item) => (
                 <TouchableOpacity
@@ -592,12 +485,12 @@ export default function BookingScreen({
                   <View style={{ flex: 1 }}>
                     <Text style={styles.resName}>{item.cleanName}</Text>
                     <Text style={styles.resSub}>
-                      {item.group} · {item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}
+                      {item.group} · {item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}
                       {item.containsHint ? ` · (${item.containsHint})` : ''}
                     </Text>
                   </View>
                   <View style={styles.resPickBadge}>
-                    <Text style={styles.resPickArrow}>↑ Nach oben</Text>
+                    <Text style={styles.resPickArrow}>↑ {t('moveToTop', currentLang)}</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -675,7 +568,7 @@ export default function BookingScreen({
                       {isOver ? (
                         <View style={styles.overBadge}>
                           <Text style={styles.overBadgeText}>
-                            +{exceededBy.toFixed(1)} {mat.qu} Mehrverbrauch
+                            +{exceededBy.toFixed(1)} {mat.qu} {t('overConsumptionBadge', currentLang)}
                           </Text>
                         </View>
                       ) : null}
@@ -693,41 +586,43 @@ export default function BookingScreen({
                 <View style={styles.metricsContainer}>
                   {/* Geliefert (Gesamtbaustelle) */}
                   <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>Geliefert</Text>
+                    <Text style={styles.metricLabel}>{t('matrixDelivered', currentLang)}</Text>
                     <Text style={styles.metricValue}>
                       {projectDelivered} <Text style={styles.metricUnit}>{mat.qu}</Text>
                     </Text>
-                    <Text style={styles.metricSub}>Gesamt</Text>
+                    <Text style={styles.metricSub}>{t('matrixTotal', currentLang)}</Text>
                   </View>
 
                   <View style={styles.metricDivider} />
 
                   {/* Geplant (Raum oder GAEB-Fallback) */}
                   <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>Geplant</Text>
+                    <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
                     <Text style={styles.metricValue}>
                       {hasRoomPlan ? `${roomPlanned} ` : '–'}
                       {hasRoomPlan ? <Text style={styles.metricUnit}>{mat.qu}</Text> : ''}
                     </Text>
-                    <Text style={styles.metricSub}>{hasRoomPlan ? 'Raum' : 'Nur GAEB'}</Text>
+                    <Text style={styles.metricSub}>
+                      {hasRoomPlan ? t('matrixRoom', currentLang) : t('matrixOnlyGaeb', currentLang)}
+                    </Text>
                   </View>
 
                   <View style={styles.metricDivider} />
 
                   {/* Verbaut (In Raum) */}
                   <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>Verbaut</Text>
+                    <Text style={styles.metricLabel}>{t('matrixInstalled', currentLang)}</Text>
                     <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
                       {currentRoomVerb} <Text style={styles.metricUnit}>{mat.qu}</Text>
                     </Text>
-                    <Text style={styles.metricSub}>In Raum</Text>
+                    <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
                   </View>
 
                   <View style={styles.metricDivider} />
 
                   {/* Rest (Im Raum noch zu verbauen) */}
                   <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>Rest</Text>
+                    <Text style={styles.metricLabel}>{t('matrixRemaining', currentLang)}</Text>
                     <Text
                       style={[
                         styles.metricValue,
@@ -741,7 +636,9 @@ export default function BookingScreen({
                       {isOver ? `-${exceededBy.toFixed(1)}` : roomRemaining.toFixed(1)}{' '}
                       <Text style={styles.metricUnit}>{mat.qu}</Text>
                     </Text>
-                    <Text style={styles.metricSub}>{isOver ? 'Über Soll' : 'Offen'}</Text>
+                    <Text style={styles.metricSub}>
+                      {isOver ? t('matrixOver', currentLang) : t('matrixOpen', currentLang)}
+                    </Text>
                   </View>
                 </View>
 
@@ -781,7 +678,7 @@ export default function BookingScreen({
                       </TouchableOpacity>
                     ) : isOver ? (
                       <Text style={styles.overWarningText}>
-                        ⚠️ Mehrverbrauch erfasst
+                        ⚠️ {t('overRecorded', currentLang)}
                       </Text>
                     ) : null}
                   </View>
@@ -839,7 +736,7 @@ export default function BookingScreen({
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
               <Text style={styles.modalMainTitle}>{t('nachtragTitle', currentLang)}</Text>
-              <Text style={styles.modalSubTitle}>{room.name} · KW 27</Text>
+              <Text style={styles.modalSubTitle}>{room.name} · {t('kw', currentLang)} 27</Text>
             </View>
             <TouchableOpacity
               style={styles.modalCloseBtn}
@@ -889,7 +786,7 @@ export default function BookingScreen({
                 <View>
                   {/* Material / Artikel mit GAEB Autosuggester */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Material / Artikel (aus GAEB oder Freitext)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reMat', currentLang)}</Text>
                     <TextInput
                       style={styles.modalInput}
                       placeholder="z. B. DIN 100, Bogen, Schelle, Kugelhahn..."
@@ -905,7 +802,7 @@ export default function BookingScreen({
                     {/* GAEB Suggestions Dropdown */}
                     {matSuggestions.length > 0 && (
                       <View style={styles.suggestionsContainer}>
-                        <Text style={styles.suggestionsHeader}>Treffer aus GAEB / Leistungsverzeichnis:</Text>
+                        <Text style={styles.suggestionsHeader}>{t('unclearOrderedSuggestions', currentLang)}</Text>
                         {matSuggestions.map((item) => (
                           <TouchableOpacity
                             key={item.id}
@@ -916,7 +813,7 @@ export default function BookingScreen({
                               <View style={styles.sugPosChip}>
                                 <Text style={styles.sugPosText}>Pos {item.pos}</Text>
                               </View>
-                              <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}</Text>
+                              <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}</Text>
                             </View>
                             <Text style={styles.sugTitle}>{item.cleanName}</Text>
                             <Text style={styles.sugGroup}>{item.group}</Text>
@@ -928,14 +825,14 @@ export default function BookingScreen({
 
                   {/* Einheit & Mengeneingabe */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Einheit wählen</Text>
+                    <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)}</Text>
                     <View style={styles.unitSelectorRow}>
                       <TouchableOpacity
                         style={[styles.unitToggle, matUnit === 'Stk' && styles.unitToggleActive]}
                         onPress={() => setMatUnit('Stk')}
                       >
                         <Text style={[styles.unitToggleText, matUnit === 'Stk' && styles.unitToggleTextActive]}>
-                          Stück (Menge)
+                          {t('unitPieces', currentLang)}
                         </Text>
                       </TouchableOpacity>
 
@@ -944,14 +841,14 @@ export default function BookingScreen({
                         onPress={() => setMatUnit('m')}
                       >
                         <Text style={[styles.unitToggleText, matUnit === 'm' && styles.unitToggleTextActive]}>
-                          Meter (Meterzahl)
+                          {t('unitMeters', currentLang)}
                         </Text>
                       </TouchableOpacity>
                     </View>
 
                     <TextInput
                       style={styles.modalInput}
-                      placeholder={`Anzahl in ${matUnit === 'm' ? 'Metern (z. B. 6.5)' : 'Stück (z. B. 2)'}`}
+                      placeholder={matUnit === 'm' ? t('unclearQtyMeterPlaceholder', currentLang) : t('unclearQtyPiecePlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       keyboardType="decimal-pad"
                       value={matQty}
@@ -961,7 +858,7 @@ export default function BookingScreen({
 
                   {/* Besteller / Auftraggeber (Default: Monteurname) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Auftraggeber / Besteller</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reBest', currentLang)}</Text>
                     <TextInput
                       style={styles.modalInput}
                       placeholder={t('reBest', currentLang)}
@@ -973,10 +870,10 @@ export default function BookingScreen({
 
                   {/* Kommentar / Begründung (3 Zeilen) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Kommentar / Begründung (3 Zeilen)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} (3 Zeilen)</Text>
                     <TextInput
                       style={[styles.modalInput, styles.multilineInput]}
-                      placeholder="Begründung für den Bauleiter (z. B. Sonderwunsch Bauherr, fehlendes Fitting)..."
+                      placeholder={t('overCommentPlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       multiline={true}
                       numberOfLines={3}
@@ -994,7 +891,7 @@ export default function BookingScreen({
                 <View>
                   {/* Ausgeführte Tätigkeit */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Ausgeführte Tätigkeit / Arbeit</Text>
+                    <Text style={styles.modalFieldLabel}>{t('fldTaetigkeit', currentLang)}</Text>
                     <TextInput
                       style={styles.modalInput}
                       placeholder="z. B. Kernbohrung DN 150 + Mauerdurchbruch..."
@@ -1006,7 +903,7 @@ export default function BookingScreen({
 
                   {/* Stunden & Schnellwahl */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Geleistete Stunden (h)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)}</Text>
                     <TextInput
                       style={styles.modalInput}
                       placeholder="z. B. 2.5"
@@ -1034,10 +931,10 @@ export default function BookingScreen({
 
                   {/* Monteur / Ausführender (Default: Monteurname) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Ausführender Monteur / Auftraggeber</Text>
+                    <Text style={styles.modalFieldLabel}>{t('monteur', currentLang)} / {t('reBest', currentLang)}</Text>
                     <TextInput
                       style={styles.modalInput}
-                      placeholder="Monteur-Name"
+                      placeholder={t('monteur', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       value={hoursMonteur}
                       onChangeText={setHoursMonteur}
@@ -1046,10 +943,10 @@ export default function BookingScreen({
 
                   {/* Begründung / Notiz (3 Zeilen) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>Begründung für Mehraufwand (3 Zeilen)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} (3 Zeilen)</Text>
                     <TextInput
                       style={[styles.modalInput, styles.multilineInput]}
-                      placeholder="Grund für die Stundenlohnarbeiten (z. B. unvorhergesehene Altbaubeschaffenheit)..."
+                      placeholder={t('overCommentPlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       multiline={true}
                       numberOfLines={3}
@@ -1067,7 +964,7 @@ export default function BookingScreen({
                 activeOpacity={0.8}
               >
                 <Text style={styles.modalSubmitText}>
-                  {activeTab === 'material' ? 'Material-Nachtrag erfassen' : 'Arbeitszeit erfassen'}
+                  {activeTab === 'material' ? t('reCreate', currentLang) : t('reCreateHours', currentLang)}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -1083,7 +980,7 @@ export default function BookingScreen({
           {/* Header with Title and Close '✕' Button */}
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
-              <Text style={styles.modalMainTitle}>⚠️ Mehraufwand / Mehrverbrauch</Text>
+              <Text style={styles.modalMainTitle}>⚠️ {t('overTitle', currentLang)}</Text>
               <Text style={styles.modalSubTitle}>
                 {room.name} ({room.code}) · Pos {pendingOverMat?.mat?.pos}
               </Text>
@@ -1125,7 +1022,7 @@ export default function BookingScreen({
                       </View>
                       <View style={styles.overBadge}>
                         <Text style={styles.overBadgeText}>
-                          +{parseFloat(overExtraQty) || 0} {pendingOverMat?.qu} Mehr
+                          +{parseFloat(overExtraQty) || 0} {pendingOverMat?.qu} {t('overExcess', currentLang)}
                         </Text>
                       </View>
                     </View>
@@ -1143,21 +1040,21 @@ export default function BookingScreen({
                 {/* Live Calculation Matrix: Geplant -> Neu verbaut -> Mehrverbrauch */}
                 <View style={styles.overCalcBox}>
                   <View style={styles.overCalcCol}>
-                    <Text style={styles.overCalcLabel}>Geplant Raum</Text>
+                    <Text style={styles.overCalcLabel}>{t('overPlannedRoom', currentLang)}</Text>
                     <Text style={styles.overCalcVal}>
                       {pendingOverMat?.planned} {pendingOverMat?.qu}
                     </Text>
                   </View>
                   <Text style={styles.overCalcArrow}>→</Text>
                   <View style={styles.overCalcCol}>
-                    <Text style={styles.overCalcLabel}>Neu verbaut</Text>
+                    <Text style={styles.overCalcLabel}>{t('overNewInstalled', currentLang)}</Text>
                     <Text style={styles.overCalcVal}>
                       {((pendingOverMat?.planned || 0) + (parseFloat(overExtraQty) || 0)).toFixed(1).replace(/\.0$/, '')} {pendingOverMat?.qu}
                     </Text>
                   </View>
                   <Text style={styles.overCalcArrow}>=</Text>
                   <View style={styles.overCalcCol}>
-                    <Text style={[styles.overCalcLabel, { color: COLORS.red }]}>Mehrverbrauch</Text>
+                    <Text style={[styles.overCalcLabel, { color: COLORS.red }]}>{t('overExcess', currentLang)}</Text>
                     <Text style={[styles.overCalcVal, { color: COLORS.red, fontWeight: '900' }]}>
                       +{(parseFloat(overExtraQty) || 0).toFixed(1).replace(/\.0$/, '')} {pendingOverMat?.qu}
                     </Text>
@@ -1168,7 +1065,7 @@ export default function BookingScreen({
               {/* Quantity Controls: Stepper [−] [Input] [+] and Quick Select Pills */}
               <View style={styles.modalField}>
                 <Text style={styles.modalFieldLabel}>
-                  Zusätzlich benötigte Menge ({pendingOverMat?.qu === 'm' ? 'Meter' : 'Stück'}):
+                  {t('overExtraQtyLabel', currentLang)} ({pendingOverMat?.qu === 'm' ? t('unitMShort', currentLang) : t('unitPcsShort', currentLang)}):
                 </Text>
 
                 <View style={styles.overQtyControlRow}>
@@ -1204,7 +1101,7 @@ export default function BookingScreen({
                 </View>
 
                 {/* Quick Pills for 1-tap setting (+1, +2, +3, +5, +8, +10, +15) */}
-                <Text style={styles.overQuickLabel}>Schnellauswahl für Mehraufwand:</Text>
+                <Text style={styles.overQuickLabel}>{t('overQuickLabel', currentLang)}</Text>
                 <View style={styles.overQuickPillsRow}>
                   {['1', '2', '3', '5', '8', '10', '15'].map((val) => {
                     const isSelected = String(parseFloat(overExtraQty)) === val;
@@ -1232,32 +1129,32 @@ export default function BookingScreen({
               {/* Reason Selection */}
               <View style={styles.modalField}>
                 <Text style={styles.modalFieldLabel}>
-                  Grund für Bauleiter & Nachtrag wählen:
+                  {t('overReasonLabel', currentLang)}
                 </Text>
 
                 <View style={styles.quickPillsGrid}>
                   {[
-                    'Planänderung Bauherr',
-                    'Altbau-Hindernis / Versprung',
-                    'Verschnitt / Beschädigung',
-                    'Zusätzlicher Anschluss',
-                  ].map((reasonOption) => (
+                    { key: 'reasonPlanChange', text: t('reasonPlanChange', currentLang) },
+                    { key: 'reasonObstacle', text: t('reasonObstacle', currentLang) },
+                    { key: 'reasonDamage', text: t('reasonDamage', currentLang) },
+                    { key: 'reasonExtraConn', text: t('reasonExtraConn', currentLang) },
+                  ].map((r) => (
                     <TouchableOpacity
-                      key={reasonOption}
+                      key={r.key}
                       style={[
                         styles.reasonPill,
-                        overReason === reasonOption && styles.reasonPillActive,
+                        overReason === r.text && styles.reasonPillActive,
                       ]}
-                      onPress={() => setOverReason(reasonOption)}
+                      onPress={() => setOverReason(r.text)}
                       activeOpacity={0.7}
                     >
                       <Text
                         style={[
                           styles.reasonPillText,
-                          overReason === reasonOption && styles.reasonPillTextActive,
+                          overReason === r.text && styles.reasonPillTextActive,
                         ]}
                       >
-                        {reasonOption}
+                        {r.text}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -1265,11 +1162,11 @@ export default function BookingScreen({
 
                 {/* 3-line Comment / Reason field */}
                 <Text style={styles.modalFieldLabel}>
-                  Detail-Begründung (3 Zeilen für Baustellen-Notizen):
+                  {t('overDetailReasonLabel', currentLang)}
                 </Text>
                 <TextInput
                   style={styles.overReasonInputFullscreen}
-                  placeholder="Begründung für Mehraufwand eingeben (erscheint im Bauleiter-Dashboard)..."
+                  placeholder={t('overCommentPlaceholder', currentLang)}
                   placeholderTextColor={COLORS.muted}
                   multiline={true}
                   numberOfLines={3}
@@ -1288,7 +1185,7 @@ export default function BookingScreen({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.overCancelTextLarge}>Abbrechen</Text>
+                  <Text style={styles.overCancelTextLarge}>{t('cancel', currentLang)}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1297,8 +1194,170 @@ export default function BookingScreen({
                   activeOpacity={0.8}
                 >
                   <Text style={styles.overConfirmTextLarge}>
-                    ✓ Mehraufwand (+{overExtraQty || 0} {pendingOverMat?.qu}) buchen
+                    ✓ {t('overConfirmBtn', currentLang)} (+{overExtraQty || 0} {pendingOverMat?.qu})
                   </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ------------------------------------------------------------- */}
+      {/* FULLSCREEN OVERLAY: POSITION UNKLAR ERFASSEN                 */}
+      {/* ------------------------------------------------------------- */}
+      <Modal visible={showUnclearModal} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={styles.modalFullscreen}>
+          {/* Header with Title and Close '✕' Button */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleBox}>
+              <Text style={styles.modalMainTitle}>❓ {t('unclearTitle', currentLang)}</Text>
+              <Text style={styles.modalSubTitle}>
+                {room.name} · {t('kw', currentLang)} 27
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => {
+                setShowUnclearModal(false);
+                setShowUnclearSuggestions(false);
+              }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.modalCloseIcon}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Info banner */}
+              <View style={styles.unclearInfoCard}>
+                <Text style={styles.unclearInfoIcon}>ℹ️</Text>
+                <Text style={styles.unclearInfoText}>{t('unclearSubInfo', currentLang)}</Text>
+              </View>
+
+              {/* Product field + Autosuggest from GAEB / ordered */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>{t('unclearWhatLabel', currentLang)}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder={t('unclearWhatPlaceholder', currentLang)}
+                  placeholderTextColor={COLORS.muted}
+                  value={unclearText}
+                  onChangeText={(text) => {
+                    setUnclearText(text);
+                    setSelectedUnclearMat(null);
+                    setShowUnclearSuggestions(text.trim().length >= 1);
+                  }}
+                  onFocus={() => {
+                    if (unclearText.trim().length >= 1) setShowUnclearSuggestions(true);
+                  }}
+                />
+
+                {unclearSuggestions.length > 0 && (
+                  <View style={styles.unclearSuggestionsBox}>
+                    <Text style={styles.unclearSugHeader}>{t('unclearOrderedSuggestions', currentLang)}</Text>
+                    {unclearSuggestions.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.unclearSugItem}
+                        onPress={() => handleSelectUnclearSuggestion(item)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.unclearSugName} numberOfLines={1}>
+                            {item.cleanName || item.name}
+                          </Text>
+                          <Text style={styles.unclearSugMeta}>
+                            Pos {item.pos} · {item.group}
+                            {item.deliveredQty ? ` · ${t('matrixDelivered', currentLang)}: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
+                          </Text>
+                        </View>
+                        <View style={styles.unclearSugBadge}>
+                          <Text style={styles.unclearSugBadgeText}>{t('unclearOrderedBadge', currentLang)}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Unit Selector & Quantity */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)}</Text>
+                <View style={styles.unitSelectorRow}>
+                  <TouchableOpacity
+                    style={[styles.unitToggle, unclearUnit === 'Stk' && styles.unitToggleActive]}
+                    onPress={() => setUnclearUnit('Stk')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.unitToggleText,
+                        unclearUnit === 'Stk' && styles.unitToggleTextActive,
+                      ]}
+                    >
+                      {t('unitPieces', currentLang)}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.unitToggle, unclearUnit === 'm' && styles.unitToggleActive]}
+                    onPress={() => setUnclearUnit('m')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.unitToggleText,
+                        unclearUnit === 'm' && styles.unitToggleTextActive,
+                      ]}
+                    >
+                      {t('unitMeters', currentLang)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder={
+                    unclearUnit === 'm'
+                      ? t('unclearQtyMeterPlaceholder', currentLang)
+                      : t('unclearQtyPiecePlaceholder', currentLang)
+                  }
+                  placeholderTextColor={COLORS.muted}
+                  keyboardType="decimal-pad"
+                  value={unclearQty}
+                  onChangeText={setUnclearQty}
+                />
+              </View>
+
+              {/* Fullscreen Action Buttons */}
+              <View style={styles.overFullscreenActionRow}>
+                <TouchableOpacity
+                  style={styles.overCancelBtnLarge}
+                  onPress={() => {
+                    setShowUnclearModal(false);
+                    setShowUnclearSuggestions(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.overCancelTextLarge}>{t('cancel', currentLang)}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.overConfirmBtnLarge, { backgroundColor: COLORS.primary }]}
+                  onPress={handleSaveUnclear}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.overConfirmTextLarge}>✓ {t('unclearRecord', currentLang)}</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -1313,7 +1372,7 @@ export default function BookingScreen({
         <View style={styles.modalBackdrop}>
           <View style={styles.completeModalCard}>
             <View style={styles.completeModalHeader}>
-              <Text style={styles.completeModalTitle}>✓ Raum/Ort fertigstellen</Text>
+              <Text style={styles.completeModalTitle}>✓ {t('completeModalTitle', currentLang)}</Text>
               <TouchableOpacity
                 onPress={() => setShowCompleteModal(false)}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -1323,11 +1382,11 @@ export default function BookingScreen({
             </View>
 
             <Text style={styles.completeModalSub}>
-              {room.name} ({room.code}) · 100 % Abschluss
+              {room.name} ({room.code}) · {t('completeModalSub', currentLang)}
             </Text>
 
             <Text style={styles.completeNoticeText}>
-              Die Fertigstellung setzt den Raum auf 100 %. Das Mengen-Delta (Minder- oder Mehrverbrauch) wird für den Bauleiter im Admin-Panel zur VOB-Abrechnung hinterlegt:
+              {t('completeNoticeText', currentLang)}
             </Text>
 
             {/* Delta Summary List */}
@@ -1356,8 +1415,8 @@ export default function BookingScreen({
                       </Text>
                       <Text style={styles.deltaMatSub}>
                         {hasRoomPlan
-                          ? `Soll: ${planned} ${mat.qu}  |  Ist: ${totalVerb} ${mat.qu}`
-                          : `Verbaut: ${totalVerb} ${mat.qu} (GAEB-Bestand)`}
+                          ? `${t('matrixPlanned', currentLang)}: ${planned} ${mat.qu}  |  ${t('matrixInstalled', currentLang)}: ${totalVerb} ${mat.qu}`
+                          : `${t('matrixInstalled', currentLang)}: ${totalVerb} ${mat.qu} (${t('matrixOnlyGaeb', currentLang)})`}
                       </Text>
                     </View>
 
@@ -1365,18 +1424,18 @@ export default function BookingScreen({
                       isUnder ? (
                         <View style={styles.deltaBadgeUnder}>
                           <Text style={styles.deltaBadgeUnderText}>
-                            +{diff.toFixed(1)} {mat.qu} unverbaut
+                            +{diff.toFixed(1)} {mat.qu} {t('completeUnder', currentLang)}
                           </Text>
                         </View>
                       ) : isOver ? (
                         <View style={styles.deltaBadgeOver}>
                           <Text style={styles.deltaBadgeOverText}>
-                            -{Math.abs(diff).toFixed(1)} {mat.qu} Mehraufwand
+                            -{Math.abs(diff).toFixed(1)} {mat.qu} {t('completeOver', currentLang)}
                           </Text>
                         </View>
                       ) : (
                         <View style={styles.deltaBadgeExact}>
-                          <Text style={styles.deltaBadgeExactText}>Exakt nach Plan</Text>
+                          <Text style={styles.deltaBadgeExactText}>{t('completeExact', currentLang)}</Text>
                         </View>
                       )
                     ) : (
@@ -1395,7 +1454,7 @@ export default function BookingScreen({
                 onPress={() => setShowCompleteModal(false)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.overCancelText}>Weiter bearbeiten</Text>
+                <Text style={styles.overCancelText}>{t('cancel', currentLang)}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1403,7 +1462,7 @@ export default function BookingScreen({
                 onPress={handleConfirmCompleteRoom}
                 activeOpacity={0.8}
               >
-                <Text style={styles.completeConfirmText}>Raum jetzt abschließen (100 %)</Text>
+                <Text style={styles.completeConfirmText}>{t('completeRoomConfirm', currentLang)}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1681,6 +1740,26 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginBottom: 10,
     lineHeight: 16,
+  },
+  unclearInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBF8FF',
+    borderWidth: 1,
+    borderColor: '#BEE3F8',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  unclearInfoIcon: {
+    fontSize: 18,
+  },
+  unclearInfoText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#2B6CB0',
+    lineHeight: 18,
   },
   unclearSuggestionsBox: {
     backgroundColor: '#FFFFFF',

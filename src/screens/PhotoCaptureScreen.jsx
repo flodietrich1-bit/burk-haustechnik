@@ -93,7 +93,9 @@ export default function PhotoCaptureScreen({
             <View key={index} style={styles.photoTile}>
               <Image source={{ uri }} style={styles.thumbnail} />
               <View style={styles.badgeLabel}>
-                <Text style={styles.badgeText}>KW 27 · Foto {index + 1}</Text>
+                <Text style={styles.badgeText}>
+                  {t('kw', currentLang)} 27 · {t('photoBadge', currentLang)} {index + 1}
+                </Text>
               </View>
               <TouchableOpacity
                 style={styles.deleteBtn}

@@ -45,15 +45,78 @@ export const TRANSLATIONS = {
   overLimit: { de: 'über Soll/LV', ro: 'peste deviz', pl: 'ponad kosztorys', hr: 'preko troškovnika' },
   toPhotos: { de: 'Weiter zu Fotos ›', ro: 'Mai departe la poze ›', pl: 'Dalej do zdjęć ›', hr: 'Dalje na fotografije ›' },
 
+  // Units
+  unitPieces: { de: 'Stück (Menge)', ro: 'Bucăți (buc)', pl: 'Sztuki (szt)', hr: 'Komadi (kom)' },
+  unitMeters: { de: 'Meter (Meterzahl)', ro: 'Metri (m)', pl: 'Metry (m)', hr: 'Metri (m)' },
+  unitPcsShort: { de: 'Stk', ro: 'buc', pl: 'szt', hr: 'kom' },
+  unitMShort: { de: 'm', ro: 'm', pl: 'm', hr: 'm' },
+
+  // Card 4-Metric Matrix
+  matrixDelivered: { de: 'Geliefert', ro: 'Livrat', pl: 'Dostarczone', hr: 'Isporučeno' },
+  matrixPlanned: { de: 'Geplant', ro: 'Planificat', pl: 'Planowane', hr: 'Planirano' },
+  matrixInstalled: { de: 'Verbaut', ro: 'Montat', pl: 'Zamontowane', hr: 'Ugrađeno' },
+  matrixRemaining: { de: 'Rest', ro: 'Rest', pl: 'Pozostało', hr: 'Ostatak' },
+  matrixTotal: { de: 'Gesamt', ro: 'Total', pl: 'Łącznie', hr: 'Ukupno' },
+  matrixRoom: { de: 'Raum', ro: 'Încăpere', pl: 'Pomieszczenie', hr: 'Prostorija' },
+  matrixOnlyGaeb: { de: 'Nur GAEB', ro: 'Doar deviz', pl: 'Tylko przedmiar', hr: 'Samo troškovnik' },
+  matrixInRoom: { de: 'In Raum', ro: 'În încăpere', pl: 'W pomieszczeniu', hr: 'U prostoriji' },
+  matrixOpen: { de: 'Offen', ro: 'Deschis', pl: 'Otwarte', hr: 'Otvoreno' },
+  matrixOver: { de: 'Über Soll', ro: 'Peste plan', pl: 'Ponad plan', hr: 'Preko plana' },
+
+  // Search & Ordering
+  foundPositionsHeader: { de: 'Gefundene Positionen (Klick verschiebt nach ganz oben):', ro: 'Poziții găsite (click mută sus):', pl: 'Znalezione pozycje (kliknij, aby przenieść na górę):', hr: 'Pronađene stavke (klik premješta na vrh):' },
+  moveToTop: { de: 'Nach oben', ro: 'Sus', pl: 'Na górę', hr: 'Na vrh' },
+
   // Unclear items
   unclearBtn: { de: 'Position unklar – trotzdem erfassen', ro: 'Poziție neclară – înregistrează oricum', pl: 'Pozycja niejasna – zapisz mimo to', hr: 'Nejasna stavka – ipak unesi' },
   unclearBtnShort: { de: 'Pos. unklar', ro: 'Poz. neclară', pl: 'Poz. niejasna', hr: 'Nejasno' },
   completeBtnShort: { de: '100% Fertig', ro: '100% Finalizat', pl: '100% Gotowe', hr: '100% Gotovo' },
   unclearTitle: { de: 'Unklare Position', ro: 'Poziție neclară', pl: 'Pozycja niejasna', hr: 'Nejasna stavka' },
   unclearWhat: { de: 'Was wurde verbaut? (z. B. 20 Rohrschellen DN 100)', ro: 'Ce s-a montat? (de ex. 20 brățări DN 100)', pl: 'Co zamontowano? (np. 20 obejm DN 100)', hr: 'Što je ugrađeno? (npr. 20 obujmica DN 100)' },
+  unclearWhatLabel: { de: 'Was wurde verbaut? (Artikel oder Freitext)', ro: 'Ce s-a montat? (articol sau text liber)', pl: 'Co zamontowano? (artykuł lub tekst)', hr: 'Što je ugrađeno? (artikl ili slobodni tekst)' },
+  unclearWhatPlaceholder: { de: 'z. B. Rohrschellen, Bogen, Kugelhahn...', ro: 'de ex. brățări țeavă, cot, robinet...', pl: 'np. obejmy do rur, kolano, zawór...', hr: 'npr. obujmice, koljeno, kuglasti ventil...' },
+  unclearSelectUnit: { de: 'Einheit wählen', ro: 'Alege unitatea', pl: 'Wybierz jednostkę', hr: 'Odaberi jedinicu' },
+  unclearQtyPiecePlaceholder: { de: 'Menge in Stück (z. B. 10)', ro: 'Cantitate în bucăți (de ex. 10)', pl: 'Ilość w sztukach (np. 10)', hr: 'Količina u komadima (npr. 10)' },
+  unclearQtyMeterPlaceholder: { de: 'Meterzahl (z. B. 12.5)', ro: 'Număr de metri (de ex. 12.5)', pl: 'Liczba metrów (np. 12.5)', hr: 'Broj metara (npr. 12.5)' },
+  unclearOrderedSuggestions: { de: 'Bestellte / GAEB-Positionen:', ro: 'Poziții comandate / din deviz:', pl: 'Pozycje zamówione / z przedmiaru:', hr: 'Naručene / troškovničke stavke:' },
+  unclearOrderedBadge: { de: 'Bestellt', ro: 'Comandat', pl: 'Zamówione', hr: 'Naručeno' },
   unclearQty: { de: 'Menge (z. B. 20 Stk)', ro: 'Cantitate (de ex. 20 buc)', pl: 'Ilość (np. 20 szt)', hr: 'Količina (npr. 20 kom)' },
   unclearRecord: { de: 'Als unklar erfassen', ro: 'Înregistrează ca neclar', pl: 'Zapisz jako niejasne', hr: 'Unesi kao nejasno' },
   unclearSection: { de: 'Zuordnung offen – Projektleiter ordnet zu', ro: 'Alocare deschisă – șeful de proiect alocă', pl: 'Do przypisania – kierownik przypisze', hr: 'Otvoreno dodjeljivanje – voditelj dodjeljuje' },
+  unclearSubInfo: { de: 'Erfassen Sie ein verbautes Produkt. Beim Tippen werden auch bereits bestellte Materialien vorgeschlagen.', ro: 'Înregistrează un produs montat. La tastare se vor sugera și materialele deja comandate.', pl: 'Zapisz zamontowany produkt. Podczas wpisywania wyświetlą się zamówione materiały.', hr: 'Zabilježi ugrađeni proizvod. Tijekom tipkanja predlažu se već naručeni materijali.' },
+  unclearOpenBadge: { de: 'Zuordnung offen', ro: 'Alocare deschisă', pl: 'Do przypisania', hr: 'Otvoreno' },
+
+  // Mehrverbrauch / Over-Consumption Fullscreen Overlay
+  overTitle: { de: 'Mehraufwand / Mehrverbrauch', ro: 'Consum suplimentar / Mehraufwand', pl: 'Dodatkowy nakład / zużycie', hr: 'Dodatni rad / potrošnja' },
+  overPlannedRoom: { de: 'Geplant Raum', ro: 'Planificat încăpere', pl: 'Plan pomieszczenia', hr: 'Planirano u prostoriji' },
+  overNewInstalled: { de: 'Neu verbaut', ro: 'Nou montat', pl: 'Nowo zamontowane', hr: 'Novo ugrađeno' },
+  overExcess: { de: 'Mehrverbrauch', ro: 'Consum suplimentar', pl: 'Nadmierne zużycie', hr: 'Dodatna potrošnja' },
+  overExtraQtyLabel: { de: 'Zusätzlich benötigte Menge:', ro: 'Cantitate suplimentară necesară:', pl: 'Dodatkowo potrzebna ilość:', hr: 'Dodatno potrebna količina:' },
+  overQuickLabel: { de: 'Schnellauswahl für Mehraufwand:', ro: 'Selectare rapidă supliment:', pl: 'Szybki wybór:', hr: 'Brzi odabir:' },
+  overReasonLabel: { de: 'Grund für Bauleiter & Nachtrag wählen:', ro: 'Alege motivul pentru șeful de șantier:', pl: 'Wybierz powód dla kierownika budowy:', hr: 'Odaberi razlog za voditelja gradilišta:' },
+  overDetailReasonLabel: { de: 'Detail-Begründung (3 Zeilen für Baustellen-Notizen):', ro: 'Justificare detaliată (3 rânduri pentru note de șantier):', pl: 'Szczegółowe uzasadnienie (3 linie notatki):', hr: 'Detaljno obrazloženje (3 retka za bilješke):' },
+  overCommentPlaceholder: { de: 'Begründung für Mehraufwand eingeben (erscheint im Bauleiter-Dashboard)...', ro: 'Introdu justificarea suplimentului (apare în tabloul de bord)...', pl: 'Wpisz uzasadnienie dodatkowego nakładu...', hr: 'Unesi obrazloženje dodatnog rada...' },
+  overConfirmBtn: { de: '✓ Mehraufwand buchen', ro: '✓ Înregistrează suplimentul', pl: '✓ Zapisz dodatkowy nakład', hr: '✓ Uknjiži dodatni rad' },
+  overConsumptionBadge: { de: 'Mehrverbrauch', ro: 'Consum suplimentar', pl: 'Nadmierne zużycie', hr: 'Dodatna potrošnja' },
+  overRecorded: { de: 'Mehrverbrauch erfasst', ro: 'Consum suplimentar înregistrat', pl: 'Zarejestrowano nadmierne zużycie', hr: 'Zabilježena dodatna potrošnja' },
+
+  // Reasons
+  reasonPlanChange: { de: 'Planänderung Bauherr', ro: 'Modificare plan beneficiar', pl: 'Zmiana planu przez inwestora', hr: 'Izmjena plana investitora' },
+  reasonObstacle: { de: 'Altbau-Hindernis / Versprung', ro: 'Obstacol clădire veche / deviere', pl: 'Przeszkoda / uskok w starym budynku', hr: 'Prepreka u staroj zgradi / skok' },
+  reasonDamage: { de: 'Verschnitt / Beschädigung', ro: 'Pierderi la tăiere / deteriorare', pl: 'Odpady / uszkodzenie', hr: 'Otpad / oštećenje' },
+  reasonExtraConn: { de: 'Zusätzlicher Anschluss', ro: 'Racord suplimentar', pl: 'Dodatkowe podłączenie', hr: 'Dodatni priključak' },
+
+  // Complete Room (100%) Modal
+  completeModalTitle: { de: 'Raum/Ort fertigstellen', ro: 'Finalizează încăperea', pl: 'Zakończ pomieszczenie', hr: 'Završi prostoriju' },
+  completeModalSub: { de: '100 % Abschluss', ro: 'Finalizare 100 %', pl: 'Zakończenie 100 %', hr: 'Završetak 100 %' },
+  completeNoticeText: { de: 'Die Fertigstellung setzt den Raum auf 100 %. Das Mengen-Delta (Minder- oder Mehrverbrauch) wird für den Bauleiter im Admin-Panel zur VOB-Abrechnung hinterlegt:', ro: 'Finalizarea setează încăperea la 100 %. Diferența de cantitate (economie sau consum suplimentar) este salvată pentru șeful de șantier în panoul admin pentru decontare:', pl: 'Zakończenie ustawia pomieszczenie na 100 %. Różnica ilościowa (mniejsze lub większe zużycie) zostanie zapisana w panelu kierownika do rozliczenia:', hr: 'Završetak postavlja prostoriju na 100 %. Razlika u količini (manja ili veća potrošnja) sprema se za voditelja gradilišta u administratorskoj ploči:' },
+  completeDelta: { de: 'Delta', ro: 'Diferență', pl: 'Różnica', hr: 'Razlika' },
+  completeUnder: { de: 'Minderverbrauch (Einsparung)', ro: 'Economie / consum redus', pl: 'Mniejsze zużycie (oszczędność)', hr: 'Manja potrošnja (ušteda)' },
+  completeOver: { de: 'Mehrverbrauch (Nachtrag)', ro: 'Consum suplimentar (supliment)', pl: 'Nadmierne zużycie (dodatek)', hr: 'Dodatna potrošnja (dodatak)' },
+  completeExact: { de: 'Exakt wie geplant', ro: 'Exact conform planului', pl: 'Dokładnie wg planu', hr: 'Točno prema planu' },
+  completeRoomConfirm: { de: 'Raum jetzt abschließen (100 %)', ro: 'Încheie încăperea acum (100 %)', pl: 'Zakończ pomieszczenie teraz (100 %)', hr: 'Završi prostoriju sada (100 %)' },
+  roomCompletedTitle: { de: 'Raum zu 100 % fertiggestellt', ro: 'Încăpere finalizată 100 %', pl: 'Pomieszczenie zakończone w 100%', hr: 'Prostorija završena 100 %' },
+  roomCompletedSub: { de: 'Mengen-Delta im Bauleiter-Admin-Panel hinterlegt', ro: 'Diferența de cantitate salvată în panoul admin', pl: 'Różnica ilościowa zapisana w panelu kierownika', hr: 'Razlika u količini spremljena u administratorskoj ploči' },
 
   // Nachtrag / Reorder
   nachtrag: { de: 'Nachtrag', ro: 'Supliment', pl: 'Dodatek', hr: 'Dodatak' },
@@ -67,6 +130,7 @@ export const TRANSLATIONS = {
   reBest: { de: 'Besteller / Ansprechpartner', ro: 'Solicitant / contact', pl: 'Zamawiający / kontakt', hr: 'Naručitelj / kontakt' },
   reNote: { de: 'Notiz / Begründung', ro: 'Notă / justificare', pl: 'Notatka / uzasadnienie', hr: 'Napomena / obrazloženje' },
   reCreate: { de: 'Nachtrag anlegen', ro: 'Creează supliment', pl: 'Utwórz dodatek', hr: 'Kreiraj dodatak' },
+  reCreateHours: { de: 'Arbeitszeit erfassen', ro: 'Înregistrează orele de lucru', pl: 'Zapisz czas pracy', hr: 'Unesi radne sate' },
   nachtragOpen: { de: 'Bereits erfasste Nachträge', ro: 'Suplimente deja înregistrate', pl: 'Już zapisane dodatki', hr: 'Već uneseni dodaci' },
 
   // Photos
@@ -75,6 +139,7 @@ export const TRANSLATIONS = {
   addPhotoCamera: { de: 'Foto aufnehmen (Kamera)', ro: 'Fă o poză (Cameră)', pl: 'Zrób zdjęcie (Aparat)', hr: 'Uslikaj (Kamera)' },
   addPhotoGallery: { de: 'Aus Mediathek wählen', ro: 'Alege din galerie', pl: 'Wybierz z galerii', hr: 'Odaberi iz galerije' },
   photoCount: { de: '{n} Fotos hinterlegt', ro: '{n} poze atașate', pl: '{n} załączonych zdjęć', hr: '{n} priloženih fotografija' },
+  photoBadge: { de: 'Foto', ro: 'Poză', pl: 'Zdjęcie', hr: 'Slika' },
   finishBooking: { de: 'Buchung abschließen ✓', ro: 'Finalizează înregistrarea ✓', pl: 'Zakończ wpis ✓', hr: 'Završi unos ✓' },
 
   // Done Screen
