@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -40,26 +40,35 @@ export default function BookingScreen({
   const [unclearText, setUnclearText] = useState('');
   const [unclearQty, setUnclearQty] = useState('');
 
-  // Nachtrag Modal state
+  // -------------------------------------------------------------
+  // Nachtrag Modal & Independent Form States
+  // -------------------------------------------------------------
   const [showNachtragModal, setShowNachtragModal] = useState(false);
-  const [nachtragType, setNachtragType] = useState('material'); // 'material' | 'stunden'
-  const [nachtragTitle, setNachtragTitle] = useState('');
-  const [nachtragQty, setNachtragQty] = useState('');
-  const [nachtragUnit, setNachtragUnit] = useState('Stk'); // 'Stk' (Menge) | 'm' (Meterzahl)
-  const [nachtragBesteller, setNachtragBesteller] = useState('');
-  const [nachtragNote, setNachtragNote] = useState('');
-  const [showNachtragSuggestions, setShowNachtragSuggestions] = useState(false);
+  const [activeTab, setActiveTab] = useState('material'); // 'material' | 'hours'
 
-  // Pre-fill monteur name as default Auftraggeber/Besteller when modal opens
+  // Form 1: Material Nachtrag (Completely independent state)
+  const [matTitle, setMatTitle] = useState('');
+  const [matQty, setMatQty] = useState('');
+  const [matUnit, setMatUnit] = useState('Stk'); // 'Stk' | 'm'
+  const [matBesteller, setMatBesteller] = useState('');
+  const [matNote, setMatNote] = useState('');
+  const [showMatSuggestions, setShowMatSuggestions] = useState(false);
+
+  // Form 2: Arbeitszeit Nachtrag (Completely independent state)
+  const [hoursActivity, setHoursActivity] = useState('');
+  const [hoursDuration, setHoursDuration] = useState('');
+  const [hoursMonteur, setHoursMonteur] = useState('');
+  const [hoursNote, setHoursNote] = useState('');
+
+  // Pre-fill monteur name as default when opening modal
   const openNachtragModal = () => {
-    if (!nachtragBesteller) {
-      setNachtragBesteller(monteur?.name || '');
-    }
-    setShowNachtragSuggestions(false);
+    if (!matBesteller) setMatBesteller(monteur?.name || '');
+    if (!hoursMonteur) setHoursMonteur(monteur?.name || '');
+    setShowMatSuggestions(false);
     setShowNachtragModal(true);
   };
 
-  // Filter materials for search autocomplete in main screen
+  // Main screen search filter
   const q = searchQuery.trim().toLowerCase();
   const searchResults = q
     ? materials.filter((m) =>
@@ -67,9 +76,9 @@ export default function BookingScreen({
       ).slice(0, 6)
     : [];
 
-  // Filter materials for Nachtrag GAEB autosuggester
-  const nq = nachtragTitle.trim().toLowerCase();
-  const nachtragSuggestions = (showNachtragSuggestions && nq.length >= 1 && nachtragType === 'material')
+  // Nachtrag Material GAEB Autosuggester
+  const nq = matTitle.trim().toLowerCase();
+  const matSuggestions = (showMatSuggestions && nq.length >= 1 && activeTab === 'material')
     ? materials.filter((m) =>
         (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + m.group).toLowerCase().includes(nq)
       ).slice(0, 8)
@@ -82,15 +91,15 @@ export default function BookingScreen({
     setSearchQuery('');
   };
 
-  const handleSelectNachtragSuggestion = (item) => {
-    setNachtragTitle(item.cleanName || item.name);
-    // Auto-detect unit: if position is measured in meters, set 'm', else 'Stk'
+  const handleSelectMatSuggestion = (item) => {
+    setMatTitle(item.cleanName || item.name);
+    // Auto-detect GAEB unit: meter or piece
     if (item.qu === 'm') {
-      setNachtragUnit('m');
+      setMatUnit('m');
     } else {
-      setNachtragUnit('Stk');
+      setMatUnit('Stk');
     }
-    setShowNachtragSuggestions(false);
+    setShowMatSuggestions(false);
   };
 
   const handleStep = (id, delta) => {
@@ -112,34 +121,53 @@ export default function BookingScreen({
     setShowUnclearForm(false);
   };
 
-  const handleCreateNachtrag = () => {
-    if (!nachtragTitle.trim()) {
-      Alert.alert('Hinweis', 'Bitte Bezeichnung / Material eingeben.');
-      return;
-    }
+  // Save Nachtrag (dispatches according to active tab with separate payloads)
+  const handleSubmitNachtrag = () => {
+    if (activeTab === 'material') {
+      if (!matTitle.trim()) {
+        Alert.alert('Hinweis', 'Bitte Materialbezeichnung eingeben.');
+        return;
+      }
+      const cleanQty = matQty.trim() || '1';
+      onAddNachtrag({
+        roomId: room.id,
+        roomName: room.name,
+        type: 'material',
+        title: matTitle.trim(),
+        quantity: `${cleanQty} ${matUnit}`,
+        qu: matUnit,
+        requestedBy: matBesteller.trim() || monteur?.name || 'Monteur',
+        note: matNote.trim(),
+      });
 
-    let finalQty = '';
-    if (nachtragType === 'stunden') {
-      finalQty = `${nachtragQty.trim() || '1'} h`;
+      // Clear material form
+      setMatTitle('');
+      setMatQty('');
+      setMatNote('');
     } else {
-      const cleanVal = nachtragQty.trim() || '1';
-      finalQty = `${cleanVal} ${nachtragUnit}`;
+      // Arbeitszeit / Stundenlohn
+      if (!hoursActivity.trim()) {
+        Alert.alert('Hinweis', 'Bitte ausgeführte Tätigkeit eingeben.');
+        return;
+      }
+      const cleanHours = hoursDuration.trim() || '1';
+      onAddNachtrag({
+        roomId: room.id,
+        roomName: room.name,
+        type: 'stunden',
+        title: hoursActivity.trim(),
+        quantity: `${cleanHours} h`,
+        qu: 'h',
+        requestedBy: hoursMonteur.trim() || monteur?.name || 'Monteur',
+        note: hoursNote.trim(),
+      });
+
+      // Clear hours form
+      setHoursActivity('');
+      setHoursDuration('');
+      setHoursNote('');
     }
 
-    onAddNachtrag({
-      roomId: room.id,
-      roomName: room.name,
-      type: nachtragType,
-      title: nachtragTitle.trim(),
-      quantity: finalQty,
-      qu: nachtragType === 'stunden' ? 'h' : nachtragUnit,
-      requestedBy: nachtragBesteller.trim() || monteur?.name || 'Monteur',
-      note: nachtragNote.trim(),
-    });
-
-    setNachtragTitle('');
-    setNachtragQty('');
-    setNachtragNote('');
     setShowNachtragModal(false);
     Alert.alert('Erfasst', 'Nachtrag wurde zur Synchronisation hinterlegt.');
   };
@@ -373,10 +401,12 @@ export default function BookingScreen({
         </TouchableOpacity>
       </View>
 
-      {/* Nachtrag Fullscreen Modal Dialog with Close '✕' Button */}
+      {/* ------------------------------------------------------------- */}
+      {/* FULLSCREEN NACHTRAG MODAL WITH INDEPENDENT TABS & INPUTS     */}
+      {/* ------------------------------------------------------------- */}
       <Modal visible={showNachtragModal} animationType="slide" presentationStyle="fullScreen">
         <SafeAreaView style={styles.modalFullscreen}>
-          {/* Fullscreen Modal Header */}
+          {/* Fullscreen Modal Header with Close '✕' Button */}
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
               <Text style={styles.modalMainTitle}>{t('nachtragTitle', currentLang)}</Text>
@@ -391,6 +421,29 @@ export default function BookingScreen({
             </TouchableOpacity>
           </View>
 
+          {/* Segmented Control Tabs: Material vs Arbeitszeit */}
+          <View style={styles.tabBarContainer}>
+            <TouchableOpacity
+              style={[styles.segmentTab, activeTab === 'material' && styles.segmentTabActive]}
+              onPress={() => setActiveTab('material')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.segmentText, activeTab === 'material' && styles.segmentTextActive]}>
+                📦 {t('typeMat', currentLang)}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.segmentTab, activeTab === 'hours' && styles.segmentTabActive]}
+              onPress={() => setActiveTab('hours')}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.segmentText, activeTab === 'hours' && styles.segmentTextActive]}>
+                ⏱ {t('typeStd', currentLang)}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={{ flex: 1 }}
@@ -400,150 +453,193 @@ export default function BookingScreen({
               contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Mode Switcher: Material vs Stundenlohn */}
-              <View style={styles.typeModes}>
-                <TouchableOpacity
-                  style={[styles.typeMode, nachtragType === 'material' && styles.typeModeActive]}
-                  onPress={() => {
-                    setNachtragType('material');
-                    setShowNachtragSuggestions(false);
-                  }}
-                >
-                  <Text style={[styles.typeModeText, nachtragType === 'material' && styles.typeModeTextActive]}>
-                    {t('typeMat', currentLang)}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeMode, nachtragType === 'stunden' && styles.typeModeActive]}
-                  onPress={() => {
-                    setNachtragType('stunden');
-                    setShowNachtragSuggestions(false);
-                  }}
-                >
-                  <Text style={[styles.typeModeText, nachtragType === 'stunden' && styles.typeModeTextActive]}>
-                    {t('typeStd', currentLang)}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              {/* ========================================================= */}
+              {/* TAB 1: MATERIAL NACHTRAG                                 */}
+              {/* ========================================================= */}
+              {activeTab === 'material' && (
+                <View>
+                  {/* Material / Artikel mit GAEB Autosuggester */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Material / Artikel (aus GAEB oder Freitext)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="z. B. DIN 100, Bogen, Schelle, Kugelhahn..."
+                      placeholderTextColor={COLORS.muted}
+                      value={matTitle}
+                      onChangeText={(val) => {
+                        setMatTitle(val);
+                        setShowMatSuggestions(true);
+                      }}
+                      onFocus={() => setShowMatSuggestions(true)}
+                    />
 
-              {/* Material/Artikel Input with GAEB Autosuggester */}
-              <View style={styles.modalField}>
-                <Text style={styles.modalFieldLabel}>
-                  {nachtragType === 'stunden' ? t('fldTaetigkeit', currentLang) : 'Material / Artikel (aus GAEB oder Freitext)'}
-                </Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={nachtragType === 'stunden' ? 'z. B. Kernbohrung + Anpassung' : 'z. B. DIN 100, Bogen, Kugelhahn...'}
-                  placeholderTextColor={COLORS.muted}
-                  value={nachtragTitle}
-                  onChangeText={(val) => {
-                    setNachtragTitle(val);
-                    setShowNachtragSuggestions(true);
-                  }}
-                  onFocus={() => setShowNachtragSuggestions(true)}
-                />
+                    {/* GAEB Suggestions Dropdown */}
+                    {matSuggestions.length > 0 && (
+                      <View style={styles.suggestionsContainer}>
+                        <Text style={styles.suggestionsHeader}>Treffer aus GAEB / Leistungsverzeichnis:</Text>
+                        {matSuggestions.map((item) => (
+                          <TouchableOpacity
+                            key={item.id}
+                            style={styles.suggestionItem}
+                            onPress={() => handleSelectMatSuggestion(item)}
+                          >
+                            <View style={styles.sugTopRow}>
+                              <View style={styles.sugPosChip}>
+                                <Text style={styles.sugPosText}>Pos {item.pos}</Text>
+                              </View>
+                              <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}</Text>
+                            </View>
+                            <Text style={styles.sugTitle}>{item.cleanName}</Text>
+                            <Text style={styles.sugGroup}>{item.group}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
 
-                {/* GAEB Product Autosuggester Dropdown */}
-                {nachtragSuggestions.length > 0 && (
-                  <View style={styles.suggestionsContainer}>
-                    <Text style={styles.suggestionsHeader}>Treffer aus GAEB / Leistungsverzeichnis:</Text>
-                    {nachtragSuggestions.map((item) => (
+                  {/* Einheit & Mengeneingabe */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Einheit wählen</Text>
+                    <View style={styles.unitSelectorRow}>
                       <TouchableOpacity
-                        key={item.id}
-                        style={styles.suggestionItem}
-                        onPress={() => handleSelectNachtragSuggestion(item)}
+                        style={[styles.unitToggle, matUnit === 'Stk' && styles.unitToggleActive]}
+                        onPress={() => setMatUnit('Stk')}
                       >
-                        <View style={styles.sugTopRow}>
-                          <View style={styles.sugPosChip}>
-                            <Text style={styles.sugPosText}>Pos {item.pos}</Text>
-                          </View>
-                          <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}</Text>
-                        </View>
-                        <Text style={styles.sugTitle}>{item.cleanName}</Text>
-                        <Text style={styles.sugGroup}>{item.group}</Text>
+                        <Text style={[styles.unitToggleText, matUnit === 'Stk' && styles.unitToggleTextActive]}>
+                          Stück (Menge)
+                        </Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
 
-              {/* Quantity Section with Toggle: Stück (Menge) vs Meter (Meterzahl) */}
-              {nachtragType === 'material' ? (
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>Einheit & Menge</Text>
-                  {/* Unit Selector: Menge vs Meterzahl */}
-                  <View style={styles.unitSelectorRow}>
-                    <TouchableOpacity
-                      style={[styles.unitToggle, nachtragUnit === 'Stk' && styles.unitToggleActive]}
-                      onPress={() => setNachtragUnit('Stk')}
-                    >
-                      <Text style={[styles.unitToggleText, nachtragUnit === 'Stk' && styles.unitToggleTextActive]}>
-                        Stück (Menge)
-                      </Text>
-                    </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.unitToggle, matUnit === 'm' && styles.unitToggleActive]}
+                        onPress={() => setMatUnit('m')}
+                      >
+                        <Text style={[styles.unitToggleText, matUnit === 'm' && styles.unitToggleTextActive]}>
+                          Meter (Meterzahl)
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
-                    <TouchableOpacity
-                      style={[styles.unitToggle, nachtragUnit === 'm' && styles.unitToggleActive]}
-                      onPress={() => setNachtragUnit('m')}
-                    >
-                      <Text style={[styles.unitToggleText, nachtragUnit === 'm' && styles.unitToggleTextActive]}>
-                        Meter (Meterzahl)
-                      </Text>
-                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder={`Anzahl in ${matUnit === 'm' ? 'Metern (z. B. 6.5)' : 'Stück (z. B. 2)'}`}
+                      placeholderTextColor={COLORS.muted}
+                      keyboardType="decimal-pad"
+                      value={matQty}
+                      onChangeText={setMatQty}
+                    />
                   </View>
 
-                  <TextInput
-                    style={styles.modalInput}
-                    placeholder={`Anzahl in ${nachtragUnit === 'm' ? 'Metern (z. B. 6.5)' : 'Stück (z. B. 2)'}`}
-                    placeholderTextColor={COLORS.muted}
-                    keyboardType="decimal-pad"
-                    value={nachtragQty}
-                    onChangeText={setNachtragQty}
-                  />
-                </View>
-              ) : (
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)}</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    placeholder="z. B. 2.5"
-                    placeholderTextColor={COLORS.muted}
-                    keyboardType="decimal-pad"
-                    value={nachtragQty}
-                    onChangeText={setNachtragQty}
-                  />
+                  {/* Besteller / Auftraggeber (Default: Monteurname) */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Auftraggeber / Besteller</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder={t('reBest', currentLang)}
+                      placeholderTextColor={COLORS.muted}
+                      value={matBesteller}
+                      onChangeText={setMatBesteller}
+                    />
+                  </View>
+
+                  {/* Kommentar / Begründung (3 Zeilen) */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Kommentar / Begründung (3 Zeilen)</Text>
+                    <TextInput
+                      style={[styles.modalInput, styles.multilineInput]}
+                      placeholder="Begründung für den Bauleiter (z. B. Sonderwunsch Bauherr, fehlendes Fitting)..."
+                      placeholderTextColor={COLORS.muted}
+                      multiline={true}
+                      numberOfLines={3}
+                      value={matNote}
+                      onChangeText={setMatNote}
+                    />
+                  </View>
                 </View>
               )}
 
-              {/* Auftraggeber / Besteller (Default Monteurname) */}
-              <View style={styles.modalField}>
-                <Text style={styles.modalFieldLabel}>Auftraggeber / Besteller</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder={t('reBest', currentLang)}
-                  placeholderTextColor={COLORS.muted}
-                  value={nachtragBesteller}
-                  onChangeText={setNachtragBesteller}
-                />
-              </View>
+              {/* ========================================================= */}
+              {/* TAB 2: ARBEITSZEIT NACHTRAG                              */}
+              {/* ========================================================= */}
+              {activeTab === 'hours' && (
+                <View>
+                  {/* Ausgeführte Tätigkeit */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Ausgeführte Tätigkeit / Arbeit</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="z. B. Kernbohrung DN 150 + Mauerdurchbruch..."
+                      placeholderTextColor={COLORS.muted}
+                      value={hoursActivity}
+                      onChangeText={setHoursActivity}
+                    />
+                  </View>
 
-              {/* Notiz / Begründung (3 Zeilen für ausreichend Platz) */}
-              <View style={styles.modalField}>
-                <Text style={styles.modalFieldLabel}>Kommentar / Begründung</Text>
-                <TextInput
-                  style={[styles.modalInput, styles.multilineInput]}
-                  placeholder="Begründung für den Bauleiter (z. B. Planänderung, Sonderwunsch Bauherr)..."
-                  placeholderTextColor={COLORS.muted}
-                  multiline={true}
-                  numberOfLines={3}
-                  value={nachtragNote}
-                  onChangeText={setNachtragNote}
-                />
-              </View>
+                  {/* Stunden & Schnellwahl */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Geleistete Stunden (h)</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="z. B. 2.5"
+                      placeholderTextColor={COLORS.muted}
+                      keyboardType="decimal-pad"
+                      value={hoursDuration}
+                      onChangeText={setHoursDuration}
+                    />
 
-              {/* Submit CTA */}
-              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleCreateNachtrag} activeOpacity={0.8}>
-                <Text style={styles.modalSubmitText}>{t('reCreate', currentLang)}</Text>
+                    {/* Quick Duration Pills */}
+                    <View style={styles.quickPillsRow}>
+                      {['0.5', '1.0', '2.0', '3.5', '8.0'].map((h) => (
+                        <TouchableOpacity
+                          key={h}
+                          style={[styles.pill, hoursDuration === h && styles.pillActive]}
+                          onPress={() => setHoursDuration(h)}
+                        >
+                          <Text style={[styles.pillText, hoursDuration === h && styles.pillTextActive]}>
+                            +{h} h
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Monteur / Ausführender (Default: Monteurname) */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Ausführender Monteur / Auftraggeber</Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="Monteur-Name"
+                      placeholderTextColor={COLORS.muted}
+                      value={hoursMonteur}
+                      onChangeText={setHoursMonteur}
+                    />
+                  </View>
+
+                  {/* Begründung / Notiz (3 Zeilen) */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>Begründung für Mehraufwand (3 Zeilen)</Text>
+                    <TextInput
+                      style={[styles.modalInput, styles.multilineInput]}
+                      placeholder="Grund für die Stundenlohnarbeiten (z. B. unvorhergesehene Altbaubeschaffenheit)..."
+                      placeholderTextColor={COLORS.muted}
+                      multiline={true}
+                      numberOfLines={3}
+                      value={hoursNote}
+                      onChangeText={setHoursNote}
+                    />
+                  </View>
+                </View>
+              )}
+
+              {/* Submit CTA Button */}
+              <TouchableOpacity
+                style={styles.modalSubmitBtn}
+                onPress={handleSubmitNachtrag}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {activeTab === 'material' ? 'Material-Nachtrag erfassen' : 'Arbeitszeit erfassen'}
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -894,7 +990,7 @@ const styles = StyleSheet.create({
   },
 
   // -------------------------------------------------------------
-  // Fullscreen Nachtrag Modal Styles
+  // Fullscreen Modal Styles with Tabs
   // -------------------------------------------------------------
   modalFullscreen: {
     flex: 1,
@@ -938,6 +1034,37 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.inkSoft,
   },
+  tabBarContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F4F7',
+    padding: 4,
+    marginHorizontal: 20,
+    marginTop: 14,
+    borderRadius: 12,
+  },
+  segmentTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  segmentTabActive: {
+    backgroundColor: '#FFFFFF',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
+  segmentText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  segmentTextActive: {
+    color: COLORS.ink,
+    fontWeight: '800',
+  },
   modalBody: {
     flex: 1,
     backgroundColor: '#FAFCFE',
@@ -945,32 +1072,6 @@ const styles = StyleSheet.create({
   modalScrollContent: {
     padding: 20,
     paddingBottom: 40,
-  },
-  typeModes: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
-  },
-  typeMode: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: COLORS.line,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  typeModeActive: {
-    borderColor: COLORS.amber,
-    backgroundColor: COLORS.lite,
-  },
-  typeModeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.inkSoft,
-  },
-  typeModeTextActive: {
-    color: COLORS.amberDark,
   },
   modalField: {
     marginBottom: 18,
@@ -1025,6 +1126,31 @@ const styles = StyleSheet.create({
   unitToggleTextActive: {
     color: COLORS.amberDark,
     fontWeight: '800',
+  },
+  quickPillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  pill: {
+    backgroundColor: '#F1F4F7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.line,
+  },
+  pillActive: {
+    backgroundColor: COLORS.lite,
+    borderColor: COLORS.amber,
+  },
+  pillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.inkSoft,
+  },
+  pillTextActive: {
+    color: COLORS.amberDark,
   },
   suggestionsContainer: {
     backgroundColor: '#FFFFFF',
@@ -1092,7 +1218,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 14,
   },
   modalSubmitText: {
     color: '#FFFFFF',

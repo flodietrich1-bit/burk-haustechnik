@@ -57,7 +57,7 @@ export const TRANSLATIONS = {
   nachtrag: { de: 'Nachtrag', ro: 'Supliment', pl: 'Dodatek', hr: 'Dodatak' },
   nachtragTitle: { de: 'Nachtrag erfassen', ro: 'Adaugă supliment', pl: 'Dodaj dodatek', hr: 'Unesi dodatak' },
   typeMat: { de: 'Material', ro: 'Material', pl: 'Materiał', hr: 'Materijal' },
-  typeStd: { de: 'Stundenlohn', ro: 'Manoperă (ore)', pl: 'Robocizna (godz.)', hr: 'Rad po satu' },
+  typeStd: { de: 'Arbeitszeit', ro: 'Timp de lucru (ore)', pl: 'Czas pracy (godz.)', hr: 'Radno vrijeme (sati)' },
   fldTaetigkeit: { de: 'Tätigkeit / Grund', ro: 'Activitate / motiv', pl: 'Czynność / powód', hr: 'Radnja / razlog' },
   fldStunden: { de: 'Stunden (z. B. 2,5 h)', ro: 'Ore (de ex. 2,5 h)', pl: 'Godziny (np. 2,5 h)', hr: 'Sati (npr. 2,5 h)' },
   reMat: { de: 'Material / Artikel', ro: 'Material / articol', pl: 'Materiał / artykuł', hr: 'Materijal / artikl' },
