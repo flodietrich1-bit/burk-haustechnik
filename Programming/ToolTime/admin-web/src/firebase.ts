@@ -1,7 +1,7 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
-import { getAuth } from "firebase/auth";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
+import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
+import { getAuth, type Auth } from "firebase/auth";
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
@@ -13,10 +13,32 @@ export const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-9CBCVHREHS"
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+let appInstance: FirebaseApp;
+if (!getApps().length) {
+  appInstance = initializeApp(firebaseConfig);
+} else {
+  appInstance = getApp();
+}
 
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const auth = getAuth(app);
+export const db: Firestore = getFirestore(appInstance);
 
-export default app;
+let storageInstance: FirebaseStorage | null = null;
+try {
+  storageInstance = getStorage(appInstance);
+} catch (e) {
+  console.warn("Firebase Storage unavailable:", e);
+}
+export const storage = storageInstance as FirebaseStorage;
+
+let authInstance: Auth | null = null;
+// Only initialize Auth when an API key is present to avoid auth/invalid-api-key top-level exception
+if (firebaseConfig.apiKey) {
+  try {
+    authInstance = getAuth(appInstance);
+  } catch (e) {
+    console.warn("Firebase Auth initialization skipped:", e);
+  }
+}
+export const auth = authInstance as Auth;
+
+export default appInstance;
