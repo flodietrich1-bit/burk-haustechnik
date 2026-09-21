@@ -3,6 +3,7 @@ import type { Room, Position, RoomMaterialRequirement } from '../types';
 import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X, CheckCircle2, BarChart2 } from 'lucide-react';
 import { saveRoom, deleteRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
+import { CircularProgress } from './CircularProgress';
 
 interface RoomManagerProps {
   projectId: string;
@@ -111,23 +112,102 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     await saveRoom(projectId, updatedRoom);
   };
 
+  // Calculate Progress Metrics for the Status Pie Chart
+  const totalRooms = rooms.length;
+  const completedRooms = rooms.filter(r => r.status === 'completed').length;
+  const inProgressRooms = rooms.filter(r => r.status !== 'completed' && (r.progressPercent || 0) > 0).length;
+  const plannedRooms = rooms.filter(r => r.status !== 'completed' && (!r.progressPercent || r.progressPercent === 0)).length;
+
+  const totalProgressPercent = totalRooms > 0 
+    ? Math.round(rooms.reduce((sum, r) => sum + (r.status === 'completed' ? 100 : (r.progressPercent || 0)), 0) / totalRooms)
+    : 0;
+
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-800">Raum- & Baustellen-Konfigurator</h2>
-          <p className="text-xs text-slate-500">
+          <h2 className="text-lg font-bold text-slate-900">Raum- & Baustellen-Konfigurator</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
             Örtlichkeiten der Verbauung: Räume aus DWG-Plan oder manuell angelegt mit hinterlegten LV-Materialien
           </p>
         </div>
         <button
           onClick={() => setIsAddOpen(true)}
-          className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all self-start sm:self-auto"
+          className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           <span>Raum manuell anlegen</span>
         </button>
+      </div>
+
+      {/* Project Room Progress & Status Pie Chart Card (0% Rot -> 100% Grün) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+        {/* Left: Circular Progress Pie Chart with 0% Red -> 100% Green Gradient */}
+        <div className="flex items-center space-x-5">
+          <CircularProgress
+            percentage={totalProgressPercent}
+            size={110}
+            strokeWidth={11}
+            sublabel="Gesamt"
+          />
+
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Baustellen-Fortschritt
+              </span>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                totalProgressPercent >= 80 
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : totalProgressPercent >= 40 
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : 'bg-red-100 text-red-800 border border-red-300'
+              }`}>
+                {totalProgressPercent >= 100 ? 'Vollständig abgeschlossen' : totalProgressPercent >= 40 ? 'In Ausführung' : 'Startphase'}
+              </span>
+            </div>
+            <h3 className="text-xl font-black text-slate-900 tracking-tight">
+              {completedRooms} von {totalRooms} Räumen fertiggestellt (100%)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Durchschnittlicher Fertigstellungsgrad aller Räume & Örtlichkeiten im Projekt
+            </p>
+          </div>
+        </div>
+
+        {/* Right: Quick Stats Breakdown */}
+        <div className="grid grid-cols-3 gap-3 w-full md:w-auto shrink-0 text-center">
+          <div className="bg-emerald-50 border border-emerald-200 px-4 py-3 rounded-xl shadow-xs">
+            <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider block">
+              Fertig (100%)
+            </span>
+            <span className="text-xl font-black text-emerald-800 block mt-0.5">
+              {completedRooms}
+            </span>
+            <span className="text-[10px] text-emerald-600">Räume abgenommen</span>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 px-4 py-3 rounded-xl shadow-xs">
+            <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">
+              In Montage
+            </span>
+            <span className="text-xl font-black text-[#3B82C4] block mt-0.5">
+              {inProgressRooms}
+            </span>
+            <span className="text-[10px] text-blue-600">aktiv in Arbeit</span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl shadow-xs">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+              Geplant
+            </span>
+            <span className="text-xl font-black text-slate-700 block mt-0.5">
+              {plannedRooms}
+            </span>
+            <span className="text-[10px] text-slate-500">noch offen</span>
+          </div>
+        </div>
       </div>
 
       {/* Room Grid */}
@@ -136,6 +216,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const isExpanded = expandedRoomId === room.id;
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
+          const roomPercent = room.status === 'completed' ? 100 : (room.progressPercent || 0);
 
           return (
             <div 
@@ -143,15 +224,15 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
               className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4 hover:border-[#3B82C4]/40 transition-colors flex flex-col justify-between"
             >
               <div className="space-y-3">
-                {/* Top Badge & Delete */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
+                {/* Top Badge, Circular Progress & Delete */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center space-x-3 truncate">
                     <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-mono font-bold text-xs shrink-0">
                       {room.code}
                     </div>
-                    <div>
+                    <div className="truncate">
                       <div className="flex items-center space-x-2">
-                        <h3 className="font-bold text-slate-900 text-sm leading-tight">{room.name}</h3>
+                        <h3 className="font-bold text-slate-900 text-sm leading-tight truncate">{room.name}</h3>
                         {room.status === 'completed' && (
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1 shrink-0">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -173,30 +254,27 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                             Manuell
                           </span>
                         )}
-                        {room.status !== 'completed' && (
-                          <span className="text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
-                            Fortschritt: {room.progressPercent || 0}%
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mt-2">
-                        <div 
-                          className={`h-full transition-all duration-300 ${room.status === 'completed' ? 'bg-emerald-500' : 'bg-[#3B82C4]'}`}
-                          style={{ width: `${room.status === 'completed' ? 100 : (room.progressPercent || 0)}%` }}
-                        />
                       </div>
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => handleDelete(room.id)}
-                    className="text-slate-300 hover:text-red-500 transition-colors p-1 shrink-0"
-                    title="Raum löschen"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Circular Progress & Delete */}
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <CircularProgress
+                      percentage={roomPercent}
+                      size={44}
+                      strokeWidth={4.5}
+                      showText={true}
+                    />
+
+                    <button
+                      onClick={() => handleDelete(room.id)}
+                      className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                      title="Raum löschen"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Multi-language Badges */}
