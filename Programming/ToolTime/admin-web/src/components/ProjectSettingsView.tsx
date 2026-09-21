@@ -9,9 +9,10 @@ import {
   Wrench, 
   CheckCircle2, 
   Mail, 
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
-import { updateProjectDetails } from '../services/firestoreService';
+import { updateProjectDetails, deleteProject } from '../services/firestoreService';
 
 interface ProjectSettingsViewProps {
   project: Project | null;
@@ -326,6 +327,30 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
           </button>
         </div>
       </form>
+
+      {/* Danger Zone: Delete Project */}
+      <div className="bg-red-50/60 border border-red-200 rounded-2xl p-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h4 className="text-sm font-bold text-red-900">Projekt unwiderruflich löschen</h4>
+            <p className="text-xs text-red-700/80 mt-0.5">
+              Entfernt das Bauvorhaben, alle zugehörigen Räume, Buchungen und LV-Positionen.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              if (window.confirm(`Möchten Sie das Projekt "${project.name}" wirklich unwiderruflich löschen?`)) {
+                await deleteProject(project.id);
+              }
+            }}
+            className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] shrink-0"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Projekt löschen</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { FolderPlus, Plus } from 'lucide-react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import type { TabType } from './components/Sidebar';
@@ -50,8 +51,14 @@ export function App() {
   useEffect(() => {
     const unsubProjects = listenToProjects((list) => {
       setProjects(list);
-      if (list.length > 0 && !list.some(p => p.id === selectedProjectId)) {
-        setSelectedProjectId(list[0].id);
+      if (list.length > 0) {
+        if (!selectedProjectId || !list.some(p => p.id === selectedProjectId)) {
+          setSelectedProjectId(list[0].id);
+        }
+      } else {
+        setSelectedProjectId('');
+        setActiveProject(null);
+        localStorage.removeItem('burk_tooltime_active_project_id');
       }
     });
 
@@ -63,7 +70,7 @@ export function App() {
       unsubProjects();
       unsubUsers();
     };
-  }, []);
+  }, [selectedProjectId]);
 
   // 2. Listen to active project data whenever selectedProjectId changes
   useEffect(() => {
@@ -137,75 +144,104 @@ export function App() {
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             
-            {/* Live Material Alerts Banner (default collapsed, with 5 decision metrics & mail modal) */}
-            <AlertsBanner
-              projectId={selectedProjectId}
-              alerts={alerts}
-              project={activeProject}
-              positions={positions}
-              rooms={rooms}
-            />
+            {/* If no project is selected and not on User-Admin tab */}
+            {!activeProject && activeTab !== 'users' ? (
+              <div className="bg-white rounded-3xl border border-slate-200 p-8 sm:p-14 text-center max-w-2xl mx-auto shadow-sm space-y-6 my-8 animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-16 h-16 rounded-2xl bg-blue-50 text-[#3B82C4] flex items-center justify-center mx-auto shadow-inner">
+                  <FolderPlus className="w-8 h-8" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                    Kein aktives Bauvorhaben
+                  </h2>
+                  <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
+                    Alle Testdaten wurden geleert. Sie können jetzt ein komplett frisches Projekt (z. B. das Einfamilienhaus) in 3 einfachen Schritten anlegen.
+                  </p>
+                </div>
 
-            {/* TAB: Positions */}
-            {activeTab === 'positions' && (
-              <MaterialTable
-                positions={positions}
-                searchTerm={searchTerm}
-              />
+                <div className="pt-2">
+                  <button
+                    onClick={() => setIsNewProjectOpen(true)}
+                    className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-7 py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    <span>Neues Projekt anlegen (3 Schritte)</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Live Material Alerts Banner (default collapsed, with 5 decision metrics & mail modal) */}
+                <AlertsBanner
+                  projectId={selectedProjectId}
+                  alerts={alerts}
+                  project={activeProject}
+                  positions={positions}
+                  rooms={rooms}
+                />
+
+                {/* TAB: Positions */}
+                {activeTab === 'positions' && (
+                  <MaterialTable
+                    positions={positions}
+                    searchTerm={searchTerm}
+                  />
+                )}
+
+                {/* TAB: Rooms & Floors */}
+                {activeTab === 'rooms' && (
+                  <RoomManager
+                    projectId={selectedProjectId}
+                    projectName={activeProject?.name}
+                    rooms={rooms}
+                    positions={positions}
+                  />
+                )}
+
+                {/* TAB: Bookings Live Feed */}
+                {activeTab === 'bookings' && (
+                  <LiveFeed
+                    bookings={bookings}
+                    rooms={rooms}
+                  />
+                )}
+
+                {/* TAB: Addendums */}
+                {activeTab === 'addendums' && (
+                  <AddendumsView
+                    addendums={addendums}
+                  />
+                )}
+
+                {/* TAB: Reorders Log (NEW) */}
+                {activeTab === 'reorders' && (
+                  <ReordersView
+                    projectId={selectedProjectId}
+                    projectName={activeProject?.name || 'Neues Projekt'}
+                    alerts={alerts}
+                    project={activeProject}
+                  />
+                )}
+
+                {/* TAB: Analytics */}
+                {activeTab === 'analytics' && (
+                  <AnalyticsView
+                    positions={positions}
+                    bookings={bookings}
+                  />
+                )}
+
+                {/* TAB: Project Settings (NEW) */}
+                {activeTab === 'project_settings' && (
+                  <ProjectSettingsView
+                    project={activeProject}
+                    users={users}
+                  />
+                )}
+              </>
             )}
 
-            {/* TAB: Rooms & Floors */}
-            {activeTab === 'rooms' && (
-              <RoomManager
-                projectId={selectedProjectId}
-                projectName={activeProject?.name}
-                rooms={rooms}
-                positions={positions}
-              />
-            )}
-
-            {/* TAB: Bookings Live Feed */}
-            {activeTab === 'bookings' && (
-              <LiveFeed
-                bookings={bookings}
-                rooms={rooms}
-              />
-            )}
-
-            {/* TAB: Addendums */}
-            {activeTab === 'addendums' && (
-              <AddendumsView
-                addendums={addendums}
-              />
-            )}
-
-            {/* TAB: Reorders Log (NEW) */}
-            {activeTab === 'reorders' && (
-              <ReordersView
-                projectId={selectedProjectId}
-                projectName={activeProject?.name || 'Hallenbad Weingarten'}
-                alerts={alerts}
-                project={activeProject}
-              />
-            )}
-
-            {/* TAB: Analytics */}
-            {activeTab === 'analytics' && (
-              <AnalyticsView
-                positions={positions}
-                bookings={bookings}
-              />
-            )}
-
-            {/* TAB: Project Settings (NEW) */}
-            {activeTab === 'project_settings' && (
-              <ProjectSettingsView
-                project={activeProject}
-                users={users}
-              />
-            )}
-
-            {/* TAB: User & Role Admin (NEW) */}
+            {/* TAB: User & Role Admin (Always accessible) */}
             {activeTab === 'users' && (
               <UserManagementView
                 users={users}

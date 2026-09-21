@@ -12,7 +12,8 @@ import {
   Briefcase, 
   Wrench, 
   Mail, 
-  Check
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { parseGaebFile } from '../services/gaebParser';
 import { parseDwgFile } from '../services/dwgParser';
@@ -163,6 +164,50 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     } catch (err: any) {
       setDwgStatus('error');
       setDwgMessage('Fehler beim CAD-Einlesen: ' + (err.message || 'Format ungültig'));
+    }
+  };
+
+  // Quick Load EFH Sample files (both DXF and X81)
+  const handleLoadEfhSamples = async () => {
+    try {
+      setLoading(true);
+      // 1. Fetch GAEB
+      const gaebRes = await fetch('/samples/Sanitaer_Demo_Projekt_EFH_X81.x81');
+      if (!gaebRes.ok) throw new Error('Muster GAEB-Datei nicht im Webspace gefunden');
+      const gaebText = await gaebRes.text();
+      const gaebResult = parseGaebFile(gaebText, 'Sanitaer_Demo_Projekt_EFH_X81.x81');
+      
+      setGaebFileName('Sanitaer_Demo_Projekt_EFH_X81.x81');
+      setParsedPositions(gaebResult.positions);
+      setGaebStatus('success');
+      setGaebMessage(`${gaebResult.positions.length} LV-Positionen erfolgreich extrahiert!`);
+
+      // Fill metadata if not yet entered
+      if (!name) setName('Neubau Einfamilienhaus Schneider');
+      if (!projectNumber) setProjectNumber('EFH-2026-01');
+      if (!trade) setTrade('Sanitärinstallation');
+      if (!location) setLocation('Ravensburg');
+      if (!address) setAddress('Musterstraße 12, 88212 Ravensburg');
+      if (!client) setClient('Familie Schneider');
+      if (!startDate) setStartDate(new Date().toISOString().split('T')[0]);
+
+      // 2. Fetch DXF
+      const dxfRes = await fetch('/samples/Sanitaer_Demo_Projekt_EFH.dxf');
+      if (!dxfRes.ok) throw new Error('Muster DXF-Datei nicht im Webspace gefunden');
+      const dxfBlob = await dxfRes.blob();
+      const dxfFile = new File([dxfBlob], 'Sanitaer_Demo_Projekt_EFH.dxf', { type: 'application/dxf' });
+      setDwgFileObj(dxfFile);
+      setDwgFileName('Sanitaer_Demo_Projekt_EFH.dxf');
+      
+      const dwgResult = await parseDwgFile(dxfFile, gaebResult.positions);
+      setDwgRooms(dwgResult.rooms);
+      setDwgStatus('success');
+      const totalAssigned = dwgResult.rooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0);
+      setDwgMessage(`${dwgResult.rooms.length} Räume aus CAD-Plan extrahiert (${totalAssigned} Zuordnungen)`);
+    } catch (err: any) {
+      alert('Hinweis beim Laden der EFH-Musterdateien: ' + (err.message || err));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -549,6 +594,31 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 <p className="text-xs text-slate-500 mt-0.5">
                   Laden Sie die Planungsunterlagen hoch. Sollte keine CAD-Datei vorliegen, genügt die GAEB-Datei.
                 </p>
+              </div>
+
+              {/* One-click quick load for Einfamilienhaus demo files */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#3B82C4]/10 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-[#3B82C4]" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Einfamilienhaus Musterdaten direkt laden
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Lädt automatisch <code className="text-[#3B82C4]">Sanitaer_Demo_Projekt_EFH.dxf</code> & <code className="text-[#2FA36B]">.x81</code>
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLoadEfhSamples}
+                  className="inline-flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow-sm transition-all hover:scale-[1.02] shrink-0 self-stretch sm:self-auto justify-center"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Musterdaten einlesen</span>
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

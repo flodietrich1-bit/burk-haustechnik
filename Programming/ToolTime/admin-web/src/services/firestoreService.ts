@@ -4,70 +4,32 @@ import {
 import { db } from '../firebase';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from '../types';
 
-export const DEFAULT_PROJECT_ID = 'hallenbad-weingarten';
+export const DEFAULT_PROJECT_ID = '';
 
-// Mock initial projects with real data from Burk Haustechnik
-export const INITIAL_PROJECTS: Project[] = [
-  {
-    id: 'hallenbad-weingarten',
-    name: 'Hallenbad Weingarten Sanierung',
-    projectNumber: '1638 / 24316-044',
-    client: 'Stadt Weingarten',
-    location: 'Weingarten',
-    address: 'Brechenmacherstraße 11, 88250 Weingarten',
-    startDate: '2026-09-01',
-    endDate: '2027-04-30',
-    trade: 'Sanitärinstallation',
-    projectManagerId: 'user_bl_1',
-    projectManager: 'Florian Buck',
-    projectManagerEmail: 'f.buck@burk-haustechnik.de',
-    commercialManagerId: 'user_kfm_1',
-    commercialManager: 'Sabine Müller',
-    commercialManagerEmail: 's.mueller@burk-haustechnik.de',
-    assignedMonteurIds: ['user_mont_1', 'user_mont_2', 'user_mont_3'],
-    status: 'in_progress',
-    currency: 'EUR',
-    totalPositions: 251,
-    totalDeliveredPercentage: 28,
-    createdAt: '2026-09-01T08:00:00.000Z'
-  },
-  {
-    id: 'gemeindehaus-bavendorf',
-    name: 'Gemeindehaus Bavendorf',
-    projectNumber: '2337',
-    client: 'Bischöfliches Ordinariat der Diözese Rottenburg-Stuttgart',
-    location: 'Bavendorf',
-    address: 'Kirchstraße 4, 88213 Ravensburg-Bavendorf',
-    startDate: '2025-12-01',
-    endDate: '2026-08-16',
-    trade: 'Heizungsanlage nach DIN 18380',
-    projectManagerId: 'user_bl_2',
-    projectManager: 'Michael Weber',
-    projectManagerEmail: 'm.weber@burk-haustechnik.de',
-    commercialManagerId: 'user_kfm_1',
-    commercialManager: 'Sabine Müller',
-    commercialManagerEmail: 's.mueller@burk-haustechnik.de',
-    assignedMonteurIds: ['user_mont_4'],
-    status: 'in_progress',
-    currency: 'EUR',
-    totalPositions: 242,
-    totalDeliveredPercentage: 12,
-    createdAt: '2025-11-15T09:00:00.000Z'
-  }
-];
+// Initial projects: start completely empty for clean onboarding
+export const INITIAL_PROJECTS: Project[] = [];
 
 // Local storage key for persistent projects in offline / local fallback mode
-const LOCAL_STORAGE_PROJECTS_KEY = 'burk_tooltime_projects';
+const LOCAL_STORAGE_PROJECTS_KEY = 'burk_tooltime_projects_v2';
 const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
+
+// Cleanup old v1 demo mock data from localStorage if present
+try {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('burk_tooltime_projects');
+  }
+} catch {
+  // ignore
+}
 
 function getLocalProjects(): Project[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.warn('LocalStorage error reading projects:', e);
@@ -312,38 +274,32 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
 }
 
 // 2. Listen to single project
-export function listenToProject(projectId: string, callback: (project: Project) => void) {
+export function listenToProject(projectId: string, callback: (project: Project | null) => void) {
+  if (!projectId) {
+    callback(null);
+    return () => {};
+  }
   const ref = doc(db, 'projects', projectId);
   return onSnapshot(ref, (snap) => {
     if (snap.exists()) {
       callback(snap.data() as Project);
     } else {
       const local = getLocalProjects().find(p => p.id === projectId);
-      if (local) {
-        callback(local);
-      } else {
-        callback({
-          id: projectId,
-          name: 'Hallenbad Weingarten Sanierung',
-          projectNumber: '1638 / 24316-044',
-          client: 'Stadt Weingarten',
-          location: 'Weingarten',
-          status: 'in_progress',
-          currency: 'EUR',
-          totalPositions: MOCK_POSITIONS.length,
-          createdAt: new Date().toISOString()
-        });
-      }
+      callback(local || null);
     }
   }, (err) => {
     console.warn('Firestore fallback mode for project:', err.message);
     const local = getLocalProjects().find(p => p.id === projectId);
-    if (local) callback(local);
+    callback(local || null);
   });
 }
 
 // 3. Listen to positions of project
 export function listenToPositions(projectId: string, callback: (positions: Position[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'projects', projectId, 'positions');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
@@ -355,8 +311,6 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
       const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
       if (saved) {
         callback(JSON.parse(saved));
-      } else if (projectId === 'hallenbad-weingarten') {
-        callback(MOCK_POSITIONS);
       } else {
         callback([]);
       }
@@ -366,8 +320,6 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
     const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
     if (saved) {
       callback(JSON.parse(saved));
-    } else if (projectId === 'hallenbad-weingarten') {
-      callback(MOCK_POSITIONS);
     } else {
       callback([]);
     }
@@ -376,6 +328,10 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
 
 // 4. Listen to rooms of project
 export function listenToRooms(projectId: string, callback: (rooms: Room[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'projects', projectId, 'rooms');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
@@ -386,8 +342,6 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
       const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
       if (saved) {
         callback(JSON.parse(saved));
-      } else if (projectId === 'hallenbad-weingarten') {
-        callback(MOCK_ROOMS);
       } else {
         callback([]);
       }
@@ -397,8 +351,6 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
     const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
     if (saved) {
       callback(JSON.parse(saved));
-    } else if (projectId === 'hallenbad-weingarten') {
-      callback(MOCK_ROOMS);
     } else {
       callback([]);
     }
@@ -406,6 +358,10 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
 }
 
 export function listenToBookings(projectId: string, callback: (bookings: Booking[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'bookings');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
@@ -414,15 +370,19 @@ export function listenToBookings(projectId: string, callback: (bookings: Booking
         .filter(b => b.projectId === projectId);
       callback(list);
     } else {
-      callback(MOCK_BOOKINGS.filter(b => b.projectId === projectId));
+      callback([]);
     }
   }, (err) => {
     console.warn('Firestore fallback mode for bookings:', err.message);
-    callback(MOCK_BOOKINGS.filter(b => b.projectId === projectId));
+    callback([]);
   });
 }
 
 export function listenToAddendums(projectId: string, callback: (addendums: Addendum[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'addendums');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
@@ -431,12 +391,44 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
         .filter(a => a.projectId === projectId);
       callback(list);
     } else {
-      callback(MOCK_ADDENDUMS.filter(a => a.projectId === projectId));
+      callback([]);
     }
   }, (err) => {
     console.warn('Firestore fallback mode for addendums:', err.message);
-    callback(MOCK_ADDENDUMS.filter(a => a.projectId === projectId));
+    callback([]);
   });
+}
+
+// Delete a single project and clean all associated local data & collections
+export async function deleteProject(projectId: string): Promise<void> {
+  const current = getLocalProjects().filter(p => p.id !== projectId);
+  saveLocalProjects(current);
+  localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+
+  try {
+    const ref = doc(db, 'projects', projectId);
+    await deleteDoc(ref);
+  } catch (err: any) {
+    console.warn('Firestore deleteProject error:', err.message);
+  }
+}
+
+// Clear all projects completely
+export async function clearAllProjects(): Promise<void> {
+  const current = getLocalProjects();
+  saveLocalProjects([]);
+  for (const p of current) {
+    localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + p.id);
+    localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + p.id);
+    localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + p.id);
+    try {
+      await deleteDoc(doc(db, 'projects', p.id));
+    } catch {
+      // ignore
+    }
+  }
 }
 
 // Mutators & Project Creation
@@ -549,6 +541,10 @@ export async function updateAddendumStatus(addendumId: string, status: 'approved
 
 // 5. Listen to alerts of project
 export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
   const colRef = collection(db, 'projects', projectId, 'alerts');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
@@ -559,8 +555,6 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
       const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
       if (saved) {
         callback(JSON.parse(saved));
-      } else if (projectId === DEFAULT_PROJECT_ID) {
-        callback(MOCK_ALERTS);
       } else {
         callback([]);
       }
@@ -570,8 +564,6 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
     const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
     if (saved) {
       callback(JSON.parse(saved));
-    } else if (projectId === DEFAULT_PROJECT_ID) {
-      callback(MOCK_ALERTS);
     } else {
       callback([]);
     }
