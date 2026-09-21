@@ -2,7 +2,7 @@ import {
   collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Project, Position, Room, Booking, Addendum } from '../types';
+import type { Project, Position, Room, Booking, Addendum, Alert } from '../types';
 
 export const DEFAULT_PROJECT_ID = 'hallenbad-weingarten';
 
@@ -48,6 +48,7 @@ export const INITIAL_PROJECTS: Project[] = [
 const LOCAL_STORAGE_PROJECTS_KEY = 'burk_tooltime_projects';
 const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
+const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 
 function getLocalProjects(): Project[] {
   try {
@@ -89,10 +90,12 @@ export const MOCK_ROOMS: Room[] = [
     code: 'EG-101', 
     floor: 'EG', 
     source: 'dwg',
+    status: 'in_progress',
+    progressPercent: 60,
     translations: { ro: 'Vestiar Bărbați', pl: 'Szatnia Męska', hr: 'Muška Svlačionica' },
     materials: [
-      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, qu: 'Stk', group: 'Abflussleitungen' }
+      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, actualQty: 5, unitPrice: 22.40, qu: 'm', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, actualQty: 8, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' }
     ]
   },
   { 
@@ -101,10 +104,12 @@ export const MOCK_ROOMS: Room[] = [
     code: 'EG-102', 
     floor: 'EG', 
     source: 'dwg',
+    status: 'planned',
+    progressPercent: 20,
     translations: { ro: 'Vestiar Femei', pl: 'Szatnia Damska', hr: 'Ženska Svlačionica' },
     materials: [
-      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, qu: 'Stk', group: 'Abflussleitungen' }
+      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, actualQty: 0, unitPrice: 22.40, qu: 'm', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, actualQty: 0, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' }
     ]
   },
   { 
@@ -113,11 +118,15 @@ export const MOCK_ROOMS: Room[] = [
     code: 'EG-103', 
     floor: 'EG', 
     source: 'dwg',
+    status: 'completed',
+    progressPercent: 100,
+    completedAt: '2026-09-19T14:30:00.000Z',
+    completedBy: 'Ion Popescu (Monteur)',
     translations: { ro: 'Dușuri Bărbați', pl: 'Prysznice Męskie', hr: 'Muški Tuševi' },
     materials: [
-      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 25, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 12, qu: 'Stk', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, qu: 'Stk', group: 'Abflussleitungen' }
+      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 25, actualQty: 20, unitPrice: 28.00, qu: 'm', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 12, actualQty: 15, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, actualQty: 4, unitPrice: 89.00, qu: 'Stk', group: 'Abflussleitungen' }
     ]
   },
   { 
@@ -126,11 +135,13 @@ export const MOCK_ROOMS: Room[] = [
     code: 'EG-104', 
     floor: 'EG', 
     source: 'dwg',
+    status: 'in_progress',
+    progressPercent: 75,
     translations: { ro: 'Dușuri Femei', pl: 'Prysznice Damskie', hr: 'Ženske Tuševi' },
     materials: [
-      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 20, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 10, qu: 'Stk', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, qu: 'Stk', group: 'Abflussleitungen' }
+      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 20, actualQty: 24, unitPrice: 28.00, qu: 'm', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 10, actualQty: 9, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' },
+      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, actualQty: 4, unitPrice: 89.00, qu: 'Stk', group: 'Abflussleitungen' }
     ]
   },
   { 
@@ -139,9 +150,13 @@ export const MOCK_ROOMS: Room[] = [
     code: 'OG-201', 
     floor: 'OG', 
     source: 'dwg',
+    status: 'completed',
+    progressPercent: 100,
+    completedAt: '2026-09-18T11:00:00.000Z',
+    completedBy: 'Piotr Kowalski (Monteur)',
     translations: { ro: 'Cameră Tehnică', pl: 'Maszynownia', hr: 'Tehnička Soba' },
     materials: [
-      { positionId: 'pos_01_01', posNr: '01.01', shortText: 'Schmutzwasserleitung DN 125 hochschalldämmend', plannedQty: 3, qu: 'm', group: 'Abflussleitungen' }
+      { positionId: 'pos_01_01', posNr: '01.01', shortText: 'Schmutzwasserleitung DN 125 hochschalldämmend', plannedQty: 3, actualQty: 3, unitPrice: 42.50, qu: 'm', group: 'Abflussleitungen' }
     ]
   },
   { 
@@ -150,11 +165,71 @@ export const MOCK_ROOMS: Room[] = [
     code: 'UG-001', 
     floor: 'UG', 
     source: 'dwg',
+    status: 'in_progress',
+    progressPercent: 50,
     translations: { ro: 'Subsol / Pompare', pl: 'Piwnica / Pompownia', hr: 'Podrum / Crpna Stanica' },
     materials: [
-      { positionId: 'pos_01_36', posNr: '01.36', shortText: 'Schmutzwassersammelbehälter 270L Doppelhebeanlage', plannedQty: 1, qu: 'Stk', group: 'Grauwasser Hebeanlage' },
-      { positionId: 'pos_01_37', posNr: '01.37', shortText: 'Vertikale 1-stufige Schmutzwasserpumpe IP68', plannedQty: 2, qu: 'Stk', group: 'Grauwasser Hebeanlage' }
+      { positionId: 'pos_01_36', posNr: '01.36', shortText: 'Schmutzwassersammelbehälter 270L Doppelhebeanlage', plannedQty: 1, actualQty: 1, unitPrice: 3450.00, qu: 'Stk', group: 'Grauwasser Hebeanlage' },
+      { positionId: 'pos_01_37', posNr: '01.37', shortText: 'Vertikale 1-stufige Schmutzwasserpumpe IP68', plannedQty: 2, actualQty: 4, unitPrice: 1280.00, qu: 'Stk', group: 'Grauwasser Hebeanlage' }
     ]
+  }
+];
+
+export const MOCK_ALERTS: Alert[] = [
+  {
+    id: 'alert_1',
+    projectId: DEFAULT_PROJECT_ID,
+    roomId: 'room_001',
+    roomName: 'Keller / Hebeanlage',
+    materialId: 'pos_01_37',
+    materialPos: '01.37',
+    materialName: 'Vertikale 1-stufige Schmutzwasserpumpe IP68',
+    plannedQty: 2,
+    requestedTotal: 4,
+    exceededBy: 2,
+    qu: 'Stk',
+    reason: 'Zweiter Pumpensumpf wegen Grundwassereintritt im Bestandsfundament erforderlich',
+    monteurName: 'Piotr Kowalski',
+    status: 'open',
+    needsReorder: true,
+    createdAt: new Date(Date.now() - 3600000 * 2.5).toISOString()
+  },
+  {
+    id: 'alert_2',
+    projectId: DEFAULT_PROJECT_ID,
+    roomId: 'room_103',
+    roomName: 'Duschen Herren',
+    materialId: 'pos_01_05',
+    materialPos: '01.05',
+    materialName: 'Bogen DN 50, 15° - 87°',
+    plannedQty: 12,
+    requestedTotal: 15,
+    exceededBy: 3,
+    qu: 'Stk',
+    reason: 'Trassenversprung wegen Betonträger im Deckenanschluss',
+    monteurName: 'Ion Popescu',
+    status: 'open',
+    needsReorder: true,
+    createdAt: new Date(Date.now() - 3600000 * 6).toISOString()
+  },
+  {
+    id: 'alert_3',
+    projectId: DEFAULT_PROJECT_ID,
+    roomId: 'room_104',
+    roomName: 'Duschen Damen',
+    materialId: 'pos_01_02',
+    materialPos: '01.02',
+    materialName: 'Kunststoffrohr DN 100',
+    plannedQty: 20,
+    requestedTotal: 24,
+    exceededBy: 4,
+    qu: 'm',
+    reason: 'Zusätzliche Umgehungsleitung wegen bestehender Elektrotraße',
+    monteurName: 'Ion Popescu',
+    status: 'reordered',
+    needsReorder: false,
+    createdAt: new Date(Date.now() - 3600000 * 28).toISOString(),
+    actionNote: 'Bestellposition bei GC-Gruppe ausgelöst (Auftrag #88392)'
   }
 ];
 
@@ -459,3 +534,150 @@ export async function updateAddendumStatus(addendumId: string, status: 'approved
     console.warn('Firestore updateAddendumStatus error:', err.message);
   }
 }
+
+// 5. Listen to alerts of project
+export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) => void) {
+  const colRef = collection(db, 'projects', projectId, 'alerts');
+  return onSnapshot(colRef, (snap) => {
+    if (!snap.empty) {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Alert);
+      localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(list));
+      callback(list);
+    } else {
+      const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+      if (saved) {
+        callback(JSON.parse(saved));
+      } else if (projectId === DEFAULT_PROJECT_ID) {
+        callback(MOCK_ALERTS);
+      } else {
+        callback([]);
+      }
+    }
+  }, (err) => {
+    console.warn('Firestore fallback mode for alerts:', err.message);
+    const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+    if (saved) {
+      callback(JSON.parse(saved));
+    } else if (projectId === DEFAULT_PROJECT_ID) {
+      callback(MOCK_ALERTS);
+    } else {
+      callback([]);
+    }
+  });
+}
+
+export async function updateAlertStatus(
+  projectId: string,
+  alertId: string,
+  status: 'open' | 'reordered' | 'billed' | 'acknowledged',
+  actionNote?: string
+) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
+  const updated = currentList.map(a => {
+    if (a.id === alertId) {
+      return {
+        ...a,
+        status,
+        actionNote: actionNote || a.actionNote,
+        updatedAt: new Date().toISOString()
+      };
+    }
+    return a;
+  });
+  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+
+  try {
+    const ref = doc(db, 'projects', projectId, 'alerts', alertId);
+    await updateDoc(ref, {
+      status,
+      actionNote: actionNote || null,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.warn('Firestore updateAlertStatus error:', err.message);
+  }
+}
+
+export async function createAlert(projectId: string, alert: Alert) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
+  const updated = [alert, ...currentList.filter(a => a.id !== alert.id)];
+  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+
+  try {
+    const ref = doc(db, 'projects', projectId, 'alerts', alert.id);
+    await setDoc(ref, alert, { merge: true });
+  } catch (err: any) {
+    console.warn('Firestore createAlert error:', err.message);
+  }
+}
+
+export async function completeRoom(
+  projectId: string,
+  roomId: string,
+  isCompleted: boolean = true,
+  completedBy: string = 'Florian Buck (Bauleiter)'
+) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const currentList: Room[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ROOMS : []);
+  const updated = currentList.map(r => {
+    if (r.id === roomId) {
+      return {
+        ...r,
+        status: (isCompleted ? 'completed' : 'in_progress') as 'completed' | 'in_progress',
+        progressPercent: isCompleted ? 100 : Math.max(25, (r.progressPercent || 50) - 20),
+        completedAt: isCompleted ? new Date().toISOString() : undefined,
+        completedBy: isCompleted ? completedBy : undefined
+      };
+    }
+    return r;
+  });
+  localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+
+  try {
+    const ref = doc(db, 'projects', projectId, 'rooms', roomId);
+    await updateDoc(ref, {
+      status: isCompleted ? 'completed' : 'in_progress',
+      progressPercent: isCompleted ? 100 : 50,
+      completedAt: isCompleted ? new Date().toISOString() : null,
+      completedBy: isCompleted ? completedBy : null
+    });
+  } catch (err: any) {
+    console.warn('Firestore completeRoom error:', err.message);
+  }
+}
+
+export async function updateRoomMaterialActual(
+  projectId: string,
+  roomId: string,
+  positionId: string,
+  actualQty: number
+) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const currentList: Room[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ROOMS : []);
+  const updated = currentList.map(r => {
+    if (r.id === roomId) {
+      const mats = (r.materials || []).map(m => {
+        if (m.positionId === positionId) {
+          return { ...m, actualQty };
+        }
+        return m;
+      });
+      return { ...r, materials: mats };
+    }
+    return r;
+  });
+  localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+
+  try {
+    const targetRoom = updated.find(r => r.id === roomId);
+    if (targetRoom) {
+      const ref = doc(db, 'projects', projectId, 'rooms', roomId);
+      await updateDoc(ref, { materials: targetRoom.materials });
+    }
+  } catch (err: any) {
+    console.warn('Firestore updateRoomMaterialActual error:', err.message);
+  }
+}
+

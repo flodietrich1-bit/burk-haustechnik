@@ -40,6 +40,8 @@ export interface RoomMaterialRequirement {
   posNr: string;
   shortText: string;
   plannedQty: number;
+  actualQty?: number; // tatsächlich verbaute Menge
+  unitPrice?: number; // Einheitspreis aus GAEB-LV für Kosten-Delta
   qu: string;
   group?: string;
   notes?: string;
@@ -60,7 +62,32 @@ export interface Room {
   areaSqm?: number;
   translations: RoomTranslations;
   source?: 'dwg' | 'manual';
+  status?: 'planned' | 'in_progress' | 'completed';
+  progressPercent?: number; // 0 bis 100%
+  completedAt?: string;
+  completedBy?: string;
   materials?: RoomMaterialRequirement[];
+}
+
+export interface Alert {
+  id: string;
+  projectId?: string;
+  roomId: string;
+  roomName: string;
+  materialId?: string;
+  materialPos: string;
+  materialName: string;
+  plannedQty: number;
+  requestedTotal: number;
+  exceededBy: number;
+  qu: string;
+  reason: string;
+  monteurName: string;
+  status: 'open' | 'reordered' | 'billed' | 'acknowledged';
+  needsReorder?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  actionNote?: string;
 }
 
 export interface Booking {

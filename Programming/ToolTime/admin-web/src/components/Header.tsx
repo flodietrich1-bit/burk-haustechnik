@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Wrench, Search, Download, Plus, ShieldCheck, ChevronDown, Building2, MapPin, Calendar, Check
+  Wrench, Search, Download, Plus, ShieldCheck, ChevronDown, Building2, MapPin, Calendar, Check, Bell, AlertTriangle
 } from 'lucide-react';
-import type { Project } from '../types';
+import type { Project, Alert } from '../types';
 
 interface HeaderProps {
   projects: Project[];
   activeProject: Project | null;
+  alerts?: Alert[];
   onSelectProject: (projectId: string) => void;
   onOpenNewProject: () => void;
   onOpenImport: () => void;
@@ -23,16 +24,24 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenImport,
   onExport,
   searchTerm,
-  onSearchChange
+  onSearchChange,
+  alerts = []
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+  const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const alertsRef = useRef<HTMLDivElement>(null);
+
+  const openAlerts = alerts.filter(a => a.status === 'open');
 
   // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
+      }
+      if (alertsRef.current && !alertsRef.current.contains(event.target as Node)) {
+        setIsAlertsOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -221,6 +230,74 @@ export const Header: React.FC<HeaderProps> = ({
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">Excel Export</span>
           </button>
+
+          {/* Alert Notification Bell */}
+          <div className="relative" ref={alertsRef}>
+            <button
+              onClick={() => setIsAlertsOpen(!isAlertsOpen)}
+              className="relative p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+              title="Material-Überschreitungen & Alerts"
+            >
+              <Bell className="w-4 h-4" />
+              {openAlerts.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-sm">
+                  {openAlerts.length}
+                </span>
+              )}
+            </button>
+
+            {/* Alerts Dropdown Flyout */}
+            {isAlertsOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                  <div className="flex items-center space-x-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+                      Akute Warnungen & Nachbestellungen
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold bg-red-600 text-white px-2 py-0.2 rounded-full">
+                    {openAlerts.length} offen
+                  </span>
+                </div>
+
+                {openAlerts.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400">
+                    Keine offenen Überschreitungsmeldungen.
+                  </div>
+                ) : (
+                  <div className="max-h-72 overflow-y-auto space-y-2 py-1">
+                    {openAlerts.map(alert => (
+                      <div 
+                        key={alert.id}
+                        className="bg-slate-800/90 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 space-y-1 text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-white truncate mr-2">
+                            {alert.roomName}
+                          </span>
+                          <span className="font-mono text-[#3B82C4] font-bold shrink-0">
+                            Pos. {alert.materialPos}
+                          </span>
+                        </div>
+                        <div className="text-slate-300 text-[11px] truncate">
+                          {alert.materialName}
+                        </div>
+                        <div className="flex items-center justify-between pt-1 text-[11px]">
+                          <span className="text-red-400 font-bold">
+                            +{alert.exceededBy} {alert.qu} Mehraufwand
+                          </span>
+                          <span className="text-slate-400">
+                            {alert.monteurName}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="h-6 w-px bg-slate-700 mx-1 hidden sm:block" />
 

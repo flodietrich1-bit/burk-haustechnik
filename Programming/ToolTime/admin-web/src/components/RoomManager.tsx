@@ -1,17 +1,22 @@
 import React, { useState } from 'react';
 import type { Room, Position, RoomMaterialRequirement } from '../types';
-import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X } from 'lucide-react';
+import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X, CheckCircle2, BarChart2 } from 'lucide-react';
 import { saveRoom, deleteRoom } from '../services/firestoreService';
+import { RoomDetailModal } from './RoomDetailModal';
 
 interface RoomManagerProps {
   projectId: string;
+  projectName?: string;
   rooms: Room[];
   positions: Position[];
 }
 
-export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, rooms, positions }) => {
+export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName, rooms, positions }) => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
+  const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<string | null>(null);
+
+  const selectedRoomForDetail = rooms.find(r => r.id === selectedRoomIdForDetail) || null;
 
   // Assign Material Modal State
   const [assigningRoom, setAssigningRoom] = useState<Room | null>(null);
@@ -145,8 +150,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, rooms, posi
                       {room.code}
                     </div>
                     <div>
-                      <h3 className="font-bold text-slate-900 text-sm leading-tight">{room.name}</h3>
-                      <div className="flex items-center space-x-2 mt-1">
+                      <div className="flex items-center space-x-2">
+                        <h3 className="font-bold text-slate-900 text-sm leading-tight">{room.name}</h3>
+                        {room.status === 'completed' && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1 shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>100% Fertig</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
                         <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.2 rounded">
                           Etage: {room.floor}
                         </span>
@@ -160,13 +173,26 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, rooms, posi
                             Manuell
                           </span>
                         )}
+                        {room.status !== 'completed' && (
+                          <span className="text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded">
+                            Fortschritt: {room.progressPercent || 0}%
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mt-2">
+                        <div 
+                          className={`h-full transition-all duration-300 ${room.status === 'completed' ? 'bg-emerald-500' : 'bg-[#3B82C4]'}`}
+                          style={{ width: `${room.status === 'completed' ? 100 : (room.progressPercent || 0)}%` }}
+                        />
                       </div>
                     </div>
                   </div>
 
                   <button
                     onClick={() => handleDelete(room.id)}
-                    className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                    className="text-slate-300 hover:text-red-500 transition-colors p-1 shrink-0"
                     title="Raum löschen"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -249,8 +275,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, rooms, posi
                 </div>
               </div>
 
-              {/* Action: Add Material to Room */}
-              <div className="pt-3 border-t border-slate-100">
+              {/* Actions: Room Detail / Delta & Add Material */}
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <button
+                  onClick={() => setSelectedRoomIdForDetail(room.id)}
+                  className="w-full flex items-center justify-center space-x-2 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <BarChart2 className="w-3.5 h-3.5 text-[#3B82C4]" />
+                  <span>Mengen-Delta & VOB-Aufmaß</span>
+                </button>
+
                 <button
                   onClick={() => handleOpenAssignModal(room)}
                   className="w-full flex items-center justify-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg text-xs font-semibold transition-colors"
@@ -436,6 +470,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, rooms, posi
           </div>
         </div>
       )}
+
+      {/* Room Detail & VOB Aufmaß Modal */}
+      <RoomDetailModal
+        projectId={projectId}
+        projectName={projectName || 'Hallenbad Weingarten'}
+        room={selectedRoomForDetail}
+        positions={positions}
+        isOpen={!!selectedRoomForDetail}
+        onClose={() => setSelectedRoomIdForDetail(null)}
+      />
     </div>
   );
 };

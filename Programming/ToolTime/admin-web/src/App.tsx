@@ -9,6 +9,7 @@ import { AddendumsView } from './components/AddendumsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
+import { AlertsBanner } from './components/AlertsBanner';
 import { exportMaterialReportToExcel } from './services/excelExporter';
 import { 
   DEFAULT_PROJECT_ID,
@@ -17,9 +18,10 @@ import {
   listenToPositions,
   listenToRooms,
   listenToBookings,
-  listenToAddendums
+  listenToAddendums,
+  listenToAlerts
 } from './services/firestoreService';
-import type { Project, Position, Room, Booking, Addendum } from './types';
+import type { Project, Position, Room, Booking, Addendum, Alert } from './types';
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -32,6 +34,7 @@ export function App() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [addendums, setAddendums] = useState<Addendum[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabType>('positions');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -62,6 +65,7 @@ export function App() {
     const unsubRooms = listenToRooms(selectedProjectId, setRooms);
     const unsubBookings = listenToBookings(selectedProjectId, setBookings);
     const unsubAddendums = listenToAddendums(selectedProjectId, setAddendums);
+    const unsubAlerts = listenToAlerts(selectedProjectId, setAlerts);
 
     return () => {
       unsubProject();
@@ -69,6 +73,7 @@ export function App() {
       unsubRooms();
       unsubBookings();
       unsubAddendums();
+      unsubAlerts();
     };
   }, [selectedProjectId]);
 
@@ -98,6 +103,7 @@ export function App() {
       <Header
         projects={projects}
         activeProject={activeProject}
+        alerts={alerts}
         onSelectProject={handleSelectProject}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenImport={() => setIsImportOpen(true)}
@@ -121,6 +127,12 @@ export function App() {
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             
+            {/* Live Material Alerts Banner */}
+            <AlertsBanner
+              projectId={selectedProjectId}
+              alerts={alerts}
+            />
+
             {activeTab === 'positions' && (
               <MaterialTable
                 positions={positions}
@@ -131,6 +143,7 @@ export function App() {
             {activeTab === 'rooms' && (
               <RoomManager
                 projectId={selectedProjectId}
+                projectName={activeProject?.name}
                 rooms={rooms}
                 positions={positions}
               />
