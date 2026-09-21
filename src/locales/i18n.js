@@ -70,7 +70,7 @@ export const TRANSLATIONS = {
   // Unclear items
   unclearBtn: { de: 'Position unklar – trotzdem erfassen', ro: 'Poziție neclară – înregistrează oricum', pl: 'Pozycja niejasna – zapisz mimo to', hr: 'Nejasna stavka – ipak unesi' },
   unclearBtnShort: { de: 'Pos. unklar', ro: 'Poz. neclară', pl: 'Poz. niejasna', hr: 'Nejasno' },
-  completeBtnShort: { de: '100% Fertig', ro: '100% Finalizat', pl: '100% Gotowe', hr: '100% Gotovo' },
+  completeBtnShort: { de: 'Monteur fertig', ro: 'Montator gata', pl: 'Monter gotowy', hr: 'Monter završio' },
   unclearTitle: { de: 'Unklare Position', ro: 'Poziție neclară', pl: 'Pozycja niejasna', hr: 'Nejasna stavka' },
   unclearWhat: { de: 'Was wurde verbaut? (z. B. 20 Rohrschellen DN 100)', ro: 'Ce s-a montat? (de ex. 20 brățări DN 100)', pl: 'Co zamontowano? (np. 20 obejm DN 100)', hr: 'Što je ugrađeno? (npr. 20 obujmica DN 100)' },
   unclearWhatLabel: { de: 'Was wurde verbaut? (Artikel oder Freitext)', ro: 'Ce s-a montat? (articol sau text liber)', pl: 'Co zamontowano? (artykuł lub tekst)', hr: 'Što je ugrađeno? (artikl ili slobodni tekst)' },
@@ -106,17 +106,24 @@ export const TRANSLATIONS = {
   reasonDamage: { de: 'Verschnitt / Beschädigung', ro: 'Pierderi la tăiere / deteriorare', pl: 'Odpady / uszkodzenie', hr: 'Otpad / oštećenje' },
   reasonExtraConn: { de: 'Zusätzlicher Anschluss', ro: 'Racord suplimentar', pl: 'Dodatkowe podłączenie', hr: 'Dodatni priključak' },
 
-  // Complete Room (100%) Modal
-  completeModalTitle: { de: 'Raum/Ort fertigstellen', ro: 'Finalizează încăperea', pl: 'Zakończ pomieszczenie', hr: 'Završi prostoriju' },
-  completeModalSub: { de: '100 % Abschluss', ro: 'Finalizare 100 %', pl: 'Zakończenie 100 %', hr: 'Završetak 100 %' },
-  completeNoticeText: { de: 'Die Fertigstellung setzt den Raum auf 100 %. Das Mengen-Delta (Minder- oder Mehrverbrauch) wird für den Bauleiter im Admin-Panel zur VOB-Abrechnung hinterlegt:', ro: 'Finalizarea setează încăperea la 100 %. Diferența de cantitate (economie sau consum suplimentar) este salvată pentru șeful de șantier în panoul admin pentru decontare:', pl: 'Zakończenie ustawia pomieszczenie na 100 %. Różnica ilościowa (mniejsze lub większe zużycie) zostanie zapisana w panelu kierownika do rozliczenia:', hr: 'Završetak postavlja prostoriju na 100 %. Razlika u količini (manja ili veća potrošnja) sprema se za voditelja gradilišta u administratorskoj ploči:' },
+  // Complete Room (Monteur fertig) Modal
+  completeModalTitle: { de: 'Monteur fertig melden', ro: 'Raportează montator gata', pl: 'Zgłoś monter gotowy', hr: 'Prijavi monter završio' },
+  completeModalSub: { de: 'Raumabschluss & Delta-Erfassung', ro: 'Finalizare încăpere & înregistrare diferențe', pl: 'Zakończenie i rejestracja różnic', hr: 'Završetak prostorije i evidentiranje razlika' },
+  completeNoticeText: { de: 'Die Fertigstellung meldet den Raum als fertiggestellt. Das Mengen-Delta (Minder- oder Mehrverbrauch) wird für den Bauleiter im Admin-Panel zur VOB-Abrechnung hinterlegt:', ro: 'Finalizarea raportează încăperea ca finalizată. Diferența de cantitate (economie sau consum suplimentar) este salvată pentru șeful de șantier în panoul admin pentru decontare:', pl: 'Zakończenie zgłasza pomieszczenie jako gotowe. Różnica ilościowa (mniejsze lub większe zużycie) zostanie zapisana w panelu kierownika do rozliczenia:', hr: 'Završetak prijavljuje prostoriju kao završenu. Razlika u količini (manja ili veća potrošnja) sprema se za voditelja gradilišta u administratorskoj ploči:' },
   completeDelta: { de: 'Delta', ro: 'Diferență', pl: 'Różnica', hr: 'Razlika' },
   completeUnder: { de: 'Minderverbrauch (Einsparung)', ro: 'Economie / consum redus', pl: 'Mniejsze zużycie (oszczędność)', hr: 'Manja potrošnja (ušteda)' },
   completeOver: { de: 'Mehrverbrauch (Nachtrag)', ro: 'Consum suplimentar (supliment)', pl: 'Nadmierne zużycie (dodatek)', hr: 'Dodatna potrošnja (dodatak)' },
   completeExact: { de: 'Exakt wie geplant', ro: 'Exact conform planului', pl: 'Dokładnie wg planu', hr: 'Točno prema planu' },
-  completeRoomConfirm: { de: 'Raum jetzt abschließen (100 %)', ro: 'Încheie încăperea acum (100 %)', pl: 'Zakończ pomieszczenie teraz (100 %)', hr: 'Završi prostoriju sada (100 %)' },
-  roomCompletedTitle: { de: 'Raum zu 100 % fertiggestellt', ro: 'Încăpere finalizată 100 %', pl: 'Pomieszczenie zakończone w 100%', hr: 'Prostorija završena 100 %' },
+  completeRoomConfirm: { de: 'Jetzt als „Monteur fertig“ abschließen', ro: 'Finalizează acum ca „Montator gata”', pl: 'Zakończ teraz jako „Monter gotowy”', hr: 'Završi sada kao „Monter završio”' },
+  roomCompletedTitle: { de: 'Monteur fertig gemeldet', ro: 'Montator gata raportat', pl: 'Zgłoszono monter gotowy', hr: 'Monter završio prijavljeno' },
   roomCompletedSub: { de: 'Mengen-Delta im Bauleiter-Admin-Panel hinterlegt', ro: 'Diferența de cantitate salvată în panoul admin', pl: 'Różnica ilościowa zapisana w panelu kierownika', hr: 'Razlika u količini spremljena u administratorskoj ploči' },
+  photosRequiredTitle: { de: 'Fotos erforderlich', ro: 'Poze obligatorii', pl: 'Wymagane zdjęcia', hr: 'Potrebne fotografije' },
+  photosRequiredMsg: { de: 'Bevor Sie „Monteur fertig“ melden können, müssen zuerst Fotos für diesen Raum aufgenommen werden.', ro: 'Înainte de a raporta „Montator gata”, trebuie să faceți fotografii pentru această încăpere.', pl: 'Zanim zgłosisz „Monter gotowy”, musisz najpierw zrobić zdjęcia dla tego pomieszczenia.', hr: 'Prije nego što prijavite „Monter završio”, morate prvo napraviti fotografije za ovu prostoriju.' },
+  maxDeliveryReached: { de: 'Liefermenge erreicht', ro: 'Cantitate livrată atinsă', pl: 'Osiągnięto limit dostawy', hr: 'Isporučena količina dosegnuta' },
+  maxDeliveryReachedMsg: { de: 'Für dieses Material wurden insgesamt nur {delivered} {qu} geliefert. Mehrverbrauch ist nur bis zur gelieferten Menge möglich. Weiterer Bedarf muss als Nachtrag bestellt werden.', ro: 'Pentru acest material s-au livrat doar {delivered} {qu} în total. Consumul suplimentar este posibil doar până la cantitatea livrată. Necesarul suplimentar trebuie comandat ca supliment.', pl: 'Dla tego materiału dostarczono łącznie tylko {delivered} {qu}. Nadmierne zużycie jest możliwe tylko do ilości dostarczonej. Dalsze zapotrzebowanie należy zamówić jako dodatek.', hr: 'Za ovaj materijal ukupno je isporučeno samo {delivered} {qu}. Dodatna potrošnja moguća je samo do isporučene količine. Dodatne potrebe moraju se naručiti kao dodatak.' },
+  noOverPossible: { de: 'Kein Mehrverbrauch möglich', ro: 'Consum suplimentar imposibil', pl: 'Brak możliwości nadmiernego zużycia', hr: 'Nije moguća dodatna potrošnja' },
+  noOverPossibleMsg: { de: 'Die gelieferte Gesamtmenge ({delivered} {qu}) ist bereits voll verplant ({planned} {qu}). Zusätzlicher Bedarf muss als Nachtrag angelegt werden.', ro: 'Cantitatea livrată ({delivered} {qu}) este deja planificată integral ({planned} {qu}). Necesarul suplimentar trebuie creat ca supliment.', pl: 'Dostarczona ilość ({delivered} {qu}) jest już w pełni zaplanowana ({planned} {qu}). Dodatkowe zapotrzebowanie należy utworzyć jako dodatek.', hr: 'Isporučena količina ({delivered} {qu}) već je u potpunosti planirana ({planned} {qu}). Dodatna potreba mora se unijeti kao dodatak.' },
+  maxAvailableDelivery: { de: 'Max. aus Lieferung verfügbar:', ro: 'Max. disponibil din livrare:', pl: 'Maks. dostępne z dostawy:', hr: 'Maks. dostupno iz isporuke:' },
 
   // Nachtrag / Reorder
   nachtrag: { de: 'Nachtrag', ro: 'Supliment', pl: 'Dodatek', hr: 'Dodatak' },

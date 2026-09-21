@@ -172,7 +172,7 @@ export default function BookingScreen({
     setShowUnclearSuggestions(false);
   };
 
-  // Stepper with Over-Quantity / Mehrverbrauch check
+  // Stepper with Over-Quantity / Mehrverbrauch check capped at delivered quantity
   const handleStep = (matId, stepDelta) => {
     const mat = materials.find((m) => m.id === matId);
     if (!mat) return;
@@ -186,39 +186,81 @@ export default function BookingScreen({
       ? Number(room.plannedItems[matId].installedQty || 0)
       : Number(mat.installedQty || 0);
     const nextTotalVerb = installedBefore + nextDelta;
+    const delivered = Number(mat.deliveredQty || 0);
 
-    // Trigger Mehrverbrauch explanation if going over planned and not yet explained
-    if (stepDelta > 0 && nextTotalVerb > planned && !overExplanations[matId]) {
-      const exceeded = Math.max(1, nextTotalVerb - planned);
-      setPendingOverMat({
-        mat,
-        nextDelta,
-        exceededBy: exceeded,
-        planned,
-        installedBefore,
-        qu: mat.qu,
-      });
-      setOverExtraQty(String(exceeded % 1 === 0 ? exceeded : exceeded.toFixed(1)));
-      setOverReason('');
-      setShowOverModal(true);
-      return;
+    // If stepping UP and exceeding planned quantity
+    if (stepDelta > 0 && nextTotalVerb > planned) {
+      // 1. Overall cap: Cannot exceed delivered quantity of the project
+      if (delivered > 0 && nextTotalVerb > delivered) {
+        Alert.alert(
+          t('maxDeliveryReached', currentLang),
+          t('maxDeliveryReachedMsg', currentLang, { delivered, qu: mat.qu })
+        );
+        return;
+      }
+
+      // 2. Mehrverbrauch is only possible if delivered > planned
+      if (delivered <= planned) {
+        Alert.alert(
+          t('noOverPossible', currentLang),
+          t('noOverPossibleMsg', currentLang, { delivered, planned, qu: mat.qu })
+        );
+        return;
+      }
+
+      // 3. Trigger Mehrverbrauch explanation if not yet explained
+      if (!overExplanations[matId]) {
+        const exceeded = Math.max(1, nextTotalVerb - planned);
+        const maxPossibleExtra = Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore));
+        const initialExtra = Math.min(exceeded, maxPossibleExtra);
+
+        setPendingOverMat({
+          mat,
+          nextDelta,
+          exceededBy: initialExtra,
+          planned,
+          installedBefore,
+          delivered,
+          maxPossibleExtra,
+          qu: mat.qu,
+        });
+        setOverExtraQty(String(initialExtra % 1 === 0 ? initialExtra : initialExtra.toFixed(1)));
+        setOverReason('');
+        setShowOverModal(true);
+        return;
+      }
+
+      // 4. If already explained, still enforce delivery ceiling
+      if (delivered > 0 && nextTotalVerb > delivered) {
+        Alert.alert(
+          t('maxDeliveryReached', currentLang),
+          t('maxDeliveryReachedMsg', currentLang, { delivered, qu: mat.qu })
+        );
+        return;
+      }
     }
 
     onQuantityChange(matId, nextDelta);
   };
 
-  // Adjust extra quantity inside Mehrverbrauch modal via stepper
+  // Adjust extra quantity inside Mehrverbrauch modal via stepper (clamped to max available from delivery)
   const handleStepOverExtra = (delta) => {
+    const max = pendingOverMat?.maxPossibleExtra !== undefined ? pendingOverMat.maxPossibleExtra : 9999;
     const current = parseFloat(overExtraQty) || 1;
-    const next = Math.max(0.5, current + delta);
+    let next = Math.max(0.5, current + delta);
+    if (next > max) next = max;
     setOverExtraQty(String(next % 1 === 0 ? next : Number(next.toFixed(1))));
   };
 
   // Confirming Mehrverbrauch Overlay
   const handleConfirmOverReason = (reasonToUse) => {
     if (!pendingOverMat) return;
+    const max = pendingOverMat.maxPossibleExtra !== undefined ? pendingOverMat.maxPossibleExtra : 9999;
     const finalReason = (reasonToUse || overReason).trim() || 'Mehrverbrauch auf Baustelle';
-    const extraNum = Math.max(0.1, parseFloat(overExtraQty) || 1);
+    let extraNum = Math.max(0.1, parseFloat(overExtraQty) || 1);
+    if (extraNum > max) {
+      extraNum = max;
+    }
 
     const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[pendingOverMat.mat.id]);
     const installedBefore = pendingOverMat.installedBefore !== undefined
@@ -257,6 +299,30 @@ export default function BookingScreen({
 
     setShowOverModal(false);
     setPendingOverMat(null);
+  };
+
+  // Check photos & status for "Monteur fertig" button
+  const effectivePhotoCount = photoCount + (room.photos?.length || 0);
+  const isRoomCompleted = room.isCompleted || room.pct === 100;
+
+  const handleMonteurFertigPress = () => {
+    if (effectivePhotoCount === 0 && !isRoomCompleted) {
+      Alert.alert(
+        t('photosRequiredTitle', currentLang),
+        t('photosRequiredMsg', currentLang),
+        [
+          { text: t('cancel', currentLang), style: 'cancel' },
+          {
+            text: t('toPhotos', currentLang) || 'Fotos aufnehmen',
+            onPress: () => {
+              if (onGoToPhotos) onGoToPhotos();
+            },
+          },
+        ]
+      );
+      return;
+    }
+    setShowCompleteModal(true);
   };
 
   // Confirming 100% Room Completion & Calculating Delta
@@ -419,22 +485,30 @@ export default function BookingScreen({
             </Text>
           </TouchableOpacity>
 
-          {/* Button 3: Bereich Fertigstellen (Grüner Button) */}
+          {/* Button 3: Monteur fertig (Grau wenn noch keine Fotos, Grün mit Häkchen wenn Fotos vorhanden) */}
           <TouchableOpacity
             style={[
               styles.actionBtnComplete,
-              (room.isCompleted || room.pct === 100) && styles.actionBtnCompleteDone,
+              (effectivePhotoCount === 0 && !isRoomCompleted)
+                ? styles.actionBtnCompleteGrey
+                : styles.actionBtnCompleteGreen,
+              isRoomCompleted && styles.actionBtnCompleteDone,
             ]}
-            onPress={() => setShowCompleteModal(true)}
+            onPress={handleMonteurFertigPress}
             activeOpacity={0.7}
           >
             <Text
               style={[
                 styles.actionBtnCompleteText,
-                (room.isCompleted || room.pct === 100) && styles.actionBtnCompleteDoneText,
+                (effectivePhotoCount === 0 && !isRoomCompleted)
+                  ? styles.actionBtnCompleteGreyText
+                  : styles.actionBtnCompleteGreenText,
+                isRoomCompleted && styles.actionBtnCompleteDoneText,
               ]}
+              numberOfLines={1}
             >
-              ✓ {t('completeBtnShort', currentLang)}
+              {(effectivePhotoCount === 0 && !isRoomCompleted) ? '📷 ' : '✓ '}
+              {t('completeBtnShort', currentLang)}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1127,6 +1201,16 @@ export default function BookingScreen({
                 </View>
               </View>
 
+              {/* Delivery stock info banner */}
+              <View style={styles.overDeliveryNotice}>
+                <Text style={styles.overDeliveryNoticeTitle}>
+                  📦 {t('matrixDelivered', currentLang)}: {pendingOverMat?.delivered || 0} {pendingOverMat?.qu} · {t('matrixPlanned', currentLang)}: {pendingOverMat?.planned || 0} {pendingOverMat?.qu}
+                </Text>
+                <Text style={styles.overDeliveryNoticeSub}>
+                  {t('maxAvailableDelivery', currentLang)} +{pendingOverMat?.maxPossibleExtra !== undefined ? pendingOverMat.maxPossibleExtra : 0} {pendingOverMat?.qu}
+                </Text>
+              </View>
+
               {/* Quantity Controls: Stepper [−] [Input] [+] and Quick Select Pills */}
               <View style={styles.modalField}>
                 <Text style={styles.modalFieldLabel}>
@@ -1147,7 +1231,16 @@ export default function BookingScreen({
                     <TextInput
                       style={styles.overQtyInput}
                       value={overExtraQty}
-                      onChangeText={(val) => setOverExtraQty(val.replace(',', '.'))}
+                      onChangeText={(val) => {
+                        const clean = val.replace(',', '.');
+                        const maxVal = pendingOverMat?.maxPossibleExtra !== undefined ? pendingOverMat.maxPossibleExtra : 9999;
+                        const num = parseFloat(clean);
+                        if (!isNaN(num) && num > maxVal) {
+                          setOverExtraQty(String(maxVal));
+                        } else {
+                          setOverExtraQty(clean);
+                        }
+                      }}
                       keyboardType="decimal-pad"
                       placeholder="z. B. 8"
                       placeholderTextColor={COLORS.muted}
@@ -1165,29 +1258,42 @@ export default function BookingScreen({
                   </TouchableOpacity>
                 </View>
 
-                {/* Quick Pills for 1-tap setting (+1, +2, +3, +5, +8, +10, +15) */}
+                {/* Quick Pills for 1-tap setting (capped to delivered stock) */}
                 <Text style={styles.overQuickLabel}>{t('overQuickLabel', currentLang)}</Text>
                 <View style={styles.overQuickPillsRow}>
-                  {['1', '2', '3', '5', '8', '10', '15'].map((val) => {
-                    const isSelected = String(parseFloat(overExtraQty)) === val;
-                    return (
-                      <TouchableOpacity
-                        key={val}
-                        style={[styles.overQuickPill, isSelected && styles.overQuickPillActive]}
-                        onPress={() => setOverExtraQty(val)}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.overQuickPillText,
-                            isSelected && styles.overQuickPillTextActive,
-                          ]}
+                  {(() => {
+                    const maxPossible = pendingOverMat?.maxPossibleExtra !== undefined ? pendingOverMat.maxPossibleExtra : 9999;
+                    const defaultPills = [1, 2, 3, 5, 8, 10, 15];
+                    let list = defaultPills.filter((n) => n <= maxPossible);
+                    if (maxPossible > 0 && !list.includes(maxPossible) && maxPossible <= 100) {
+                      list.push(maxPossible);
+                      list.sort((a, b) => a - b);
+                    }
+                    if (list.length === 0 && maxPossible > 0) {
+                      list = [maxPossible];
+                    }
+                    return list.map((n) => {
+                      const val = String(n);
+                      const isSelected = String(parseFloat(overExtraQty)) === val;
+                      return (
+                        <TouchableOpacity
+                          key={val}
+                          style={[styles.overQuickPill, isSelected && styles.overQuickPillActive]}
+                          onPress={() => setOverExtraQty(val)}
+                          activeOpacity={0.7}
                         >
-                          +{val} {pendingOverMat?.qu}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          <Text
+                            style={[
+                              styles.overQuickPillText,
+                              isSelected && styles.overQuickPillTextActive,
+                            ]}
+                          >
+                            +{val} {pendingOverMat?.qu}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    });
+                  })()}
                 </View>
               </View>
 
@@ -1633,15 +1739,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 9,
     paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  actionBtnCompleteGrey: {
+    backgroundColor: '#E2E8F0',
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+  },
+  actionBtnCompleteGreyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  actionBtnCompleteGreen: {
     backgroundColor: '#059669',
     borderWidth: 1.5,
     borderColor: '#047857',
-    borderRadius: 10,
     shadowColor: '#059669',
     shadowOpacity: 0.25,
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 3,
     elevation: 2,
+  },
+  actionBtnCompleteGreenText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
   },
   actionBtnCompleteText: {
     fontSize: 12,
@@ -1651,9 +1774,11 @@ const styles = StyleSheet.create({
   actionBtnCompleteDone: {
     backgroundColor: '#D1FAE5',
     borderColor: '#10B981',
+    borderWidth: 1.5,
   },
   actionBtnCompleteDoneText: {
     color: '#065F46',
+    fontWeight: '900',
   },
 
   // Suchfunktion DIRECT oberhalb der Kacheln
@@ -2650,6 +2775,26 @@ const styles = StyleSheet.create({
   overMatSubtitle: {
     fontSize: 12.5,
     color: COLORS.muted,
+  },
+  overDeliveryNotice: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  overDeliveryNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#166534',
+    marginBottom: 3,
+  },
+  overDeliveryNoticeSub: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
   },
   overCalcBox: {
     flexDirection: 'row',
