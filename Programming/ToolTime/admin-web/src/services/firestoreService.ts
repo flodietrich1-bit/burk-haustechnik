@@ -2,7 +2,7 @@ import {
   collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import type { Project, Position, Room, Booking, Addendum, Alert } from '../types';
+import type { Project, Position, Room, Booking, Addendum, Alert, User } from '../types';
 
 export const DEFAULT_PROJECT_ID = 'hallenbad-weingarten';
 
@@ -18,7 +18,13 @@ export const INITIAL_PROJECTS: Project[] = [
     startDate: '2026-09-01',
     endDate: '2027-04-30',
     trade: 'Sanitärinstallation',
+    projectManagerId: 'user_bl_1',
     projectManager: 'Florian Buck',
+    projectManagerEmail: 'f.buck@burk-haustechnik.de',
+    commercialManagerId: 'user_kfm_1',
+    commercialManager: 'Sabine Müller',
+    commercialManagerEmail: 's.mueller@burk-haustechnik.de',
+    assignedMonteurIds: ['user_mont_1', 'user_mont_2', 'user_mont_3'],
     status: 'in_progress',
     currency: 'EUR',
     totalPositions: 251,
@@ -35,7 +41,13 @@ export const INITIAL_PROJECTS: Project[] = [
     startDate: '2025-12-01',
     endDate: '2026-08-16',
     trade: 'Heizungsanlage nach DIN 18380',
-    projectManager: 'Matthias Ruf',
+    projectManagerId: 'user_bl_2',
+    projectManager: 'Michael Weber',
+    projectManagerEmail: 'm.weber@burk-haustechnik.de',
+    commercialManagerId: 'user_kfm_1',
+    commercialManager: 'Sabine Müller',
+    commercialManagerEmail: 's.mueller@burk-haustechnik.de',
+    assignedMonteurIds: ['user_mont_4'],
     status: 'in_progress',
     currency: 'EUR',
     totalPositions: 242,
@@ -678,6 +690,184 @@ export async function updateRoomMaterialActual(
     }
   } catch (err: any) {
     console.warn('Firestore updateRoomMaterialActual error:', err.message);
+  }
+}
+
+// -------------------------------------------------------------
+// USER MANAGEMENT & STAKEHOLDER ROLES
+// -------------------------------------------------------------
+export const MOCK_USERS: User[] = [
+  {
+    id: 'user_admin_1',
+    name: 'Florian Burk',
+    role: 'admin',
+    email: 'f.burk@burk-haustechnik.de',
+    phone: '+49 751 98765-0',
+    status: 'active',
+    createdAt: '2026-01-10T08:00:00.000Z'
+  },
+  {
+    id: 'user_bl_1',
+    name: 'Florian Buck',
+    role: 'bauleiter',
+    email: 'f.buck@burk-haustechnik.de',
+    phone: '+49 171 1234567',
+    status: 'active',
+    createdAt: '2026-02-01T09:00:00.000Z'
+  },
+  {
+    id: 'user_bl_2',
+    name: 'Michael Weber',
+    role: 'bauleiter',
+    email: 'm.weber@burk-haustechnik.de',
+    phone: '+49 171 2345678',
+    status: 'active',
+    createdAt: '2026-03-15T09:00:00.000Z'
+  },
+  {
+    id: 'user_kfm_1',
+    name: 'Sabine Müller',
+    role: 'kaufmaennisch',
+    email: 's.mueller@burk-haustechnik.de',
+    phone: '+49 751 98765-12',
+    status: 'active',
+    createdAt: '2026-01-15T08:30:00.000Z'
+  },
+  {
+    id: 'user_kfm_2',
+    name: 'Andreas Schmidt',
+    role: 'kaufmaennisch',
+    email: 'a.schmidt@burk-haustechnik.de',
+    phone: '+49 751 98765-14',
+    status: 'active',
+    createdAt: '2026-02-10T08:30:00.000Z'
+  },
+  {
+    id: 'user_mont_1',
+    name: 'Ion Popescu',
+    role: 'monteur',
+    email: 'i.popescu@burk-haustechnik.de',
+    phone: '+49 172 3456789',
+    pin: '1234',
+    defaultLanguage: 'ro',
+    status: 'active',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    createdAt: '2026-04-01T07:00:00.000Z'
+  },
+  {
+    id: 'user_mont_2',
+    name: 'Tomasz Novak',
+    role: 'monteur',
+    email: 't.novak@burk-haustechnik.de',
+    phone: '+49 172 4567890',
+    pin: '4821',
+    defaultLanguage: 'pl',
+    status: 'active',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    createdAt: '2026-04-01T07:00:00.000Z'
+  },
+  {
+    id: 'user_mont_3',
+    name: 'Marko Horvat',
+    role: 'monteur',
+    email: 'm.horvat@burk-haustechnik.de',
+    phone: '+49 172 5678901',
+    pin: '9012',
+    defaultLanguage: 'hr',
+    status: 'active',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    createdAt: '2026-05-15T07:00:00.000Z'
+  },
+  {
+    id: 'user_mont_4',
+    name: 'Stefan Maier',
+    role: 'monteur',
+    email: 's.maier@burk-haustechnik.de',
+    phone: '+49 172 6789012',
+    pin: '5578',
+    defaultLanguage: 'de',
+    status: 'active',
+    assignedProjectIds: ['gemeindehaus-bavendorf'],
+    createdAt: '2026-06-01T07:00:00.000Z'
+  }
+];
+
+const LOCAL_STORAGE_USERS_KEY = 'burk_tooltime_users';
+
+export function listenToUsers(callback: (users: User[]) => void) {
+  const colRef = collection(db, 'users');
+  return onSnapshot(colRef, (snap) => {
+    if (!snap.empty) {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as User);
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(list));
+      callback(list);
+    } else {
+      const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+      if (saved) {
+        callback(JSON.parse(saved));
+      } else {
+        localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(MOCK_USERS));
+        callback(MOCK_USERS);
+      }
+    }
+  }, (err) => {
+    console.warn('Firestore fallback mode for users:', err.message);
+    const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+    if (saved) {
+      callback(JSON.parse(saved));
+    } else {
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(MOCK_USERS));
+      callback(MOCK_USERS);
+    }
+  });
+}
+
+export async function saveUser(user: User) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
+  const updated = [user, ...currentList.filter(u => u.id !== user.id)];
+  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
+
+  try {
+    const ref = doc(db, 'users', user.id);
+    await setDoc(ref, user, { merge: true });
+  } catch (err: any) {
+    console.warn('Firestore saveUser error:', err.message);
+  }
+}
+
+export async function updateUserPin(userId: string, pin: string) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
+  const updated = currentList.map(u => u.id === userId ? { ...u, pin } : u);
+  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
+
+  try {
+    const ref = doc(db, 'users', userId);
+    await updateDoc(ref, { pin });
+  } catch (err: any) {
+    console.warn('Firestore updateUserPin error:', err.message);
+  }
+}
+
+export async function updateProjectDetails(projectId: string, partial: Partial<Project>) {
+  const projects = getLocalProjects();
+  const updated = projects.map(p => {
+    if (p.id === projectId) {
+      return { ...p, ...partial, updatedAt: new Date().toISOString() };
+    }
+    return p;
+  });
+  saveLocalProjects(updated);
+
+  try {
+    const ref = doc(db, 'projects', projectId);
+    await updateDoc(ref, {
+      ...partial,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.warn('Firestore updateProjectDetails error:', err.message);
   }
 }
 

@@ -7,6 +7,9 @@ import { RoomManager } from './components/RoomManager';
 import { LiveFeed } from './components/LiveFeed';
 import { AddendumsView } from './components/AddendumsView';
 import { AnalyticsView } from './components/AnalyticsView';
+import { ReordersView } from './components/ReordersView';
+import { ProjectSettingsView } from './components/ProjectSettingsView';
+import { UserManagementView } from './components/UserManagementView';
 import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AlertsBanner } from './components/AlertsBanner';
@@ -19,9 +22,10 @@ import {
   listenToRooms,
   listenToBookings,
   listenToAddendums,
-  listenToAlerts
+  listenToAlerts,
+  listenToUsers
 } from './services/firestoreService';
-import type { Project, Position, Room, Booking, Addendum, Alert } from './types';
+import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -35,23 +39,30 @@ export function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [addendums, setAddendums] = useState<Addendum[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
 
   const [activeTab, setActiveTab] = useState<TabType>('positions');
-  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchTerm] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState<boolean>(false);
 
-  // 1. Listen to all projects
+  // 1. Listen to all projects & users
   useEffect(() => {
     const unsubProjects = listenToProjects((list) => {
       setProjects(list);
-      // If current selected project doesn't exist, pick the first
       if (list.length > 0 && !list.some(p => p.id === selectedProjectId)) {
         setSelectedProjectId(list[0].id);
       }
     });
 
-    return () => unsubProjects();
+    const unsubUsers = listenToUsers((list) => {
+      setUsers(list);
+    });
+
+    return () => {
+      unsubProjects();
+      unsubUsers();
+    };
   }, []);
 
   // 2. Listen to active project data whenever selectedProjectId changes
@@ -96,43 +107,46 @@ export function App() {
   };
 
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
+  const reordersCount = alerts.filter(a => a.status === 'reordered' || a.actionNote?.includes('Großhändler')).length;
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col antialiased">
-      {/* Top Navigation with Project Switcher */}
+      {/* Top Navigation: Streamlined with Project Switcher, New Project & Alerts */}
       <Header
         projects={projects}
         activeProject={activeProject}
         alerts={alerts}
         onSelectProject={handleSelectProject}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
-        onOpenImport={() => setIsImportOpen(true)}
-        onExport={handleExport}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
       />
 
       {/* Main Layout */}
       <div className="flex-1 flex overflow-hidden max-w-[1920px] w-full mx-auto">
-        {/* Sidebar */}
+        {/* Sidebar with PROJEKT and ACCOUNT categories */}
         <Sidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           openAddendumsCount={openAddendumsCount}
           totalPositionsCount={positions.length}
           totalRoomsCount={rooms.length}
+          reordersCount={reordersCount}
+          onExport={handleExport}
         />
 
         {/* Content Area */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             
-            {/* Live Material Alerts Banner */}
+            {/* Live Material Alerts Banner (default collapsed, with 5 decision metrics & mail modal) */}
             <AlertsBanner
               projectId={selectedProjectId}
               alerts={alerts}
+              project={activeProject}
+              positions={positions}
+              rooms={rooms}
             />
 
+            {/* TAB: Positions */}
             {activeTab === 'positions' && (
               <MaterialTable
                 positions={positions}
@@ -140,6 +154,7 @@ export function App() {
               />
             )}
 
+            {/* TAB: Rooms & Floors */}
             {activeTab === 'rooms' && (
               <RoomManager
                 projectId={selectedProjectId}
@@ -149,6 +164,7 @@ export function App() {
               />
             )}
 
+            {/* TAB: Bookings Live Feed */}
             {activeTab === 'bookings' && (
               <LiveFeed
                 bookings={bookings}
@@ -156,16 +172,44 @@ export function App() {
               />
             )}
 
+            {/* TAB: Addendums */}
             {activeTab === 'addendums' && (
               <AddendumsView
                 addendums={addendums}
               />
             )}
 
+            {/* TAB: Reorders Log (NEW) */}
+            {activeTab === 'reorders' && (
+              <ReordersView
+                projectId={selectedProjectId}
+                projectName={activeProject?.name || 'Hallenbad Weingarten'}
+                alerts={alerts}
+                project={activeProject}
+              />
+            )}
+
+            {/* TAB: Analytics */}
             {activeTab === 'analytics' && (
               <AnalyticsView
                 positions={positions}
                 bookings={bookings}
+              />
+            )}
+
+            {/* TAB: Project Settings (NEW) */}
+            {activeTab === 'project_settings' && (
+              <ProjectSettingsView
+                project={activeProject}
+                users={users}
+              />
+            )}
+
+            {/* TAB: User & Role Admin (NEW) */}
+            {activeTab === 'users' && (
+              <UserManagementView
+                users={users}
+                projects={projects}
               />
             )}
 
@@ -181,11 +225,12 @@ export function App() {
         onSuccess={() => setActiveTab('positions')}
       />
 
-      {/* New Project Wizard Modal */}
+      {/* New Project Wizard Modal (3 Steps) */}
       <NewProjectModal
         isOpen={isNewProjectOpen}
         onClose={() => setIsNewProjectOpen(false)}
         onProjectCreated={handleProjectCreated}
+        users={users}
       />
     </div>
   );

@@ -8,7 +8,13 @@ export interface Project {
   startDate?: string;
   endDate?: string;
   trade?: string; // e.g. "Sanitär", "Heizung", "Lüftung"
+  projectManagerId?: string;
   projectManager?: string; // e.g. "Florian Buck"
+  projectManagerEmail?: string;
+  commercialManagerId?: string;
+  commercialManager?: string; // e.g. "Sabine Müller"
+  commercialManagerEmail?: string;
+  assignedMonteurIds?: string[]; // IDs of assigned installers
   status: 'draft' | 'in_progress' | 'completed' | 'archived';
   currency: string;
   totalPositions: number;
@@ -85,6 +91,8 @@ export interface Alert {
   monteurName: string;
   status: 'open' | 'reordered' | 'billed' | 'acknowledged';
   needsReorder?: boolean;
+  reorderedAt?: string;
+  reorderEmailSentTo?: string;
   createdAt: string;
   updatedAt?: string;
   actionNote?: string;
@@ -123,10 +131,17 @@ export interface Addendum {
   createdAt: string;
 }
 
+export type UserRole = 'admin' | 'bauleiter' | 'kaufmaennisch' | 'monteur';
+
 export interface User {
   id: string;
   name: string;
-  role: 'admin' | 'monteur';
+  role: UserRole;
   email?: string;
+  phone?: string;
+  pin?: string; // 4-digit PIN for installer app
+  assignedProjectIds?: string[];
   defaultLanguage?: 'de' | 'ro' | 'pl' | 'hr';
+  status?: 'active' | 'inactive';
+  createdAt?: string;
 }
