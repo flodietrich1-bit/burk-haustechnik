@@ -16,6 +16,7 @@ import {
 import { COLORS } from '../constants/theme';
 import { t, GLOSSARY } from '../locales/i18n';
 import ProgressBar from '../components/ProgressBar';
+import SignaturePad from '../components/SignaturePad';
 
 export default function BookingScreen({
   room,
@@ -80,13 +81,36 @@ export default function BookingScreen({
   const [hoursMonteur, setHoursMonteur] = useState('');
   const [hoursNote, setHoursNote] = useState('');
 
+  // Form 3: Unterschrift & Validation
+  const [nachtragSignature, setNachtragSignature] = useState(null);
+  const [modalScrollEnabled, setModalScrollEnabled] = useState(true);
+
   // Pre-fill monteur name as default when opening modal
   const openNachtragModal = () => {
     if (!matBesteller) setMatBesteller(monteur?.name || '');
     if (!hoursMonteur) setHoursMonteur(monteur?.name || '');
     setShowMatSuggestions(false);
+    setNachtragSignature(null);
+    setModalScrollEnabled(true);
     setShowNachtragModal(true);
   };
+
+  // Validation: List of remaining required fields
+  const missingList = activeTab === 'material' ? [
+    !matTitle.trim() ? t('reMat', currentLang) : null,
+    !matQty.trim() ? t('reQty', currentLang) : null,
+    !matBesteller.trim() ? t('reBest', currentLang) : null,
+    !matNote.trim() ? t('reNote', currentLang) : null,
+    !nachtragSignature ? t('signatureLabel', currentLang) : null,
+  ].filter(Boolean) : [
+    !hoursActivity.trim() ? t('fldTaetigkeit', currentLang) : null,
+    !hoursDuration.trim() ? t('fldStunden', currentLang) : null,
+    !hoursMonteur.trim() ? t('monteur', currentLang) : null,
+    !hoursNote.trim() ? t('reNote', currentLang) : null,
+    !nachtragSignature ? t('signatureLabel', currentLang) : null,
+  ].filter(Boolean);
+
+  const isFormValid = missingList.length === 0;
 
   // Main screen search filter
   const q = searchQuery.trim().toLowerCase();
@@ -293,11 +317,10 @@ export default function BookingScreen({
 
   // Save Nachtrag (dispatches according to active tab with separate payloads)
   const handleSubmitNachtrag = () => {
+    if (!isFormValid) {
+      return;
+    }
     if (activeTab === 'material') {
-      if (!matTitle.trim()) {
-        Alert.alert('Hinweis', 'Bitte Materialbezeichnung eingeben.');
-        return;
-      }
       const cleanQty = matQty.trim() || '1';
       onAddNachtrag({
         roomId: room.id,
@@ -308,18 +331,16 @@ export default function BookingScreen({
         qu: matUnit,
         requestedBy: matBesteller.trim() || monteur?.name || 'Monteur',
         note: matNote.trim(),
+        signature: nachtragSignature,
       });
 
       // Clear material form
       setMatTitle('');
       setMatQty('');
       setMatNote('');
+      setNachtragSignature(null);
     } else {
       // Arbeitszeit / Stundenlohn
-      if (!hoursActivity.trim()) {
-        Alert.alert('Hinweis', 'Bitte ausgeführte Tätigkeit eingeben.');
-        return;
-      }
       const cleanHours = hoursDuration.trim() || '1';
       onAddNachtrag({
         roomId: room.id,
@@ -330,12 +351,14 @@ export default function BookingScreen({
         qu: 'h',
         requestedBy: hoursMonteur.trim() || monteur?.name || 'Monteur',
         note: hoursNote.trim(),
+        signature: nachtragSignature,
       });
 
       // Clear hours form
       setHoursActivity('');
       setHoursDuration('');
       setHoursNote('');
+      setNachtragSignature(null);
     }
 
     setShowNachtragModal(false);
@@ -778,6 +801,7 @@ export default function BookingScreen({
               style={styles.modalBody}
               contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
+              scrollEnabled={modalScrollEnabled}
             >
               {/* ========================================================= */}
               {/* TAB 1: MATERIAL NACHTRAG                                 */}
@@ -786,9 +810,9 @@ export default function BookingScreen({
                 <View>
                   {/* Material / Artikel mit GAEB Autosuggester */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reMat', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reMat', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !matTitle.trim() && styles.inputInvalid]}
                       placeholder="z. B. DIN 100, Bogen, Schelle, Kugelhahn..."
                       placeholderTextColor={COLORS.muted}
                       value={matTitle}
@@ -825,7 +849,7 @@ export default function BookingScreen({
 
                   {/* Einheit & Mengeneingabe */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <View style={styles.unitSelectorRow}>
                       <TouchableOpacity
                         style={[styles.unitToggle, matUnit === 'Stk' && styles.unitToggleActive]}
@@ -847,7 +871,7 @@ export default function BookingScreen({
                     </View>
 
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !matQty.trim() && styles.inputInvalid]}
                       placeholder={matUnit === 'm' ? t('unclearQtyMeterPlaceholder', currentLang) : t('unclearQtyPiecePlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       keyboardType="decimal-pad"
@@ -858,9 +882,9 @@ export default function BookingScreen({
 
                   {/* Besteller / Auftraggeber (Default: Monteurname) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reBest', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reBest', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !matBesteller.trim() && styles.inputInvalid]}
                       placeholder={t('reBest', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       value={matBesteller}
@@ -870,9 +894,9 @@ export default function BookingScreen({
 
                   {/* Kommentar / Begründung (3 Zeilen) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} (3 Zeilen)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, styles.multilineInput]}
+                      style={[styles.modalInput, styles.multilineInput, !matNote.trim() && styles.inputInvalid]}
                       placeholder={t('overCommentPlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       multiline={true}
@@ -891,9 +915,9 @@ export default function BookingScreen({
                 <View>
                   {/* Ausgeführte Tätigkeit */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('fldTaetigkeit', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('fldTaetigkeit', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !hoursActivity.trim() && styles.inputInvalid]}
                       placeholder="z. B. Kernbohrung DN 150 + Mauerdurchbruch..."
                       placeholderTextColor={COLORS.muted}
                       value={hoursActivity}
@@ -903,9 +927,9 @@ export default function BookingScreen({
 
                   {/* Stunden & Schnellwahl */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !hoursDuration.trim() && styles.inputInvalid]}
                       placeholder="z. B. 2.5"
                       placeholderTextColor={COLORS.muted}
                       keyboardType="decimal-pad"
@@ -931,9 +955,9 @@ export default function BookingScreen({
 
                   {/* Monteur / Ausführender (Default: Monteurname) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('monteur', currentLang)} / {t('reBest', currentLang)}</Text>
+                    <Text style={styles.modalFieldLabel}>{t('monteur', currentLang)} / {t('reBest', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={styles.modalInput}
+                      style={[styles.modalInput, !hoursMonteur.trim() && styles.inputInvalid]}
                       placeholder={t('monteur', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       value={hoursMonteur}
@@ -943,9 +967,9 @@ export default function BookingScreen({
 
                   {/* Begründung / Notiz (3 Zeilen) */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} (3 Zeilen)</Text>
+                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, styles.multilineInput]}
+                      style={[styles.modalInput, styles.multilineInput, !hoursNote.trim() && styles.inputInvalid]}
                       placeholder={t('overCommentPlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       multiline={true}
@@ -957,14 +981,55 @@ export default function BookingScreen({
                 </View>
               )}
 
-              {/* Submit CTA Button */}
+              {/* ========================================================= */}
+              {/* UNTERSCHRIFTENFELD (AM ENDE DER BEGRÜNDUNG)               */}
+              {/* ========================================================= */}
+              <SignaturePad
+                key={`sig-${activeTab}`}
+                isInvalid={!nachtragSignature}
+                currentLang={currentLang}
+                onSignatureChange={(hasSig, paths) => setNachtragSignature(hasSig ? paths : null)}
+                onDrawStart={() => setModalScrollEnabled(false)}
+                onDrawEnd={() => setModalScrollEnabled(true)}
+              />
+
+              {/* ========================================================= */}
+              {/* GRAUER BALKEN: NOCH AUSZUFÜLLENDE FELDER                  */}
+              {/* ========================================================= */}
+              {missingList.length > 0 ? (
+                <View style={styles.missingHintBar}>
+                  <Text style={styles.missingHintIcon}>ℹ️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.missingHintTitle}>{t('missingFieldsTitle', currentLang)}</Text>
+                    <Text style={styles.missingHintList}>
+                      {missingList.join(' · ')}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.completeHintBar}>
+                  <Text style={styles.completeHintIcon}>✓</Text>
+                  <Text style={styles.completeHintText}>{t('fieldsComplete', currentLang)}</Text>
+                </View>
+              )}
+
+              {/* Submit CTA Button - Grau solange unvollständig oder ohne Unterschrift */}
               <TouchableOpacity
-                style={styles.modalSubmitBtn}
+                style={[
+                  styles.modalSubmitBtn,
+                  !isFormValid && styles.modalSubmitBtnDisabled,
+                ]}
                 onPress={handleSubmitNachtrag}
+                disabled={!isFormValid}
                 activeOpacity={0.8}
               >
-                <Text style={styles.modalSubmitText}>
-                  {activeTab === 'material' ? t('reCreate', currentLang) : t('reCreateHours', currentLang)}
+                <Text
+                  style={[
+                    styles.modalSubmitText,
+                    !isFormValid && styles.modalSubmitTextDisabled,
+                  ]}
+                >
+                  {isFormValid ? '✓ ' : ''}{activeTab === 'material' ? t('reCreate', currentLang) : t('reCreateHours', currentLang)}
                 </Text>
               </TouchableOpacity>
             </ScrollView>
@@ -2334,6 +2399,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 7,
   },
+  requiredStar: {
+    color: '#E53E3E',
+    fontWeight: '900',
+  },
   modalInput: {
     borderWidth: 1.5,
     borderColor: COLORS.line,
@@ -2470,10 +2539,76 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 14,
   },
+  modalSubmitBtnDisabled: {
+    backgroundColor: '#CBD5E0',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   modalSubmitText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 16,
+  },
+  modalSubmitTextDisabled: {
+    color: '#718096',
+  },
+  inputInvalid: {
+    borderColor: '#E53E3E',
+    borderWidth: 1.5,
+    backgroundColor: '#FFF5F5',
+  },
+  missingHintBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EDF2F7',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8,
+  },
+  missingHintIcon: {
+    fontSize: 16,
+  },
+  missingHintTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#4A5568',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 2,
+  },
+  missingHintList: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#C53030',
+    lineHeight: 16,
+  },
+  completeHintBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E6FFFA',
+    borderWidth: 1.5,
+    borderColor: '#38B2AC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8,
+  },
+  completeHintIcon: {
+    fontSize: 16,
+    color: '#234E52',
+    fontWeight: '900',
+  },
+  completeHintText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#234E52',
   },
 
   // -------------------------------------------------------------

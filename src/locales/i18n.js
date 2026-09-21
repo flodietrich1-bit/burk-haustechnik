@@ -131,6 +131,12 @@ export const TRANSLATIONS = {
   reNote: { de: 'Notiz / Begründung', ro: 'Notă / justificare', pl: 'Notatka / uzasadnienie', hr: 'Napomena / obrazloženje' },
   reCreate: { de: 'Nachtrag anlegen', ro: 'Creează supliment', pl: 'Utwórz dodatek', hr: 'Kreiraj dodatak' },
   reCreateHours: { de: 'Arbeitszeit erfassen', ro: 'Înregistrează orele de lucru', pl: 'Zapisz czas pracy', hr: 'Unesi radne sate' },
+  signatureLabel: { de: 'Unterschrift', ro: 'Semnătură', pl: 'Podpis', hr: 'Potpis' },
+  signatureSigned: { de: 'Unterschrieben', ro: 'Semnat', pl: 'Podpisano', hr: 'Potpisano' },
+  signatureSignHere: { de: 'Hier mit dem Finger unterschreiben', ro: 'Semnează aici cu degetul', pl: 'Podpisz tutaj palcem', hr: 'Potpišite ovdje prstom' },
+  signatureClear: { de: 'Löschen', ro: 'Șterge', pl: 'Wyczyść', hr: 'Obriši' },
+  missingFieldsTitle: { de: 'Noch auszufüllen:', ro: 'De completat:', pl: 'Do uzupełnienia:', hr: 'Preostalo za ispuniti:' },
+  fieldsComplete: { de: '✓ Alle Angaben vollständig – Nachtrag kann angelegt werden', ro: '✓ Toate datele sunt complete – suplimentul poate fi salvat', pl: '✓ Wszystkie dane kompletne – można utworzyć dodatek', hr: '✓ Svi podaci potpuni – dodatak se može kreirati' },
   nachtragOpen: { de: 'Bereits erfasste Nachträge', ro: 'Suplimente deja înregistrate', pl: 'Już zapisane dodatki', hr: 'Već uneseni dodaci' },
 
   // Photos

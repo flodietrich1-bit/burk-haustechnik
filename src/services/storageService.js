@@ -262,6 +262,7 @@ export async function enqueueAddendum(addendum) {
       qu: addendum.qu || 'Stk',
       requestedBy: addendum.requestedBy || 'Bauleiter',
       note: addendum.note || '',
+      signature: addendum.signature || null,
       status: 'pending',
       createdAt: new Date().toISOString(),
     };
