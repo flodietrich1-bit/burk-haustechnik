@@ -13,32 +13,85 @@ const LOCKOUT_KEYS = {
 // Seed monteurs (configured via Benutzer-Admin or offline fallback)
 export const SEED_MONTEURS = [
   {
+    id: 'user_mont_4',
+    name: 'Stefan Maier',
+    pin: '5578',
+    assignedProjectIds: ['gemeindehaus-bavendorf', 'hallenbad-weingarten'],
+    projectIds: ['gemeindehaus-bavendorf', 'hallenbad-weingarten'],
+    role: 'monteur',
+    defaultLanguage: 'de',
+  },
+  {
+    id: 'user_mont_1',
+    name: 'Ion Popescu',
+    pin: '1234',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    projectIds: ['hallenbad-weingarten'],
+    role: 'monteur',
+    defaultLanguage: 'ro',
+  },
+  {
+    id: 'monteur_ion_alt',
+    name: 'Ion Popescu',
+    pin: '4321',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    projectIds: ['hallenbad-weingarten'],
+    role: 'monteur',
+    defaultLanguage: 'ro',
+  },
+  {
+    id: 'user_mont_2',
+    name: 'Tomasz Novak',
+    pin: '4821',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    projectIds: ['hallenbad-weingarten'],
+    role: 'monteur',
+    defaultLanguage: 'pl',
+  },
+  {
+    id: 'user_mont_3',
+    name: 'Marko Horvat',
+    pin: '9012',
+    assignedProjectIds: ['hallenbad-weingarten'],
+    projectIds: ['hallenbad-weingarten'],
+    role: 'monteur',
+    defaultLanguage: 'hr',
+  },
+  {
     id: 'monteur_florian',
     name: 'Florian Dietrich',
     pin: '1234',
+    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg'],
     projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg'],
     role: 'monteur',
-  },
-  {
-    id: 'monteur_ion',
-    name: 'Ion Popescu',
-    pin: '4321',
-    projectIds: ['hallenbad-weingarten'],
-    role: 'monteur',
+    defaultLanguage: 'de',
   },
   {
     id: 'monteur_thomas',
     name: 'Thomas Weber',
     pin: '9876',
+    assignedProjectIds: ['hallenbad-weingarten', 'schulzentrum-wangen'],
     projectIds: ['hallenbad-weingarten', 'schulzentrum-wangen'],
     role: 'monteur',
+    defaultLanguage: 'de',
+  },
+  {
+    id: 'user_bl_1',
+    name: 'Florian Buck',
+    pin: '9999',
+    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'gemeindehaus-bavendorf'],
+    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'gemeindehaus-bavendorf'],
+    role: 'bauleiter',
+    defaultLanguage: 'de',
   },
   {
     id: 'monteur_burk',
     name: 'Monteur Burk',
     pin: '0000',
-    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'schulzentrum-wangen'],
+    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'schulzentrum-wangen', 'gemeindehaus-bavendorf'],
+    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'schulzentrum-wangen', 'gemeindehaus-bavendorf'],
     role: 'monteur',
+    defaultLanguage: 'de',
   },
 ];
 
@@ -55,6 +108,18 @@ export const AVAILABLE_PROJECTS = [
     projectManager: 'Florian Buck',
     calendarWeek: 27,
     totalDeliveredPercentage: 42,
+  },
+  {
+    id: 'gemeindehaus-bavendorf',
+    name: 'Gemeindehaus Bavendorf Sanierung',
+    projectNumber: '1702 / 24320-012',
+    client: 'Gemeinde Bavendorf',
+    location: 'Bavendorf',
+    address: 'Kirchweg 4, 88213 Ravensburg-Bavendorf',
+    trade: 'Heizung & Sanitär',
+    projectManager: 'Florian Buck',
+    calendarWeek: 27,
+    totalDeliveredPercentage: 35,
   },
   {
     id: 'wohnanlage-ravensburg',
@@ -169,11 +234,24 @@ export async function authenticateByPin(enteredPin) {
   try {
     const isOnline = await checkOnlineStatus();
     if (isOnline) {
-      // Check Firestore monteurs collection
-      const qMonteur = query(collection(db, 'monteurs'), where('pin', '==', cleanPin));
-      const snapMonteur = await getDocs(qMonteur);
-      if (!snapMonteur.empty) {
-        monteur = { id: snapMonteur.docs[0].id, ...snapMonteur.docs[0].data() };
+      // Check Firestore 'users' collection (where admin-web saves users)
+      let qUser = query(collection(db, 'users'), where('pin', '==', cleanPin));
+      let snapUser = await getDocs(qUser);
+
+      // If not found with string, try with numeric pin
+      if (snapUser.empty && !isNaN(Number(cleanPin))) {
+        qUser = query(collection(db, 'users'), where('pin', '==', Number(cleanPin)));
+        snapUser = await getDocs(qUser);
+      }
+
+      // If still not found, also check 'monteurs' collection
+      if (snapUser.empty) {
+        qUser = query(collection(db, 'monteurs'), where('pin', '==', cleanPin));
+        snapUser = await getDocs(qUser);
+      }
+
+      if (!snapUser.empty) {
+        monteur = { id: snapUser.docs[0].id, ...snapUser.docs[0].data() };
       }
 
       // Fetch projects
@@ -214,16 +292,28 @@ export async function authenticateByPin(enteredPin) {
   await resetPinLockout();
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur));
 
-  // Determine assigned projects for this Monteur
+  // Determine assigned projects for this Monteur (support both assignedProjectIds and projectIds)
+  const userProjectIds = monteur.assignedProjectIds || monteur.projectIds || [];
   let assignedProjects = [];
-  if (Array.isArray(monteur.projectIds) && monteur.projectIds.length > 0) {
-    assignedProjects = allProjects.filter((p) => monteur.projectIds.includes(p.id));
+  if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
+    assignedProjects = allProjects.filter((p) => userProjectIds.includes(p.id));
     if (assignedProjects.length === 0) {
-      assignedProjects = allProjects.slice(0, 1);
+      assignedProjects = userProjectIds.map((pId) => {
+        const found = AVAILABLE_PROJECTS.find((ap) => ap.id === pId);
+        return (
+          found || {
+            id: pId,
+            name: pId === 'gemeindehaus-bavendorf' ? 'Gemeindehaus Bavendorf Sanierung' : pId,
+            client: 'Burk Haustechnik',
+            calendarWeek: 27,
+            totalDeliveredPercentage: 50,
+          }
+        );
+      });
     }
   } else {
     // If no explicit projectIds assigned, assign default
-    assignedProjects = allProjects.length > 0 ? allProjects : [DEFAULT_PROJECT];
+    assignedProjects = allProjects.length > 0 ? allProjects : AVAILABLE_PROJECTS;
   }
 
   return {

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import * as Updates from 'expo-updates';
 import { COLORS } from './src/constants/theme';
 import { getLanguage, setLanguage } from './src/services/storageService';
 import { getActiveMonteur } from './src/services/authService';
@@ -89,6 +90,18 @@ export default function App() {
         }
         // Neutral PIN screen on app start / reload
         setAppPhase('pin');
+
+        // Check for latest EAS update in background and reload if available
+        if (!__DEV__ && Updates.isEnabled) {
+          Updates.checkForUpdateAsync()
+            .then(async (update) => {
+              if (update.isAvailable) {
+                await Updates.fetchUpdateAsync();
+                await Updates.reloadAsync();
+              }
+            })
+            .catch(() => {});
+        }
       } catch (err) {
         console.error('Error during app initialization:', err);
         setAppPhase('pin');

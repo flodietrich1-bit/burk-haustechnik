@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, SafeAreaView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Alert, SafeAreaView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import * as Updates from 'expo-updates';
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import PinPad from '../components/PinPad';
 import {
   authenticateByPin,
   getPinLockoutStatus,
+  resetPinLockout,
 } from '../services/authService';
 
 export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
@@ -82,6 +84,40 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
     }
   };
 
+  const handleManualReload = async () => {
+    setIsVerifying(true);
+    try {
+      await resetPinLockout();
+      setLockout({ isLocked: false, remainingMinutes: 0 });
+      setErrorMsg('');
+
+      if (!__DEV__ && Updates.isEnabled) {
+        setErrorMsg('Prüfe auf App-Updates...');
+        const check = await Updates.checkForUpdateAsync();
+        if (check.isAvailable) {
+          setErrorMsg('Lade neuestes Update...');
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+          return;
+        }
+      }
+
+      if (Updates.reloadAsync) {
+        await Updates.reloadAsync();
+      } else {
+        Alert.alert('App aktuell', 'Die neueste Version ist aktiv. Versuche wurden zurückgesetzt.');
+      }
+    } catch (e) {
+      console.warn('Reload notice:', e);
+      setErrorMsg('');
+      try {
+        if (Updates.reloadAsync) await Updates.reloadAsync();
+      } catch (err) {}
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -131,6 +167,15 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
             />
           </View>
         )}
+
+        {/* Manual Reload & Update Button */}
+        <TouchableOpacity
+          style={styles.reloadBtn}
+          onPress={handleManualReload}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.reloadText}>🔄 App neu laden / Updates prüfen</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -245,5 +290,21 @@ const styles = StyleSheet.create({
   disabledPad: {
     opacity: 0.35,
     pointerEvents: 'none',
+  },
+  reloadBtn: {
+    marginTop: 22,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#F1F4F7',
+    borderWidth: 1,
+    borderColor: COLORS.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reloadText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.inkSoft,
   },
 });
