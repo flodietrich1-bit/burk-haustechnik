@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
   StyleSheet,
   Alert,
   Modal,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { t, GLOSSARY } from '../locales/i18n';
@@ -16,6 +19,7 @@ import ProgressBar from '../components/ProgressBar';
 export default function BookingScreen({
   room,
   materials = [],
+  monteur,
   currentLang = 'de',
   sessionQuantities = {},
   onQuantityChange,
@@ -31,20 +35,31 @@ export default function BookingScreen({
     room.defaultMaterialIds || ['m2', 'm3', 'm4', 'm5']
   );
 
-  // Unclear item modal/form
+  // Unclear item inline form
   const [showUnclearForm, setShowUnclearForm] = useState(false);
   const [unclearText, setUnclearText] = useState('');
   const [unclearQty, setUnclearQty] = useState('');
 
-  // Nachtrag modal/form
+  // Nachtrag Modal state
   const [showNachtragModal, setShowNachtragModal] = useState(false);
   const [nachtragType, setNachtragType] = useState('material'); // 'material' | 'stunden'
   const [nachtragTitle, setNachtragTitle] = useState('');
   const [nachtragQty, setNachtragQty] = useState('');
+  const [nachtragUnit, setNachtragUnit] = useState('Stk'); // 'Stk' (Menge) | 'm' (Meterzahl)
   const [nachtragBesteller, setNachtragBesteller] = useState('');
   const [nachtragNote, setNachtragNote] = useState('');
+  const [showNachtragSuggestions, setShowNachtragSuggestions] = useState(false);
 
-  // Filter materials for search autocomplete
+  // Pre-fill monteur name as default Auftraggeber/Besteller when modal opens
+  const openNachtragModal = () => {
+    if (!nachtragBesteller) {
+      setNachtragBesteller(monteur?.name || '');
+    }
+    setShowNachtragSuggestions(false);
+    setShowNachtragModal(true);
+  };
+
+  // Filter materials for search autocomplete in main screen
   const q = searchQuery.trim().toLowerCase();
   const searchResults = q
     ? materials.filter((m) =>
@@ -52,11 +67,30 @@ export default function BookingScreen({
       ).slice(0, 6)
     : [];
 
+  // Filter materials for Nachtrag GAEB autosuggester
+  const nq = nachtragTitle.trim().toLowerCase();
+  const nachtragSuggestions = (showNachtragSuggestions && nq.length >= 1 && nachtragType === 'material')
+    ? materials.filter((m) =>
+        (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + m.group).toLowerCase().includes(nq)
+      ).slice(0, 8)
+    : [];
+
   const handlePickMaterial = (id) => {
     if (!activeMaterialIds.includes(id)) {
       setActiveMaterialIds([id, ...activeMaterialIds]);
     }
     setSearchQuery('');
+  };
+
+  const handleSelectNachtragSuggestion = (item) => {
+    setNachtragTitle(item.cleanName || item.name);
+    // Auto-detect unit: if position is measured in meters, set 'm', else 'Stk'
+    if (item.qu === 'm') {
+      setNachtragUnit('m');
+    } else {
+      setNachtragUnit('Stk');
+    }
+    setShowNachtragSuggestions(false);
   };
 
   const handleStep = (id, delta) => {
@@ -80,21 +114,31 @@ export default function BookingScreen({
 
   const handleCreateNachtrag = () => {
     if (!nachtragTitle.trim()) {
-      Alert.alert('Hinweis', 'Bitte Bezeichnung eingeben.');
+      Alert.alert('Hinweis', 'Bitte Bezeichnung / Material eingeben.');
       return;
     }
+
+    let finalQty = '';
+    if (nachtragType === 'stunden') {
+      finalQty = `${nachtragQty.trim() || '1'} h`;
+    } else {
+      const cleanVal = nachtragQty.trim() || '1';
+      finalQty = `${cleanVal} ${nachtragUnit}`;
+    }
+
     onAddNachtrag({
       roomId: room.id,
       roomName: room.name,
       type: nachtragType,
       title: nachtragTitle.trim(),
-      quantity: nachtragQty.trim() || (nachtragType === 'stunden' ? '1 h' : '1 Stk'),
-      requestedBy: nachtragBesteller.trim() || 'Bauleiter',
+      quantity: finalQty,
+      qu: nachtragType === 'stunden' ? 'h' : nachtragUnit,
+      requestedBy: nachtragBesteller.trim() || monteur?.name || 'Monteur',
       note: nachtragNote.trim(),
     });
+
     setNachtragTitle('');
     setNachtragQty('');
-    setNachtragBesteller('');
     setNachtragNote('');
     setShowNachtragModal(false);
     Alert.alert('Erfasst', 'Nachtrag wurde zur Synchronisation hinterlegt.');
@@ -134,7 +178,7 @@ export default function BookingScreen({
           </View>
           <TouchableOpacity
             style={styles.nachtragButton}
-            onPress={() => setShowNachtragModal(true)}
+            onPress={openNachtragModal}
             activeOpacity={0.7}
           >
             <Text style={styles.nachtragBtnText}>＋ {t('nachtrag', currentLang)}</Text>
@@ -329,77 +373,181 @@ export default function BookingScreen({
         </TouchableOpacity>
       </View>
 
-      {/* Nachtrag Modal Dialog */}
-      <Modal visible={showNachtragModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{t('nachtragTitle', currentLang)}</Text>
-            <Text style={styles.modalSub}>{room.name} · KW 27</Text>
-
-            {/* Mode Switcher: Material vs Stundenlohn */}
-            <View style={styles.typeModes}>
-              <TouchableOpacity
-                style={[styles.typeMode, nachtragType === 'material' && styles.typeModeActive]}
-                onPress={() => setNachtragType('material')}
-              >
-                <Text style={[styles.typeModeText, nachtragType === 'material' && styles.typeModeTextActive]}>
-                  {t('typeMat', currentLang)}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeMode, nachtragType === 'stunden' && styles.typeModeActive]}
-                onPress={() => setNachtragType('stunden')}
-              >
-                <Text style={[styles.typeModeText, nachtragType === 'stunden' && styles.typeModeTextActive]}>
-                  {t('typeStd', currentLang)}
-                </Text>
-              </TouchableOpacity>
+      {/* Nachtrag Fullscreen Modal Dialog with Close '✕' Button */}
+      <Modal visible={showNachtragModal} animationType="slide" presentationStyle="fullScreen">
+        <SafeAreaView style={styles.modalFullscreen}>
+          {/* Fullscreen Modal Header */}
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleBox}>
+              <Text style={styles.modalMainTitle}>{t('nachtragTitle', currentLang)}</Text>
+              <Text style={styles.modalSubTitle}>{room.name} · KW 27</Text>
             </View>
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder={nachtragType === 'stunden' ? t('fldTaetigkeit', currentLang) : t('reMat', currentLang)}
-              placeholderTextColor={COLORS.muted}
-              value={nachtragTitle}
-              onChangeText={setNachtragTitle}
-            />
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder={nachtragType === 'stunden' ? t('fldStunden', currentLang) : t('reQty', currentLang)}
-              placeholderTextColor={COLORS.muted}
-              value={nachtragQty}
-              onChangeText={setNachtragQty}
-            />
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder={t('reBest', currentLang)}
-              placeholderTextColor={COLORS.muted}
-              value={nachtragBesteller}
-              onChangeText={setNachtragBesteller}
-            />
-
-            <TextInput
-              style={styles.modalInput}
-              placeholder={t('reNote', currentLang)}
-              placeholderTextColor={COLORS.muted}
-              value={nachtragNote}
-              onChangeText={setNachtragNote}
-            />
-
-            <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleCreateNachtrag}>
-              <Text style={styles.modalSubmitText}>{t('reCreate', currentLang)}</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
-              style={styles.modalCancelBtn}
+              style={styles.modalCloseBtn}
               onPress={() => setShowNachtragModal(false)}
+              activeOpacity={0.7}
             >
-              <Text style={styles.modalCancelText}>{t('cancel', currentLang)}</Text>
+              <Text style={styles.modalCloseIcon}>✕</Text>
             </TouchableOpacity>
           </View>
-        </View>
+
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={{ flex: 1 }}
+          >
+            <ScrollView
+              style={styles.modalBody}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {/* Mode Switcher: Material vs Stundenlohn */}
+              <View style={styles.typeModes}>
+                <TouchableOpacity
+                  style={[styles.typeMode, nachtragType === 'material' && styles.typeModeActive]}
+                  onPress={() => {
+                    setNachtragType('material');
+                    setShowNachtragSuggestions(false);
+                  }}
+                >
+                  <Text style={[styles.typeModeText, nachtragType === 'material' && styles.typeModeTextActive]}>
+                    {t('typeMat', currentLang)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeMode, nachtragType === 'stunden' && styles.typeModeActive]}
+                  onPress={() => {
+                    setNachtragType('stunden');
+                    setShowNachtragSuggestions(false);
+                  }}
+                >
+                  <Text style={[styles.typeModeText, nachtragType === 'stunden' && styles.typeModeTextActive]}>
+                    {t('typeStd', currentLang)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Material/Artikel Input with GAEB Autosuggester */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>
+                  {nachtragType === 'stunden' ? t('fldTaetigkeit', currentLang) : 'Material / Artikel (aus GAEB oder Freitext)'}
+                </Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder={nachtragType === 'stunden' ? 'z. B. Kernbohrung + Anpassung' : 'z. B. DIN 100, Bogen, Kugelhahn...'}
+                  placeholderTextColor={COLORS.muted}
+                  value={nachtragTitle}
+                  onChangeText={(val) => {
+                    setNachtragTitle(val);
+                    setShowNachtragSuggestions(true);
+                  }}
+                  onFocus={() => setShowNachtragSuggestions(true)}
+                />
+
+                {/* GAEB Product Autosuggester Dropdown */}
+                {nachtragSuggestions.length > 0 && (
+                  <View style={styles.suggestionsContainer}>
+                    <Text style={styles.suggestionsHeader}>Treffer aus GAEB / Leistungsverzeichnis:</Text>
+                    {nachtragSuggestions.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.suggestionItem}
+                        onPress={() => handleSelectNachtragSuggestion(item)}
+                      >
+                        <View style={styles.sugTopRow}>
+                          <View style={styles.sugPosChip}>
+                            <Text style={styles.sugPosText}>Pos {item.pos}</Text>
+                          </View>
+                          <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}</Text>
+                        </View>
+                        <Text style={styles.sugTitle}>{item.cleanName}</Text>
+                        <Text style={styles.sugGroup}>{item.group}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Quantity Section with Toggle: Stück (Menge) vs Meter (Meterzahl) */}
+              {nachtragType === 'material' ? (
+                <View style={styles.modalField}>
+                  <Text style={styles.modalFieldLabel}>Einheit & Menge</Text>
+                  {/* Unit Selector: Menge vs Meterzahl */}
+                  <View style={styles.unitSelectorRow}>
+                    <TouchableOpacity
+                      style={[styles.unitToggle, nachtragUnit === 'Stk' && styles.unitToggleActive]}
+                      onPress={() => setNachtragUnit('Stk')}
+                    >
+                      <Text style={[styles.unitToggleText, nachtragUnit === 'Stk' && styles.unitToggleTextActive]}>
+                        Stück (Menge)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.unitToggle, nachtragUnit === 'm' && styles.unitToggleActive]}
+                      onPress={() => setNachtragUnit('m')}
+                    >
+                      <Text style={[styles.unitToggleText, nachtragUnit === 'm' && styles.unitToggleTextActive]}>
+                        Meter (Meterzahl)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder={`Anzahl in ${nachtragUnit === 'm' ? 'Metern (z. B. 6.5)' : 'Stück (z. B. 2)'}`}
+                    placeholderTextColor={COLORS.muted}
+                    keyboardType="decimal-pad"
+                    value={nachtragQty}
+                    onChangeText={setNachtragQty}
+                  />
+                </View>
+              ) : (
+                <View style={styles.modalField}>
+                  <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)}</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="z. B. 2.5"
+                    placeholderTextColor={COLORS.muted}
+                    keyboardType="decimal-pad"
+                    value={nachtragQty}
+                    onChangeText={setNachtragQty}
+                  />
+                </View>
+              )}
+
+              {/* Auftraggeber / Besteller (Default Monteurname) */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>Auftraggeber / Besteller</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder={t('reBest', currentLang)}
+                  placeholderTextColor={COLORS.muted}
+                  value={nachtragBesteller}
+                  onChangeText={setNachtragBesteller}
+                />
+              </View>
+
+              {/* Notiz / Begründung (3 Zeilen für ausreichend Platz) */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>Kommentar / Begründung</Text>
+                <TextInput
+                  style={[styles.modalInput, styles.multilineInput]}
+                  placeholder="Begründung für den Bauleiter (z. B. Planänderung, Sonderwunsch Bauherr)..."
+                  placeholderTextColor={COLORS.muted}
+                  multiline={true}
+                  numberOfLines={3}
+                  value={nachtragNote}
+                  onChangeText={setNachtragNote}
+                />
+              </View>
+
+              {/* Submit CTA */}
+              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleCreateNachtrag} activeOpacity={0.8}>
+                <Text style={styles.modalSubmitText}>{t('reCreate', currentLang)}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     </View>
   );
@@ -744,83 +892,211 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15,
   },
-  modalOverlay: {
+
+  // -------------------------------------------------------------
+  // Fullscreen Nachtrag Modal Styles
+  // -------------------------------------------------------------
+  modalFullscreen: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 20,
   },
-  modalTitle: {
-    fontSize: 17,
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.line,
+    backgroundColor: '#FFFFFF',
+  },
+  modalTitleBox: {
+    flex: 1,
+  },
+  modalMainTitle: {
+    fontSize: 20,
     fontWeight: '800',
     color: COLORS.ink,
   },
-  modalSub: {
-    fontSize: 12,
+  modalSubTitle: {
+    fontSize: 13,
     color: COLORS.muted,
-    marginBottom: 14,
     marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F1F4F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  modalCloseIcon: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.inkSoft,
+  },
+  modalBody: {
+    flex: 1,
+    backgroundColor: '#FAFCFE',
+  },
+  modalScrollContent: {
+    padding: 20,
+    paddingBottom: 40,
   },
   typeModes: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 20,
   },
   typeMode: {
     flex: 1,
     borderWidth: 1.5,
     borderColor: COLORS.line,
-    borderRadius: 10,
-    paddingVertical: 9,
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: 'center',
+    backgroundColor: '#FFFFFF',
   },
   typeModeActive: {
     borderColor: COLORS.amber,
     backgroundColor: COLORS.lite,
   },
   typeModeText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: COLORS.inkSoft,
   },
   typeModeTextActive: {
-    color: COLORS.ink,
+    color: COLORS.amberDark,
+  },
+  modalField: {
+    marginBottom: 18,
+  },
+  modalFieldLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.inkSoft,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 7,
   },
   modalInput: {
     borderWidth: 1.5,
     borderColor: COLORS.line,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.ink,
+    backgroundColor: '#FFFFFF',
+  },
+  multilineInput: {
+    minHeight: 84,
+    textAlignVertical: 'top',
+    paddingTop: 12,
+    lineHeight: 20,
+  },
+  unitSelectorRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  unitToggle: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: COLORS.line,
     borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  unitToggleActive: {
+    borderColor: COLORS.amber,
+    backgroundColor: COLORS.lite,
+  },
+  unitToggleText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  unitToggleTextActive: {
+    color: COLORS.amberDark,
+    fontWeight: '800',
+  },
+  suggestionsContainer: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: COLORS.amber,
+    borderRadius: 12,
+    marginTop: 6,
+    maxHeight: 240,
+    overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+  },
+  suggestionsHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.amberDark,
+    backgroundColor: COLORS.lite,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    textTransform: 'uppercase',
+  },
+  suggestionItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2F6',
+  },
+  sugTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 3,
+  },
+  sugPosChip: {
+    backgroundColor: '#EAF4FB',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  sugPosText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#0082C9',
+  },
+  sugUnitBadge: {
+    fontSize: 11,
+    color: COLORS.muted,
+    fontWeight: '600',
+  },
+  sugTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
     color: COLORS.ink,
+  },
+  sugGroup: {
+    fontSize: 11,
+    color: COLORS.muted,
+    marginTop: 1,
   },
   modalSubmitBtn: {
     backgroundColor: COLORS.amber,
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 14,
+    paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 10,
   },
   modalSubmitText: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 15,
-  },
-  modalCancelBtn: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    marginTop: 4,
-  },
-  modalCancelText: {
-    color: COLORS.muted,
-    fontWeight: '600',
-    fontSize: 13.5,
+    fontSize: 16,
   },
 });

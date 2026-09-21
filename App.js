@@ -371,6 +371,7 @@ export default function App() {
           <BookingScreen
             room={selectedRoom}
             materials={materials}
+            monteur={monteur}
             currentLang={currentLang}
             sessionQuantities={sessionQuantities}
             onQuantityChange={handleQuantityChange}
