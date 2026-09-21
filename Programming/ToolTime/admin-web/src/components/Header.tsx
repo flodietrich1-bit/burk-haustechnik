@@ -1,28 +1,36 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Wrench, Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle
+  Wrench, Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat
 } from 'lucide-react';
-import type { Project, Alert } from '../types';
+import type { Project, Alert, User } from '../types';
 
 interface HeaderProps {
   projects: Project[];
   activeProject: Project | null;
+  currentUser: User | null;
   alerts?: Alert[];
   onSelectProject: (projectId: string) => void;
   onOpenNewProject: () => void;
+  onOpenChangePassword?: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   projects,
   activeProject,
+  currentUser,
   alerts = [],
   onSelectProject,
-  onOpenNewProject
+  onOpenNewProject,
+  onOpenChangePassword,
+  onLogout
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
+  const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const alertsRef = useRef<HTMLDivElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const openAlerts = alerts.filter(a => a.status === 'open');
 
@@ -34,6 +42,9 @@ export const Header: React.FC<HeaderProps> = ({
       }
       if (alertsRef.current && !alertsRef.current.contains(event.target as Node)) {
         setIsAlertsOpen(false);
+      }
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -125,18 +136,20 @@ export const Header: React.FC<HeaderProps> = ({
                   })}
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 mt-1">
-                  <button
-                    onClick={() => {
-                      setIsDropdownOpen(false);
-                      onOpenNewProject();
-                    }}
-                    className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Neues Projekt anlegen</span>
-                  </button>
-                </div>
+                {currentUser?.role === 'admin' && (
+                  <div className="pt-2 border-t border-slate-800 mt-1">
+                    <button
+                      onClick={() => {
+                        setIsDropdownOpen(false);
+                        onOpenNewProject();
+                      }}
+                      className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Neues Projekt anlegen</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -144,15 +157,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side: Only New Project button, Notification Bell & Live badge */}
         <div className="flex items-center space-x-3">
-          {/* Primary Action: New Project */}
-          <button
-            onClick={onOpenNewProject}
-            className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-            title="Neues Projekt anlegen"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Neues Projekt</span>
-          </button>
+          {/* Primary Action: New Project (Only Admin) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={onOpenNewProject}
+              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              title="Neues Projekt anlegen"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Neues Projekt</span>
+            </button>
+          )}
 
           {/* Alert Notification Bell */}
           <div className="relative" ref={alertsRef}>
@@ -227,8 +242,98 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Sync Status Badge */}
           <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-full shrink-0">
             <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline font-medium">Firestore Live</span>
+            <span className="hidden xl:inline font-medium">Firestore Live</span>
           </div>
+
+          {/* User Profile Menu */}
+          {currentUser && (
+            <div className="relative" ref={profileRef}>
+              <button
+                type="button"
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                className="flex items-center space-x-2.5 p-1.5 pr-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all text-left cursor-pointer group"
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${
+                  currentUser.role === 'admin' 
+                    ? 'bg-blue-500/20 text-[#3B82C4] border border-blue-500/40' 
+                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                }`}>
+                  {currentUser.role === 'admin' ? (
+                    <ShieldCheck className="w-4 h-4" />
+                  ) : (
+                    <HardHat className="w-4 h-4" />
+                  )}
+                </div>
+
+                <div className="hidden sm:block text-left">
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-xs font-bold text-white truncate max-w-[120px]">
+                      {currentUser.name}
+                    </span>
+                    <ChevronDown className={`w-3 h-3 text-slate-400 group-hover:text-white transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    currentUser.role === 'admin' ? 'text-blue-400' : 'text-amber-400'
+                  }`}>
+                    {currentUser.role === 'admin' ? 'Eigentümer / Admin' : 'Bauleiter'}
+                  </span>
+                </div>
+              </button>
+
+              {/* Profile Dropdown */}
+              {isProfileOpen && (
+                <div className="absolute right-0 top-full mt-2 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="p-3 border-b border-slate-800 mb-1">
+                    <span className="text-xs font-bold text-white block">
+                      {currentUser.name}
+                    </span>
+                    <span className="text-[11px] text-slate-400 block truncate">
+                      {currentUser.email || 'Keine E-Mail'}
+                    </span>
+                    <span className={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      currentUser.role === 'admin' 
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : 'Zuständiger Bauleiter'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1 py-1">
+                    {/* Change Password Button */}
+                    {onOpenChangePassword && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onOpenChangePassword();
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition-colors text-left cursor-pointer"
+                      >
+                        <KeyRound className="w-4 h-4 text-[#3B82C4]" />
+                        <span>Passwort ändern</span>
+                      </button>
+                    )}
+
+                    {/* Logout Button */}
+                    {onLogout && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors text-left cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Abmelden</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>

@@ -138,6 +138,7 @@ export interface User {
   name: string;
   role: UserRole;
   email?: string;
+  password?: string;
   phone?: string;
   pin?: string; // 4-digit PIN for installer app
   assignedProjectIds?: string[];

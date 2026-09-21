@@ -17,12 +17,15 @@ import { updateProjectDetails, deleteProject } from '../services/firestoreServic
 interface ProjectSettingsViewProps {
   project: Project | null;
   users: User[];
+  currentUser: User | null;
 }
 
-export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ project, users }) => {
+export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ project, users, currentUser }) => {
   const [form, setForm] = useState<Partial<Project>>({});
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  const isBauleiter = currentUser?.role === 'bauleiter';
 
   useEffect(() => {
     if (project) {
@@ -113,10 +116,17 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
       <form onSubmit={handleSave} className="space-y-6">
         {/* Section 1: Stammdaten */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2 border-b border-slate-100 pb-3">
-            <Building2 className="w-4 h-4 text-[#3B82C4]" />
-            <span>1. Projekt-Stammdaten</span>
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2">
+              <Building2 className="w-4 h-4 text-[#3B82C4]" />
+              <span>1. Projekt-Stammdaten</span>
+            </h3>
+            {isBauleiter && (
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Nur durch Administrator änderbar
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="md:col-span-2">
@@ -124,9 +134,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <input
                 type="text"
                 required
+                disabled={isBauleiter}
                 value={form.name || ''}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -134,9 +147,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <label className="block font-bold text-slate-700 mb-1">Projektnummer / Kennung</label>
               <input
                 type="text"
+                disabled={isBauleiter}
                 value={form.projectNumber || ''}
                 onChange={(e) => setForm({ ...form, projectNumber: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl font-mono focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -144,9 +160,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <label className="block font-bold text-slate-700 mb-1">Gewerk</label>
               <input
                 type="text"
+                disabled={isBauleiter}
                 value={form.trade || ''}
                 onChange={(e) => setForm({ ...form, trade: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -154,9 +173,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <label className="block font-bold text-slate-700 mb-1">Baustellen-Standort (Ort)</label>
               <input
                 type="text"
+                disabled={isBauleiter}
                 value={form.location || ''}
                 onChange={(e) => setForm({ ...form, location: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -164,9 +186,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <label className="block font-bold text-slate-700 mb-1">Genaue Adresse (Straße, PLZ, Ort)</label>
               <input
                 type="text"
+                disabled={isBauleiter}
                 value={form.address || ''}
                 onChange={(e) => setForm({ ...form, address: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -175,9 +200,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <input
                 type="date"
                 required
+                disabled={isBauleiter}
                 value={form.startDate || ''}
                 onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -185,9 +213,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <label className="block font-bold text-slate-700 mb-1">Fertigstellung (optional)</label>
               <input
                 type="date"
+                disabled={isBauleiter}
                 value={form.endDate || ''}
                 onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
           </div>
@@ -195,19 +226,29 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
 
         {/* Section 2: Beteiligte & Leitung */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2 border-b border-slate-100 pb-3">
-            <Briefcase className="w-4 h-4 text-[#3B82C4]" />
-            <span>2. Beteiligte & Leitungsfunktionen (Auswahl via Dropdown)</span>
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2">
+              <Briefcase className="w-4 h-4 text-[#3B82C4]" />
+              <span>2. Beteiligte & Leitungsfunktionen (Auswahl via Dropdown)</span>
+            </h3>
+            {isBauleiter && (
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                Nur durch Administrator änderbar
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="md:col-span-2">
               <label className="block font-bold text-slate-700 mb-1">Auftraggeber / Kunde</label>
               <input
                 type="text"
+                disabled={isBauleiter}
                 value={form.client || ''}
                 onChange={(e) => setForm({ ...form, client: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               />
             </div>
 
@@ -218,9 +259,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 <span>Zuständiger Bauleiter *</span>
               </label>
               <select
+                disabled={isBauleiter}
                 value={form.projectManagerId || ''}
                 onChange={(e) => handleBauleiterChange(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               >
                 <option value="">-- Bauleiter auswählen --</option>
                 {bauleiterUsers.map(u => (
@@ -244,9 +288,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 <span>Kaufmännischer Leiter (Nachbestellungen & Abrechnung) *</span>
               </label>
               <select
+                disabled={isBauleiter}
                 value={form.commercialManagerId || ''}
                 onChange={(e) => handleKfmChange(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                className={`w-full px-3 py-2 border rounded-xl font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
               >
                 <option value="">-- Kaufmännischen Leiter auswählen --</option>
                 {kfmUsers.map(u => (
@@ -328,29 +375,31 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
         </div>
       </form>
 
-      {/* Danger Zone: Delete Project */}
-      <div className="bg-red-50/60 border border-red-200 rounded-2xl p-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h4 className="text-sm font-bold text-red-900">Projekt unwiderruflich löschen</h4>
-            <p className="text-xs text-red-700/80 mt-0.5">
-              Entfernt das Bauvorhaben, alle zugehörigen Räume, Buchungen und LV-Positionen.
-            </p>
+      {/* Danger Zone: Delete Project (Admin Only) */}
+      {!isBauleiter && (
+        <div className="bg-red-50/60 border border-red-200 rounded-2xl p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-bold text-red-900">Projekt unwiderruflich löschen</h4>
+              <p className="text-xs text-red-700/80 mt-0.5">
+                Entfernt das Bauvorhaben, alle zugehörigen Räume, Buchungen und LV-Positionen.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (window.confirm(`Möchten Sie das Projekt "${project.name}" wirklich unwiderruflich löschen?`)) {
+                  await deleteProject(project.id);
+                }
+              }}
+              className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] shrink-0 cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Projekt löschen</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={async () => {
-              if (window.confirm(`Möchten Sie das Projekt "${project.name}" wirklich unwiderruflich löschen?`)) {
-                await deleteProject(project.id);
-              }
-            }}
-            className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] shrink-0"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Projekt löschen</span>
-          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 };

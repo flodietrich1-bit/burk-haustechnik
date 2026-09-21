@@ -506,6 +506,7 @@ export const MOCK_USERS: User[] = [
     name: 'Florian Burk',
     role: 'admin',
     email: 'f.burk@burk-haustechnik.de',
+    password: 'Admin2026!',
     phone: '+49 751 98765-0',
     status: 'active',
     createdAt: '2026-01-10T08:00:00.000Z'
@@ -515,6 +516,7 @@ export const MOCK_USERS: User[] = [
     name: 'Florian Buck',
     role: 'bauleiter',
     email: 'f.buck@burk-haustechnik.de',
+    password: 'Bauleiter2026!',
     phone: '+49 171 1234567',
     status: 'active',
     createdAt: '2026-02-01T09:00:00.000Z'
@@ -524,6 +526,7 @@ export const MOCK_USERS: User[] = [
     name: 'Michael Weber',
     role: 'bauleiter',
     email: 'm.weber@burk-haustechnik.de',
+    password: 'Bauleiter2026!',
     phone: '+49 171 2345678',
     status: 'active',
     createdAt: '2026-03-15T09:00:00.000Z'
@@ -533,6 +536,7 @@ export const MOCK_USERS: User[] = [
     name: 'Sabine Müller',
     role: 'kaufmaennisch',
     email: 's.mueller@burk-haustechnik.de',
+    password: 'Kfm2026!',
     phone: '+49 751 98765-12',
     status: 'active',
     createdAt: '2026-01-15T08:30:00.000Z'
@@ -542,6 +546,7 @@ export const MOCK_USERS: User[] = [
     name: 'Andreas Schmidt',
     role: 'kaufmaennisch',
     email: 'a.schmidt@burk-haustechnik.de',
+    password: 'Kfm2026!',
     phone: '+49 751 98765-14',
     status: 'active',
     createdAt: '2026-02-10T08:30:00.000Z'
@@ -598,6 +603,16 @@ export const MOCK_USERS: User[] = [
 
 const LOCAL_STORAGE_USERS_KEY = 'burk_tooltime_users';
 
+export function getLocalUsers(): User[] {
+  try {
+    const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.warn('Error reading users from localStorage:', e);
+  }
+  return MOCK_USERS;
+}
+
 export function listenToUsers(callback: (users: User[]) => void) {
   const colRef = collection(db, 'users');
   return onSnapshot(colRef, (snap) => {
@@ -606,23 +621,11 @@ export function listenToUsers(callback: (users: User[]) => void) {
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(list));
       callback(list);
     } else {
-      const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-      if (saved) {
-        callback(JSON.parse(saved));
-      } else {
-        localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(MOCK_USERS));
-        callback(MOCK_USERS);
-      }
+      callback(getLocalUsers());
     }
   }, (err) => {
     console.warn('Firestore fallback mode for users:', err.message);
-    const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-    if (saved) {
-      callback(JSON.parse(saved));
-    } else {
-      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(MOCK_USERS));
-      callback(MOCK_USERS);
-    }
+    callback(getLocalUsers());
   });
 }
 
@@ -674,4 +677,52 @@ export async function updateProjectDetails(projectId: string, partial: Partial<P
     console.warn('Firestore updateProjectDetails error:', err.message);
   }
 }
+
+// -------------------------------------------------------------
+// AUTHENTICATION & PASSWORD MANAGEMENT
+// -------------------------------------------------------------
+const LOCAL_STORAGE_AUTH_USER_KEY = 'burk_tooltime_auth_user';
+
+export function getCurrentAuthUser(): User | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_AUTH_USER_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Error reading auth user from localStorage:', e);
+  }
+  return null;
+}
+
+export function setCurrentAuthUser(user: User | null): void {
+  try {
+    if (user) {
+      localStorage.setItem(LOCAL_STORAGE_AUTH_USER_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_AUTH_USER_KEY);
+    }
+  } catch (e) {
+    console.warn('Error saving auth user to localStorage:', e);
+  }
+}
+
+export async function updateUserPassword(userId: string, newPassword: string): Promise<void> {
+  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
+  const updated = currentList.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
+
+  // If the logged in user changed their own password, update session
+  const authUser = getCurrentAuthUser();
+  if (authUser && authUser.id === userId) {
+    setCurrentAuthUser({ ...authUser, password: newPassword });
+  }
+
+  try {
+    const ref = doc(db, 'users', userId);
+    await updateDoc(ref, { password: newPassword });
+  } catch (err: any) {
+    console.warn('Firestore updateUserPassword error:', err.message);
+  }
+}
+
 

@@ -13,6 +13,8 @@ import {
   UserCheck
 } from 'lucide-react';
 
+import type { User } from '../types';
+
 export type TabType = 
   | 'positions' 
   | 'rooms' 
@@ -30,6 +32,7 @@ interface SidebarProps {
   totalPositionsCount: number;
   totalRoomsCount: number;
   reordersCount?: number;
+  currentUser: User | null;
   onExport: () => void;
 }
 
@@ -40,6 +43,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalPositionsCount,
   totalRoomsCount,
   reordersCount = 0,
+  currentUser,
   onExport
 }) => {
   const projectItems = [
@@ -151,34 +155,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* BLOCK 2: ACCOUNT */}
-        <div className="space-y-1 pt-4 border-t border-slate-800">
-          <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center space-x-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-[#2FA36B]" />
-            <span>Account</span>
-          </div>
+        {/* BLOCK 2: ACCOUNT (Admin Only) */}
+        {currentUser?.role === 'admin' && (
+          <div className="space-y-1 pt-4 border-t border-slate-800">
+            <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center space-x-1.5">
+              <UserCheck className="w-3.5 h-3.5 text-[#2FA36B]" />
+              <span>Account</span>
+            </div>
 
-          {accountItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-[#3B82C4] text-white shadow-md shadow-blue-500/20'
-                    : 'hover:bg-slate-800/90 text-slate-300 hover:text-white'
-                }`}
-              >
-                <div className="flex items-center space-x-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+            {accountItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    isActive
+                      ? 'bg-[#3B82C4] text-white shadow-md shadow-blue-500/20'
+                      : 'hover:bg-slate-800/90 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
       </div>
 

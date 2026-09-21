@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FolderPlus, Plus } from 'lucide-react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -14,6 +14,8 @@ import { UserManagementView } from './components/UserManagementView';
 import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
 import { AlertsBanner } from './components/AlertsBanner';
+import { LoginView } from './components/LoginView';
+import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { exportMaterialReportToExcel } from './services/excelExporter';
 import { 
   DEFAULT_PROJECT_ID,
@@ -24,11 +26,16 @@ import {
   listenToBookings,
   listenToAddendums,
   listenToAlerts,
-  listenToUsers
+  listenToUsers,
+  getCurrentAuthUser,
+  setCurrentAuthUser,
+  getLocalUsers
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 
 export function App() {
+  const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentAuthUser());
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     return localStorage.getItem('burk_tooltime_active_project_id') || DEFAULT_PROJECT_ID;
@@ -40,7 +47,7 @@ export function App() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [addendums, setAddendums] = useState<Addendum[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(() => getLocalUsers());
 
   const [activeTab, setActiveTab] = useState<TabType>('positions');
   const [searchTerm] = useState<string>('');
@@ -51,15 +58,6 @@ export function App() {
   useEffect(() => {
     const unsubProjects = listenToProjects((list) => {
       setProjects(list);
-      if (list.length > 0) {
-        if (!selectedProjectId || !list.some(p => p.id === selectedProjectId)) {
-          setSelectedProjectId(list[0].id);
-        }
-      } else {
-        setSelectedProjectId('');
-        setActiveProject(null);
-        localStorage.removeItem('burk_tooltime_active_project_id');
-      }
     });
 
     const unsubUsers = listenToUsers((list) => {
@@ -70,7 +68,40 @@ export function App() {
       unsubProjects();
       unsubUsers();
     };
-  }, [selectedProjectId]);
+  }, []);
+
+  // Compute accessible projects based on current user role
+  const accessibleProjects = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'admin') return projects;
+    return projects.filter(p => {
+      const matchId = p.projectManagerId === currentUser.id;
+      const matchEmail = Boolean(p.projectManagerEmail && currentUser.email && p.projectManagerEmail.toLowerCase() === currentUser.email.toLowerCase());
+      const matchName = Boolean(p.projectManager && currentUser.name && p.projectManager.toLowerCase().includes(currentUser.name.toLowerCase()));
+      return matchId || matchEmail || matchName;
+    });
+  }, [projects, currentUser]);
+
+  // Keep selected project aligned with accessible projects
+  useEffect(() => {
+    if (!currentUser) return;
+    if (accessibleProjects.length > 0) {
+      if (!selectedProjectId || !accessibleProjects.some(p => p.id === selectedProjectId)) {
+        setSelectedProjectId(accessibleProjects[0].id);
+      }
+    } else {
+      setSelectedProjectId('');
+      setActiveProject(null);
+      localStorage.removeItem('burk_tooltime_active_project_id');
+    }
+  }, [accessibleProjects, selectedProjectId, currentUser]);
+
+  // Guard against non-admin accessing 'users' tab
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin' && activeTab === 'users') {
+      setActiveTab('positions');
+    }
+  }, [currentUser, activeTab]);
 
   // 2. Listen to active project data whenever selectedProjectId changes
   useEffect(() => {
@@ -116,15 +147,33 @@ export function App() {
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
   const reordersCount = alerts.filter(a => a.status === 'reordered' || a.actionNote?.includes('Großhändler')).length;
 
+  if (!currentUser) {
+    return (
+      <LoginView
+        users={users}
+        onLogin={(user) => {
+          setCurrentUser(user);
+          setCurrentAuthUser(user);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col antialiased">
       {/* Top Navigation: Streamlined with Project Switcher, New Project & Alerts */}
       <Header
-        projects={projects}
+        projects={accessibleProjects}
         activeProject={activeProject}
+        currentUser={currentUser}
         alerts={alerts}
         onSelectProject={handleSelectProject}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
+        onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+        onLogout={() => {
+          setCurrentUser(null);
+          setCurrentAuthUser(null);
+        }}
       />
 
       {/* Main Layout */}
@@ -137,6 +186,7 @@ export function App() {
           totalPositionsCount={positions.length}
           totalRoomsCount={rooms.length}
           reordersCount={reordersCount}
+          currentUser={currentUser}
           onExport={handleExport}
         />
 
@@ -236,13 +286,14 @@ export function App() {
                   <ProjectSettingsView
                     project={activeProject}
                     users={users}
+                    currentUser={currentUser}
                   />
                 )}
               </>
             )}
 
-            {/* TAB: User & Role Admin (Always accessible) */}
-            {activeTab === 'users' && (
+            {/* TAB: User & Role Admin (Admin only) */}
+            {activeTab === 'users' && currentUser.role === 'admin' && (
               <UserManagementView
                 users={users}
                 projects={projects}
@@ -261,12 +312,21 @@ export function App() {
         onSuccess={() => setActiveTab('positions')}
       />
 
-      {/* New Project Wizard Modal (3 Steps) */}
-      <NewProjectModal
-        isOpen={isNewProjectOpen}
-        onClose={() => setIsNewProjectOpen(false)}
-        onProjectCreated={handleProjectCreated}
-        users={users}
+      {/* New Project Wizard Modal (3 Steps) - Admin only */}
+      {currentUser.role === 'admin' && (
+        <NewProjectModal
+          isOpen={isNewProjectOpen}
+          onClose={() => setIsNewProjectOpen(false)}
+          onProjectCreated={handleProjectCreated}
+          users={users}
+        />
+      )}
+
+      {/* Change Password Modal (for all logged in users, including Bauleiter) */}
+      <ChangePasswordModal
+        isOpen={isChangePasswordOpen}
+        onClose={() => setIsChangePasswordOpen(false)}
+        currentUser={currentUser}
       />
     </div>
   );
