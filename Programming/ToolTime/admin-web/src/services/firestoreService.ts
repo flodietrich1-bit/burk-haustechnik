@@ -15,10 +15,24 @@ const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 
-// Cleanup old v1 demo mock data from localStorage if present
+// Aggressive cache purge for clean slate onboarding
+const DB_VERSION_KEY = 'burk_tooltime_db_version';
+const CURRENT_VERSION = 'v3_completely_clean';
+
 try {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('burk_tooltime_projects');
+    const activeVer = localStorage.getItem(DB_VERSION_KEY);
+    if (activeVer !== CURRENT_VERSION) {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('burk_tooltime_') && k !== 'burk_tooltime_users') {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(DB_VERSION_KEY, CURRENT_VERSION);
+    }
   }
 } catch {
   // ignore
@@ -45,214 +59,12 @@ function saveLocalProjects(projects: Project[]) {
   }
 }
 
-// Fallback positions for Weingarten
-export const MOCK_POSITIONS: Position[] = [
-  { id: 'pos_01_01', posNr: '01.01', group: 'Abflussleitungen und Isolierung', shortText: 'Schmutzwasserleitung DN 125 hochschalldämmend', qty: 6, qu: 'm', deliveredQty: 4, unitPrice: 42.50, isCutMaterial: true, status: 'partial' },
-  { id: 'pos_01_02', posNr: '01.02', group: 'Abflussleitungen und Isolierung', shortText: 'Kunststoffrohr DN 100', qty: 71, qu: 'm', deliveredQty: 71, unitPrice: 28.00, isCutMaterial: true, status: 'completed' },
-  { id: 'pos_01_03', posNr: '01.03', group: 'Abflussleitungen und Isolierung', shortText: 'Kunststoffrohr DN 70', qty: 12, qu: 'm', deliveredQty: 10, unitPrice: 22.40, isCutMaterial: true, status: 'partial' },
-  { id: 'pos_01_04', posNr: '01.04', group: 'Abflussleitungen und Isolierung', shortText: 'Kunststoffrohr DN 50', qty: 10, qu: 'm', deliveredQty: 0, unitPrice: 18.90, isCutMaterial: true, status: 'open' },
-  { id: 'pos_01_05', posNr: '01.05', group: 'Abflussleitungen und Isolierung', shortText: 'Bogen DN 50, 15° - 87°', qty: 40, qu: 'Stk', deliveredQty: 25, unitPrice: 8.50, isCutMaterial: false, status: 'partial' },
-  { id: 'pos_01_18', posNr: '01.18', group: 'Abflussleitungen und Isolierung', shortText: 'Brandschutzmanschette DN 100', qty: 8, qu: 'Stk', deliveredQty: 8, unitPrice: 89.00, isCutMaterial: false, status: 'completed' },
-  { id: 'pos_01_36', posNr: '01.36', group: 'Grauwasser Hebeanlage', shortText: 'Schmutzwassersammelbehälter 270L Doppelhebeanlage', qty: 1, qu: 'Stk', deliveredQty: 1, unitPrice: 3450.00, isCutMaterial: false, status: 'completed' },
-  { id: 'pos_01_37', posNr: '01.37', group: 'Grauwasser Hebeanlage', shortText: 'Vertikale 1-stufige Schmutzwasserpumpe IP68', qty: 2, qu: 'Stk', deliveredQty: 1, unitPrice: 1280.00, isCutMaterial: false, status: 'partial' }
-];
-
-export const MOCK_ROOMS: Room[] = [
-  { 
-    id: 'room_101', 
-    name: 'Umkleide Herren', 
-    code: 'EG-101', 
-    floor: 'EG', 
-    source: 'dwg',
-    status: 'in_progress',
-    progressPercent: 60,
-    translations: { ro: 'Vestiar Bărbați', pl: 'Szatnia Męska', hr: 'Muška Svlačionica' },
-    materials: [
-      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, actualQty: 5, unitPrice: 22.40, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, actualQty: 8, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' }
-    ]
-  },
-  { 
-    id: 'room_102', 
-    name: 'Umkleide Damen', 
-    code: 'EG-102', 
-    floor: 'EG', 
-    source: 'dwg',
-    status: 'planned',
-    progressPercent: 20,
-    translations: { ro: 'Vestiar Femei', pl: 'Szatnia Damska', hr: 'Ženska Svlačionica' },
-    materials: [
-      { positionId: 'pos_01_03', posNr: '01.03', shortText: 'Kunststoffrohr DN 70', plannedQty: 6, actualQty: 0, unitPrice: 22.40, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 8, actualQty: 0, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' }
-    ]
-  },
-  { 
-    id: 'room_103', 
-    name: 'Duschen Herren', 
-    code: 'EG-103', 
-    floor: 'EG', 
-    source: 'dwg',
-    status: 'completed',
-    progressPercent: 100,
-    completedAt: '2026-09-19T14:30:00.000Z',
-    completedBy: 'Ion Popescu (Monteur)',
-    translations: { ro: 'Dușuri Bărbați', pl: 'Prysznice Męskie', hr: 'Muški Tuševi' },
-    materials: [
-      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 25, actualQty: 20, unitPrice: 28.00, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 12, actualQty: 15, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, actualQty: 4, unitPrice: 89.00, qu: 'Stk', group: 'Abflussleitungen' }
-    ]
-  },
-  { 
-    id: 'room_104', 
-    name: 'Duschen Damen', 
-    code: 'EG-104', 
-    floor: 'EG', 
-    source: 'dwg',
-    status: 'in_progress',
-    progressPercent: 75,
-    translations: { ro: 'Dușuri Femei', pl: 'Prysznice Damskie', hr: 'Ženske Tuševi' },
-    materials: [
-      { positionId: 'pos_01_02', posNr: '01.02', shortText: 'Kunststoffrohr DN 100', plannedQty: 20, actualQty: 24, unitPrice: 28.00, qu: 'm', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_05', posNr: '01.05', shortText: 'Bogen DN 50, 15° - 87°', plannedQty: 10, actualQty: 9, unitPrice: 8.50, qu: 'Stk', group: 'Abflussleitungen' },
-      { positionId: 'pos_01_18', posNr: '01.18', shortText: 'Brandschutzmanschette DN 100', plannedQty: 4, actualQty: 4, unitPrice: 89.00, qu: 'Stk', group: 'Abflussleitungen' }
-    ]
-  },
-  { 
-    id: 'room_201', 
-    name: 'Technikraum OG', 
-    code: 'OG-201', 
-    floor: 'OG', 
-    source: 'dwg',
-    status: 'completed',
-    progressPercent: 100,
-    completedAt: '2026-09-18T11:00:00.000Z',
-    completedBy: 'Piotr Kowalski (Monteur)',
-    translations: { ro: 'Cameră Tehnică', pl: 'Maszynownia', hr: 'Tehnička Soba' },
-    materials: [
-      { positionId: 'pos_01_01', posNr: '01.01', shortText: 'Schmutzwasserleitung DN 125 hochschalldämmend', plannedQty: 3, actualQty: 3, unitPrice: 42.50, qu: 'm', group: 'Abflussleitungen' }
-    ]
-  },
-  { 
-    id: 'room_001', 
-    name: 'Keller / Hebeanlage', 
-    code: 'UG-001', 
-    floor: 'UG', 
-    source: 'dwg',
-    status: 'in_progress',
-    progressPercent: 50,
-    translations: { ro: 'Subsol / Pompare', pl: 'Piwnica / Pompownia', hr: 'Podrum / Crpna Stanica' },
-    materials: [
-      { positionId: 'pos_01_36', posNr: '01.36', shortText: 'Schmutzwassersammelbehälter 270L Doppelhebeanlage', plannedQty: 1, actualQty: 1, unitPrice: 3450.00, qu: 'Stk', group: 'Grauwasser Hebeanlage' },
-      { positionId: 'pos_01_37', posNr: '01.37', shortText: 'Vertikale 1-stufige Schmutzwasserpumpe IP68', plannedQty: 2, actualQty: 4, unitPrice: 1280.00, qu: 'Stk', group: 'Grauwasser Hebeanlage' }
-    ]
-  }
-];
-
-export const MOCK_ALERTS: Alert[] = [
-  {
-    id: 'alert_1',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_001',
-    roomName: 'Keller / Hebeanlage',
-    materialId: 'pos_01_37',
-    materialPos: '01.37',
-    materialName: 'Vertikale 1-stufige Schmutzwasserpumpe IP68',
-    plannedQty: 2,
-    requestedTotal: 4,
-    exceededBy: 2,
-    qu: 'Stk',
-    reason: 'Zweiter Pumpensumpf wegen Grundwassereintritt im Bestandsfundament erforderlich',
-    monteurName: 'Piotr Kowalski',
-    status: 'open',
-    needsReorder: true,
-    createdAt: new Date(Date.now() - 3600000 * 2.5).toISOString()
-  },
-  {
-    id: 'alert_2',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_103',
-    roomName: 'Duschen Herren',
-    materialId: 'pos_01_05',
-    materialPos: '01.05',
-    materialName: 'Bogen DN 50, 15° - 87°',
-    plannedQty: 12,
-    requestedTotal: 15,
-    exceededBy: 3,
-    qu: 'Stk',
-    reason: 'Trassenversprung wegen Betonträger im Deckenanschluss',
-    monteurName: 'Ion Popescu',
-    status: 'open',
-    needsReorder: true,
-    createdAt: new Date(Date.now() - 3600000 * 6).toISOString()
-  },
-  {
-    id: 'alert_3',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_104',
-    roomName: 'Duschen Damen',
-    materialId: 'pos_01_02',
-    materialPos: '01.02',
-    materialName: 'Kunststoffrohr DN 100',
-    plannedQty: 20,
-    requestedTotal: 24,
-    exceededBy: 4,
-    qu: 'm',
-    reason: 'Zusätzliche Umgehungsleitung wegen bestehender Elektrotraße',
-    monteurName: 'Ion Popescu',
-    status: 'reordered',
-    needsReorder: false,
-    createdAt: new Date(Date.now() - 3600000 * 28).toISOString(),
-    actionNote: 'Bestellposition bei GC-Gruppe ausgelöst (Auftrag #88392)'
-  }
-];
-
-export const MOCK_BOOKINGS: Booking[] = [
-  {
-    id: 'book_1',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_103',
-    positionId: 'pos_01_02',
-    positionNr: '01.02',
-    positionName: 'Kunststoffrohr DN 100',
-    quantity: 25,
-    qu: 'm',
-    note: 'Hauptstrang im Duschbereich verlegt.',
-    createdBy: 'Ion Popescu (Monteur)',
-    createdAt: new Date(Date.now() - 3600000 * 24 * 2).toISOString(),
-    calendarWeek: 37
-  },
-  {
-    id: 'book_2',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_201',
-    positionId: 'pos_01_36',
-    positionNr: '01.36',
-    positionName: 'Schmutzwassersammelbehälter 270L Doppelhebeanlage',
-    quantity: 1,
-    qu: 'Stk',
-    note: 'Behälter im Technikraum platziert und ausgerichtet.',
-    createdBy: 'Piotr Kowalski (Monteur)',
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-    calendarWeek: 37
-  }
-];
-
-export const MOCK_ADDENDUMS: Addendum[] = [
-  {
-    id: 'add_1',
-    projectId: DEFAULT_PROJECT_ID,
-    roomId: 'room_101',
-    roomName: 'Umkleide Herren',
-    title: 'Zusätzlicher HT-Bogen DN 100 45°',
-    description: 'Aufgrund geänderter Wandschlitzführung im Altbestand wird 1x Bogen benötigt.',
-    quantity: 1,
-    qu: 'Stk',
-    requestedBy: 'Ion Popescu',
-    status: 'pending',
-    createdAt: new Date(Date.now() - 3600000 * 5).toISOString()
-  }
-];
+// Clean empty datasets (zero mock data)
+export const MOCK_POSITIONS: Position[] = [];
+export const MOCK_ROOMS: Room[] = [];
+export const MOCK_ALERTS: Alert[] = [];
+export const MOCK_BOOKINGS: Booking[] = [];
+export const MOCK_ADDENDUMS: Addendum[] = [];
 
 // Real-time Firestore Listeners with Fallback
 
@@ -605,7 +417,7 @@ export async function updateAlertStatus(
 
 export async function createAlert(projectId: string, alert: Alert) {
   const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
-  const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
+  const currentList: Alert[] = saved ? JSON.parse(saved) : [];
   const updated = [alert, ...currentList.filter(a => a.id !== alert.id)];
   localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
 
@@ -624,7 +436,7 @@ export async function completeRoom(
   completedBy: string = 'Florian Buck (Bauleiter)'
 ) {
   const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
-  const currentList: Room[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ROOMS : []);
+  const currentList: Room[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(r => {
     if (r.id === roomId) {
       return {
@@ -659,7 +471,7 @@ export async function updateRoomMaterialActual(
   actualQty: number
 ) {
   const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
-  const currentList: Room[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ROOMS : []);
+  const currentList: Room[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(r => {
     if (r.id === roomId) {
       const mats = (r.materials || []).map(m => {
