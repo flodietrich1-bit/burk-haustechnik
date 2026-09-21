@@ -84,7 +84,8 @@ export async function syncBookings(options = {}) {
     const lastSyncedAt = await getLastSyncedAt();
     const localDelta = await getLocalUnsyncedDelta();
     const monteur = await getActiveMonteur();
-    const projectId = DEFAULT_PROJECT_ID;
+    // Use the monteur's active project — fall back to DEFAULT_PROJECT_ID only as last resort
+    const projectId = monteur?.projectId || monteur?.assignedProjectIds?.[0] || DEFAULT_PROJECT_ID;
 
     // Sync monteur profile if present
     if (monteur) {

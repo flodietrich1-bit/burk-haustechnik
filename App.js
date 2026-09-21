@@ -11,7 +11,7 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
 import { COLORS } from './src/constants/theme';
 import { getLanguage, setLanguage } from './src/services/storageService';
-import { getActiveMonteur } from './src/services/authService';
+import { getActiveMonteur, setActiveProjectId } from './src/services/authService';
 import {
   getRooms,
   saveRooms,
@@ -161,6 +161,10 @@ export default function App() {
       } else {
         const targetProj = projectsList[0] || DEFAULT_PROJECT;
         setProject(targetProj);
+        // Persist project ID so syncService uses the correct Firestore path
+        if (targetProj?.id) {
+          setActiveProjectId(targetProj.id);
+        }
         setAppPhase('app');
         setCurrentScreen('rooms');
       }
@@ -196,10 +200,23 @@ export default function App() {
     }
   };
 
-  const handleSelectProject = (chosenProject) => {
+  const handleSelectProject = async (chosenProject) => {
     setProject(chosenProject);
+    // Persist chosen project ID so syncService uses the correct Firestore path
+    if (chosenProject?.id) {
+      await setActiveProjectId(chosenProject.id);
+    }
     setAppPhase('app');
     setCurrentScreen('rooms');
+    // Immediately sync data for the selected project (silent background sync)
+    setTimeout(async () => {
+      try {
+        await syncBookings({ silent: true });
+        await refreshData();
+      } catch (err) {
+        console.warn('Post-project-select sync notice:', err);
+      }
+    }, 500);
   };
 
   const handleSwitchProject = () => {

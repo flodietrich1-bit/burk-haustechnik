@@ -333,6 +333,22 @@ export async function getActiveMonteur() {
   }
 }
 
+/**
+ * Update the stored monteur's active projectId so that syncBookings()
+ * always uses the correct project for Firestore operations.
+ */
+export async function setActiveProjectId(projectId) {
+  try {
+    const raw = await AsyncStorage.getItem(USER_KEY);
+    if (!raw) return;
+    const monteur = JSON.parse(raw);
+    monteur.projectId = projectId;
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur));
+  } catch (e) {
+    console.warn('Error updating active project ID:', e);
+  }
+}
+
 export async function clearActiveMonteur() {
   try {
     await AsyncStorage.removeItem(USER_KEY);
