@@ -47,6 +47,8 @@ export const TRANSLATIONS = {
 
   // Unclear items
   unclearBtn: { de: 'Position unklar – trotzdem erfassen', ro: 'Poziție neclară – înregistrează oricum', pl: 'Pozycja niejasna – zapisz mimo to', hr: 'Nejasna stavka – ipak unesi' },
+  unclearBtnShort: { de: 'Pos. unklar', ro: 'Poz. neclară', pl: 'Poz. niejasna', hr: 'Nejasno' },
+  completeBtnShort: { de: '100% Fertig', ro: '100% Finalizat', pl: '100% Gotowe', hr: '100% Gotovo' },
   unclearTitle: { de: 'Unklare Position', ro: 'Poziție neclară', pl: 'Pozycja niejasna', hr: 'Nejasna stavka' },
   unclearWhat: { de: 'Was wurde verbaut? (z. B. 20 Rohrschellen DN 100)', ro: 'Ce s-a montat? (de ex. 20 brățări DN 100)', pl: 'Co zamontowano? (np. 20 obejm DN 100)', hr: 'Što je ugrađeno? (npr. 20 obujmica DN 100)' },
   unclearQty: { de: 'Menge (z. B. 20 Stk)', ro: 'Cantitate (de ex. 20 buc)', pl: 'Ilość (np. 20 szt)', hr: 'Količina (npr. 20 kom)' },

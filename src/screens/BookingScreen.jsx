@@ -11,6 +11,7 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { t, GLOSSARY } from '../locales/i18n';
@@ -112,11 +113,19 @@ export default function BookingScreen({
     : [];
 
   const handlePickMaterial = (id) => {
-    if (!activeMaterialIds.includes(id)) {
-      setActiveMaterialIds([id, ...activeMaterialIds]);
-    }
+    // Pin chosen position immediately to the very top (index 0) of the list
+    setActiveMaterialIds((prev) => [id, ...prev.filter((mId) => mId !== id)]);
     setSearchQuery('');
+    Keyboard.dismiss();
   };
+
+  // When searching, hoist matching materials to the top of the cards list immediately
+  const displayMaterialIds = searchQuery.trim()
+    ? [
+        ...searchResults.map((m) => m.id),
+        ...activeMaterialIds.filter((id) => !searchResults.some((m) => m.id === id)),
+      ]
+    : activeMaterialIds;
 
   const handleSelectMatSuggestion = (item) => {
     setMatTitle(item.cleanName || item.name);
@@ -358,194 +367,163 @@ export default function BookingScreen({
         </TouchableOpacity>
 
         {/* Room Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerTitles}>
-            <Text style={styles.roomTitle}>{room.name}</Text>
-            <Text style={styles.roomSubtitle}>
-              {t('bookHead', currentLang)} · KW 27
-            </Text>
-          </View>
+        <View style={styles.headerRowClean}>
+          <Text style={styles.roomTitle}>{room.name}</Text>
+          <Text style={styles.roomSubtitle}>
+            {t('bookHead', currentLang)} · KW 27
+          </Text>
+        </View>
+
+        {/* 3 Action Buttons nebeneinander direkt unter dem Titel */}
+        <View style={styles.topActionsRow}>
+          {/* Button 1: Nachtrag */}
           <TouchableOpacity
-            style={styles.nachtragButton}
+            style={styles.actionBtnNachtrag}
             onPress={openNachtragModal}
             activeOpacity={0.7}
           >
-            <Text style={styles.nachtragBtnText}>＋ {t('nachtrag', currentLang)}</Text>
+            <Text style={styles.actionBtnNachtragText}>＋ {t('nachtrag', currentLang)}</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Room Status & Complete Room CTA */}
-        <View style={styles.roomCompleteSection}>
-          {room.isCompleted || room.pct === 100 ? (
-            <View style={styles.roomCompletedBadge}>
-              <Text style={styles.roomCompletedIcon}>✓</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.roomCompletedTitle}>Raum zu 100 % fertiggestellt</Text>
-                <Text style={styles.roomCompletedSub}>
-                  Mengen-Delta im Bauleiter-Admin-Panel hinterlegt
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.completeRoomBtn}
-              onPress={() => setShowCompleteModal(true)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.completeRoomIcon}>✓</Text>
-              <Text style={styles.completeRoomBtnText}>Raum/Ort fertigstellen (100 %)</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Search / Add Material Input */}
-        <View style={styles.searchSection}>
-          <Text style={styles.searchLabel}>{t('addLabel', currentLang)}</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder={t('searchPlaceholder', currentLang)}
-            placeholderTextColor={COLORS.muted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-
-          {/* Autocomplete Results */}
-          {searchResults.length > 0 && (
-            <View style={styles.resultsList}>
-              {searchResults.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.resultRow}
-                  onPress={() => handlePickMaterial(item.id)}
-                >
-                  <Text style={styles.resName}>{item.cleanName}</Text>
-                  <Text style={styles.resSub}>
-                    Pos {item.pos} · {item.group} · {item.qu}
-                    {item.containsHint ? ` · (${item.containsHint})` : ''}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
-          {/* Button: Position unklar */}
+          {/* Button 2: Position unklar */}
           <TouchableOpacity
-            style={styles.unclearBtn}
+            style={[styles.actionBtnUnclear, showUnclearForm && styles.actionBtnUnclearActive]}
             onPress={() => setShowUnclearForm(!showUnclearForm)}
             activeOpacity={0.7}
           >
-            <Text style={styles.unclearBtnText}>{t('unclearBtn', currentLang)}</Text>
+            <Text style={[styles.actionBtnUnclearText, showUnclearForm && styles.actionBtnUnclearTextActive]}>
+              ❓ {t('unclearBtnShort', currentLang)}
+            </Text>
           </TouchableOpacity>
 
-          {/* Inline Unclear Form */}
-          {showUnclearForm && (
-            <View style={styles.unclearFormCard}>
-              <View style={styles.unclearHeaderRow}>
-                <Text style={styles.unclearFormTitle}>{t('unclearTitle', currentLang)}</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    setShowUnclearForm(false);
-                    setShowUnclearSuggestions(false);
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Text style={styles.unclearCloseText}>✕</Text>
-                </TouchableOpacity>
-              </View>
+          {/* Button 3: Bereich Fertigstellen (Grüner Button) */}
+          <TouchableOpacity
+            style={[
+              styles.actionBtnComplete,
+              (room.isCompleted || room.pct === 100) && styles.actionBtnCompleteDone,
+            ]}
+            onPress={() => setShowCompleteModal(true)}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.actionBtnCompleteText,
+                (room.isCompleted || room.pct === 100) && styles.actionBtnCompleteDoneText,
+              ]}
+            >
+              ✓ {t('completeBtnShort', currentLang)}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-              <Text style={styles.unclearSubInfo}>
-                Erfassen Sie ein verbautes Produkt. Beim Tippen werden auch bereits bestellte Materialien vorgeschlagen.
-              </Text>
-
-              {/* Product input with Autosuggest */}
-              <View style={{ position: 'relative', zIndex: 10 }}>
-                <TextInput
-                  style={styles.unclearInput}
-                  placeholder={t('unclearWhat', currentLang)}
-                  placeholderTextColor={COLORS.muted}
-                  value={unclearText}
-                  onChangeText={(text) => {
-                    setUnclearText(text);
-                    setSelectedUnclearMat(null);
-                    setShowUnclearSuggestions(text.trim().length >= 1);
-                  }}
-                  onFocus={() => {
-                    if (unclearText.trim().length >= 1) {
-                      setShowUnclearSuggestions(true);
-                    }
-                  }}
-                />
-
-                {/* Suggestions List */}
-                {unclearSuggestions.length > 0 && (
-                  <View style={styles.unclearSuggestionsBox}>
-                    <Text style={styles.unclearSugHeader}>
-                      Bestellte / GAEB-Positionen:
-                    </Text>
-                    {unclearSuggestions.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={styles.unclearSugItem}
-                        onPress={() => handleSelectUnclearSuggestion(item)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.unclearSugName} numberOfLines={1}>
-                            {item.cleanName || item.name}
-                          </Text>
-                          <Text style={styles.unclearSugMeta}>
-                            Pos {item.pos} · {item.group}
-                            {item.deliveredQty ? ` · Geliefert: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
-                          </Text>
-                        </View>
-                        <View style={styles.unclearSugBadge}>
-                          <Text style={styles.unclearSugBadgeText}>Bestellt</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              {/* Unit Toggle: Stück (Menge) vs Meter (Meterzahl) */}
-              <View style={styles.unclearUnitToggleRow}>
-                <TouchableOpacity
-                  style={[styles.unclearUnitBtn, unclearUnit === 'Stk' && styles.unclearUnitBtnActive]}
-                  onPress={() => setUnclearUnit('Stk')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.unclearUnitBtnText, unclearUnit === 'Stk' && styles.unclearUnitBtnTextActive]}>
-                    Stück (Menge)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.unclearUnitBtn, unclearUnit === 'm' && styles.unclearUnitBtnActive]}
-                  onPress={() => setUnclearUnit('m')}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.unclearUnitBtnText, unclearUnit === 'm' && styles.unclearUnitBtnTextActive]}>
-                    Meter (Meterzahl)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Quantity Input */}
-              <TextInput
-                style={styles.unclearInput}
-                placeholder={unclearUnit === 'm' ? "Meterzahl (z. B. 12.5)" : "Menge in Stück (z. B. 10)"}
-                placeholderTextColor={COLORS.muted}
-                keyboardType="decimal-pad"
-                value={unclearQty}
-                onChangeText={setUnclearQty}
-              />
-
-              <TouchableOpacity style={styles.unclearSaveBtn} onPress={handleSaveUnclear} activeOpacity={0.8}>
-                <Text style={styles.unclearSaveText}>{t('unclearRecord', currentLang)}</Text>
+        {/* Inline Unclear Form (falls 'Pos. unklar' geöffnet) */}
+        {showUnclearForm && (
+          <View style={styles.unclearFormCard}>
+            <View style={styles.unclearHeaderRow}>
+              <Text style={styles.unclearFormTitle}>{t('unclearTitle', currentLang)}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowUnclearForm(false);
+                  setShowUnclearSuggestions(false);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.unclearCloseText}>✕</Text>
               </TouchableOpacity>
             </View>
-          )}
-        </View>
+
+            <Text style={styles.unclearSubInfo}>
+              Erfassen Sie ein verbautes Produkt. Beim Tippen werden auch bereits bestellte Materialien vorgeschlagen.
+            </Text>
+
+            {/* Product input with Autosuggest */}
+            <View style={{ position: 'relative', zIndex: 10 }}>
+              <TextInput
+                style={styles.unclearInput}
+                placeholder={t('unclearWhat', currentLang)}
+                placeholderTextColor={COLORS.muted}
+                value={unclearText}
+                onChangeText={(text) => {
+                  setUnclearText(text);
+                  setSelectedUnclearMat(null);
+                  setShowUnclearSuggestions(text.trim().length >= 1);
+                }}
+                onFocus={() => {
+                  if (unclearText.trim().length >= 1) {
+                    setShowUnclearSuggestions(true);
+                  }
+                }}
+              />
+
+              {/* Suggestions List */}
+              {unclearSuggestions.length > 0 && (
+                <View style={styles.unclearSuggestionsBox}>
+                  <Text style={styles.unclearSugHeader}>
+                    Bestellte / GAEB-Positionen:
+                  </Text>
+                  {unclearSuggestions.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.unclearSugItem}
+                      onPress={() => handleSelectUnclearSuggestion(item)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.unclearSugName} numberOfLines={1}>
+                          {item.cleanName || item.name}
+                        </Text>
+                        <Text style={styles.unclearSugMeta}>
+                          Pos {item.pos} · {item.group}
+                          {item.deliveredQty ? ` · Geliefert: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
+                        </Text>
+                      </View>
+                      <View style={styles.unclearSugBadge}>
+                        <Text style={styles.unclearSugBadgeText}>Bestellt</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Unit Toggle: Stück (Menge) vs Meter (Meterzahl) */}
+            <View style={styles.unclearUnitToggleRow}>
+              <TouchableOpacity
+                style={[styles.unclearUnitBtn, unclearUnit === 'Stk' && styles.unclearUnitBtnActive]}
+                onPress={() => setUnclearUnit('Stk')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.unclearUnitBtnText, unclearUnit === 'Stk' && styles.unclearUnitBtnTextActive]}>
+                  Stück (Menge)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.unclearUnitBtn, unclearUnit === 'm' && styles.unclearUnitBtnActive]}
+                onPress={() => setUnclearUnit('m')}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.unclearUnitBtnText, unclearUnit === 'm' && styles.unclearUnitBtnTextActive]}>
+                  Meter (Meterzahl)
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quantity Input */}
+            <TextInput
+              style={styles.unclearInput}
+              placeholder={unclearUnit === 'm' ? "Meterzahl (z. B. 12.5)" : "Menge in Stück (z. B. 10)"}
+              placeholderTextColor={COLORS.muted}
+              keyboardType="decimal-pad"
+              value={unclearQty}
+              onChangeText={setUnclearQty}
+            />
+
+            <TouchableOpacity style={styles.unclearSaveBtn} onPress={handleSaveUnclear} activeOpacity={0.8}>
+              <Text style={styles.unclearSaveText}>{t('unclearRecord', currentLang)}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Unclear items list */}
         {unclearItems.length > 0 && (
@@ -567,9 +545,69 @@ export default function BookingScreen({
           </View>
         )}
 
-        {/* Active Material Booking Rows */}
+        {/* Suchfunktion DIREKT OBERHALB der Materialkacheln */}
+        <View style={styles.searchSectionDirect}>
+          <View style={styles.searchInputWrap}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInputField}
+              placeholder={t('searchPlaceholder', currentLang) || "Position suchen – z. B. 1.002, Rohr, Bogen..."}
+              placeholderTextColor={COLORS.muted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={() => {
+                if (searchResults.length > 0) {
+                  handlePickMaterial(searchResults[0].id);
+                }
+              }}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearchQuery('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={styles.searchClearBtn}
+              >
+                <Text style={styles.searchClearText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Autocomplete-Ergebnisse direkt unter dem Suchfeld */}
+          {searchResults.length > 0 && (
+            <View style={styles.resultsList}>
+              <View style={styles.resultsHeaderRow}>
+                <Text style={styles.resultsHeaderText}>Gefundene Positionen (Klick verschiebt nach ganz oben):</Text>
+              </View>
+              {searchResults.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.resultRow}
+                  onPress={() => handlePickMaterial(item.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.resPosChip}>
+                    <Text style={styles.resPosChipText}>Pos {item.pos}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.resName}>{item.cleanName}</Text>
+                    <Text style={styles.resSub}>
+                      {item.group} · {item.qu === 'm' ? 'Meter (m)' : 'Stück (Stk)'}
+                      {item.containsHint ? ` · (${item.containsHint})` : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.resPickBadge}>
+                    <Text style={styles.resPickArrow}>↑ Nach oben</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Active Material Booking Rows (displayMaterialIds puts matching/selected items first!) */}
         <View style={styles.rowsWrapper}>
-          {activeMaterialIds.map((matId) => {
+          {displayMaterialIds.map((matId) => {
             const mat = materials.find((m) => m.id === matId);
             if (!mat) return null;
 
@@ -1392,71 +1430,187 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.muted,
   },
+  headerRowClean: {
+    marginBottom: 10,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 14,
+    marginBottom: 10,
   },
   headerTitles: {
     flex: 1,
   },
   roomTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
     color: COLORS.ink,
+    letterSpacing: -0.3,
   },
   roomSubtitle: {
     fontSize: 12.5,
     color: COLORS.muted,
     marginTop: 2,
   },
-  nachtragButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: COLORS.line,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  // Top 3 Action Buttons directly under the Title
+  topActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
   },
-  nachtragBtnText: {
+  actionBtnNachtrag: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    borderRadius: 10,
+  },
+  actionBtnNachtragText: {
     fontSize: 12,
     fontWeight: '800',
-    color: COLORS.amberDark,
+    color: COLORS.primary,
   },
-  searchSection: {
-    marginBottom: 16,
+  actionBtnUnclear: {
+    flex: 1.1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
   },
-  searchLabel: {
-    fontSize: 11.5,
+  actionBtnUnclearActive: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  actionBtnUnclearText: {
+    fontSize: 12,
     fontWeight: '700',
-    textTransform: 'uppercase',
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-    marginBottom: 6,
+    color: COLORS.inkSoft,
   },
-  searchInput: {
+  actionBtnUnclearTextActive: {
+    color: '#B45309',
+    fontWeight: '800',
+  },
+  actionBtnComplete: {
+    flex: 1.25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    backgroundColor: '#059669',
+    borderWidth: 1.5,
+    borderColor: '#047857',
+    borderRadius: 10,
+    shadowColor: '#059669',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  actionBtnCompleteText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  actionBtnCompleteDone: {
+    backgroundColor: '#D1FAE5',
+    borderColor: '#10B981',
+  },
+  actionBtnCompleteDoneText: {
+    color: '#065F46',
+  },
+
+  // Suchfunktion DIRECT oberhalb der Kacheln
+  searchSectionDirect: {
+    marginBottom: 14,
+  },
+  searchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderColor: COLORS.line,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
+    paddingHorizontal: 12,
+    height: 46,
+  },
+  searchIcon: {
+    fontSize: 15,
+    marginRight: 8,
+    opacity: 0.7,
+  },
+  searchInputField: {
+    flex: 1,
+    fontSize: 13.5,
     color: COLORS.ink,
+    paddingVertical: 0,
+  },
+  searchClearBtn: {
+    padding: 6,
+  },
+  searchClearText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.muted,
   },
   resultsList: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: COLORS.line,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
     borderRadius: 12,
     marginTop: 6,
     overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+  },
+  resultsHeaderRow: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#DBEAFE',
+  },
+  resultsHeaderText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   resultRow: {
-    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#EEF2F6',
+  },
+  resPosChip: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginRight: 10,
+  },
+  resPosChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   resName: {
     fontSize: 13.5,
@@ -1467,6 +1621,20 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: COLORS.muted,
     marginTop: 2,
+  },
+  resPickBadge: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    marginLeft: 8,
+  },
+  resPickArrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
   },
   unclearBtn: {
     backgroundColor: '#FFFFFF',
