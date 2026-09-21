@@ -15,30 +15,7 @@ const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 
-// Aggressive cache purge for clean slate onboarding
-const DB_VERSION_KEY = 'burk_tooltime_db_version';
-const CURRENT_VERSION = 'v3_completely_clean';
-
-try {
-  if (typeof window !== 'undefined') {
-    const activeVer = localStorage.getItem(DB_VERSION_KEY);
-    if (activeVer !== CURRENT_VERSION) {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('burk_tooltime_') && k !== 'burk_tooltime_users') {
-          keysToRemove.push(k);
-        }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-      localStorage.setItem(DB_VERSION_KEY, CURRENT_VERSION);
-    }
-  }
-} catch {
-  // ignore
-}
-
-function getLocalProjects(): Project[] {
+export function getLocalProjects(): Project[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
     if (raw) {
@@ -51,12 +28,101 @@ function getLocalProjects(): Project[] {
   return INITIAL_PROJECTS;
 }
 
+// In-Memory Subscriber System for instant reactivity across all views
+type ProjectsCallback = (projects: Project[]) => void;
+type SingleProjectCallback = (project: Project | null) => void;
+type PositionsCallback = (positions: Position[]) => void;
+type RoomsCallback = (rooms: Room[]) => void;
+type AlertsCallback = (alerts: Alert[]) => void;
+
+const projectSubscribers = new Set<ProjectsCallback>();
+const singleProjectSubscribers = new Map<string, Set<SingleProjectCallback>>();
+const positionsSubscribers = new Map<string, Set<PositionsCallback>>();
+const roomsSubscribers = new Map<string, Set<RoomsCallback>>();
+const alertsSubscribers = new Map<string, Set<AlertsCallback>>();
+
+export function notifyProjectSubscribers(projects: Project[]) {
+  projectSubscribers.forEach(cb => {
+    try {
+      cb(projects);
+    } catch (e) {
+      console.warn('Error in project subscriber:', e);
+    }
+  });
+
+  projects.forEach(p => {
+    const set = singleProjectSubscribers.get(p.id);
+    if (set) {
+      set.forEach(cb => {
+        try {
+          cb(p);
+        } catch (e) {
+          console.warn('Error in single project subscriber:', e);
+        }
+      });
+    }
+  });
+}
+
+export function notifySingleProject(projectId: string, project: Project | null) {
+  const set = singleProjectSubscribers.get(projectId);
+  if (set) {
+    set.forEach(cb => {
+      try {
+        cb(project);
+      } catch (e) {
+        console.warn('Error in single project subscriber:', e);
+      }
+    });
+  }
+}
+
+export function notifyPositionsSubscribers(projectId: string, positions: Position[]) {
+  const set = positionsSubscribers.get(projectId);
+  if (set) {
+    set.forEach(cb => {
+      try {
+        cb(positions);
+      } catch (e) {
+        console.warn('Error in positions subscriber:', e);
+      }
+    });
+  }
+}
+
+export function notifyRoomsSubscribers(projectId: string, rooms: Room[]) {
+  const set = roomsSubscribers.get(projectId);
+  if (set) {
+    set.forEach(cb => {
+      try {
+        cb(rooms);
+      } catch (e) {
+        console.warn('Error in rooms subscriber:', e);
+      }
+    });
+  }
+}
+
+export function notifyAlertsSubscribers(projectId: string, alerts: Alert[]) {
+  const set = alertsSubscribers.get(projectId);
+  if (set) {
+    set.forEach(cb => {
+      try {
+        cb(alerts);
+      } catch (e) {
+        console.warn('Error in alerts subscriber:', e);
+      }
+    });
+  }
+}
+
 function saveLocalProjects(projects: Project[]) {
   try {
     localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(projects));
   } catch (e) {
     console.warn('LocalStorage error saving projects:', e);
   }
+  notifyProjectSubscribers(projects);
 }
 
 // Clean empty datasets (zero mock data)
@@ -66,23 +132,28 @@ export const MOCK_ALERTS: Alert[] = [];
 export const MOCK_BOOKINGS: Booking[] = [];
 export const MOCK_ADDENDUMS: Addendum[] = [];
 
-// Real-time Firestore Listeners with Fallback
+// Real-time Firestore Listeners with Local Pub/Sub Fallback
 
 // 1. Listen to all projects
 export function listenToProjects(callback: (projects: Project[]) => void) {
+  projectSubscribers.add(callback);
+  // Immediately deliver current cached state synchronously
+  callback(getLocalProjects());
+
   const colRef = collection(db, 'projects');
-  return onSnapshot(colRef, (snap) => {
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Project);
       saveLocalProjects(list);
-      callback(list);
-    } else {
-      callback(getLocalProjects());
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for projects:', err.message);
-    callback(getLocalProjects());
+  }, () => {
+    // Ignore in fallback mode
   });
+
+  return () => {
+    projectSubscribers.delete(callback);
+    unsubFirestore();
+  };
 }
 
 // 2. Listen to single project
@@ -91,19 +162,32 @@ export function listenToProject(projectId: string, callback: (project: Project |
     callback(null);
     return () => {};
   }
+
+  if (!singleProjectSubscribers.has(projectId)) {
+    singleProjectSubscribers.set(projectId, new Set());
+  }
+  const set = singleProjectSubscribers.get(projectId)!;
+  set.add(callback);
+
+  // Immediately deliver current cached state synchronously
+  const local = getLocalProjects().find(p => p.id === projectId) || null;
+  callback(local);
+
   const ref = doc(db, 'projects', projectId);
-  return onSnapshot(ref, (snap) => {
+  const unsubFirestore = onSnapshot(ref, (snap) => {
     if (snap.exists()) {
-      callback(snap.data() as Project);
-    } else {
-      const local = getLocalProjects().find(p => p.id === projectId);
-      callback(local || null);
+      const p = { id: snap.id, ...snap.data() } as Project;
+      callback(p);
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for project:', err.message);
-    const local = getLocalProjects().find(p => p.id === projectId);
-    callback(local || null);
+  }, () => {
+    // Ignore in fallback mode
   });
+
+  return () => {
+    set.delete(callback);
+    if (set.size === 0) singleProjectSubscribers.delete(projectId);
+    unsubFirestore();
+  };
 }
 
 // 3. Listen to positions of project
@@ -112,30 +196,41 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
     callback([]);
     return () => {};
   }
+
+  if (!positionsSubscribers.has(projectId)) {
+    positionsSubscribers.set(projectId, new Set());
+  }
+  const set = positionsSubscribers.get(projectId)!;
+  set.add(callback);
+
+  // Immediately deliver current cached state synchronously
+  const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  if (saved) {
+    try {
+      callback(JSON.parse(saved));
+    } catch {
+      callback([]);
+    }
+  } else {
+    callback([]);
+  }
+
   const colRef = collection(db, 'projects', projectId, 'positions');
-  return onSnapshot(colRef, (snap) => {
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Position);
       localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(list));
-      callback(list);
-    } else {
-      // Check local storage for this project
-      const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
-      if (saved) {
-        callback(JSON.parse(saved));
-      } else {
-        callback([]);
-      }
+      notifyPositionsSubscribers(projectId, list);
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for positions:', err.message);
-    const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
-    if (saved) {
-      callback(JSON.parse(saved));
-    } else {
-      callback([]);
-    }
+  }, () => {
+    // Ignore in fallback mode
   });
+
+  return () => {
+    set.delete(callback);
+    if (set.size === 0) positionsSubscribers.delete(projectId);
+    unsubFirestore();
+  };
 }
 
 // 4. Listen to rooms of project
@@ -144,29 +239,41 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
     callback([]);
     return () => {};
   }
+
+  if (!roomsSubscribers.has(projectId)) {
+    roomsSubscribers.set(projectId, new Set());
+  }
+  const set = roomsSubscribers.get(projectId)!;
+  set.add(callback);
+
+  // Immediately deliver current cached state synchronously
+  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  if (saved) {
+    try {
+      callback(JSON.parse(saved));
+    } catch {
+      callback([]);
+    }
+  } else {
+    callback([]);
+  }
+
   const colRef = collection(db, 'projects', projectId, 'rooms');
-  return onSnapshot(colRef, (snap) => {
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Room);
       localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(list));
-      callback(list);
-    } else {
-      const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
-      if (saved) {
-        callback(JSON.parse(saved));
-      } else {
-        callback([]);
-      }
+      notifyRoomsSubscribers(projectId, list);
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for rooms:', err.message);
-    const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
-    if (saved) {
-      callback(JSON.parse(saved));
-    } else {
-      callback([]);
-    }
+  }, () => {
+    // Fallback mode
   });
+
+  return () => {
+    set.delete(callback);
+    if (set.size === 0) roomsSubscribers.delete(projectId);
+    unsubFirestore();
+  };
 }
 
 export function listenToBookings(projectId: string, callback: (bookings: Booking[]) => void) {
@@ -257,9 +364,11 @@ export async function createProject(
   // Save positions and rooms locally
   if (positions.length > 0) {
     localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id, JSON.stringify(positions));
+    notifyPositionsSubscribers(project.id, positions as Position[]);
   }
   if (rooms.length > 0) {
     localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id, JSON.stringify(rooms));
+    notifyRoomsSubscribers(project.id, rooms);
   }
 
   // Attempt Firestore sync
@@ -357,29 +466,41 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
     callback([]);
     return () => {};
   }
+
+  if (!alertsSubscribers.has(projectId)) {
+    alertsSubscribers.set(projectId, new Set());
+  }
+  const set = alertsSubscribers.get(projectId)!;
+  set.add(callback);
+
+  // Immediately deliver current cached state synchronously
+  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  if (saved) {
+    try {
+      callback(JSON.parse(saved));
+    } catch {
+      callback([]);
+    }
+  } else {
+    callback([]);
+  }
+
   const colRef = collection(db, 'projects', projectId, 'alerts');
-  return onSnapshot(colRef, (snap) => {
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Alert);
       localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(list));
-      callback(list);
-    } else {
-      const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
-      if (saved) {
-        callback(JSON.parse(saved));
-      } else {
-        callback([]);
-      }
+      notifyAlertsSubscribers(projectId, list);
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for alerts:', err.message);
-    const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
-    if (saved) {
-      callback(JSON.parse(saved));
-    } else {
-      callback([]);
-    }
+  }, () => {
+    // Fallback mode
   });
+
+  return () => {
+    set.delete(callback);
+    if (set.size === 0) alertsSubscribers.delete(projectId);
+    unsubFirestore();
+  };
 }
 
 export async function updateAlertStatus(
@@ -659,13 +780,18 @@ export async function updateUserPin(userId: string, pin: string) {
 
 export async function updateProjectDetails(projectId: string, partial: Partial<Project>) {
   const projects = getLocalProjects();
+  let updatedProject: Project | null = null;
   const updated = projects.map(p => {
     if (p.id === projectId) {
-      return { ...p, ...partial, updatedAt: new Date().toISOString() };
+      updatedProject = { ...p, ...partial, updatedAt: new Date().toISOString() };
+      return updatedProject;
     }
     return p;
   });
   saveLocalProjects(updated);
+  if (updatedProject) {
+    notifySingleProject(projectId, updatedProject);
+  }
 
   try {
     const ref = doc(db, 'projects', projectId);

@@ -29,16 +29,20 @@ import {
   listenToUsers,
   getCurrentAuthUser,
   setCurrentAuthUser,
-  getLocalUsers
+  getLocalUsers,
+  getLocalProjects
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 
 export function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentAuthUser());
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() => getLocalProjects());
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
-    return localStorage.getItem('burk_tooltime_active_project_id') || DEFAULT_PROJECT_ID;
+    const saved = localStorage.getItem('burk_tooltime_active_project_id');
+    if (saved) return saved;
+    const initial = getLocalProjects();
+    return initial.length > 0 ? initial[0].id : DEFAULT_PROJECT_ID;
   });
 
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -92,7 +96,6 @@ export function App() {
     } else {
       setSelectedProjectId('');
       setActiveProject(null);
-      localStorage.removeItem('burk_tooltime_active_project_id');
     }
   }, [accessibleProjects, selectedProjectId, currentUser]);
 

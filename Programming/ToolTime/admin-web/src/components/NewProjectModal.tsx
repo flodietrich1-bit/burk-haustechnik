@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   UploadCloud, 
@@ -53,6 +53,25 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [commercialManager, setCommercialManager] = useState<string>('Sabine Müller');
   const [commercialManagerEmail, setCommercialManagerEmail] = useState<string>('s.mueller@burk-haustechnik.de');
   const [assignedMonteurIds, setAssignedMonteurIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!projectManagerId && users.length > 0) {
+      const bl = users.find(u => u.role === 'bauleiter') || users.find(u => u.name.includes('Buck')) || users[0];
+      if (bl) {
+        setProjectManagerId(bl.id);
+        setProjectManager(bl.name);
+        setProjectManagerEmail(bl.email || '');
+      }
+    }
+    if (!commercialManagerId && users.length > 0) {
+      const kfm = users.find(u => u.role === 'kaufmaennisch') || users.find(u => u.name.includes('Müller')) || users[0];
+      if (kfm) {
+        setCommercialManagerId(kfm.id);
+        setCommercialManager(kfm.name);
+        setCommercialManagerEmail(kfm.email || '');
+      }
+    }
+  }, [users, projectManagerId, commercialManagerId]);
 
   // Step 3: GAEB & CAD Files
   const [gaebFileName, setGaebFileName] = useState<string>('');
