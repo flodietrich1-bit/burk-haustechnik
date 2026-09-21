@@ -124,6 +124,8 @@ export const TRANSLATIONS = {
   noOverPossible: { de: 'Kein Mehrverbrauch möglich', ro: 'Consum suplimentar imposibil', pl: 'Brak możliwości nadmiernego zużycia', hr: 'Nije moguća dodatna potrošnja' },
   noOverPossibleMsg: { de: 'Die gelieferte Gesamtmenge ({delivered} {qu}) ist bereits voll verplant ({planned} {qu}). Zusätzlicher Bedarf muss als Nachtrag angelegt werden.', ro: 'Cantitatea livrată ({delivered} {qu}) este deja planificată integral ({planned} {qu}). Necesarul suplimentar trebuie creat ca supliment.', pl: 'Dostarczona ilość ({delivered} {qu}) jest już w pełni zaplanowana ({planned} {qu}). Dodatkowe zapotrzebowanie należy utworzyć jako dodatek.', hr: 'Isporučena količina ({delivered} {qu}) već je u potpunosti planirana ({planned} {qu}). Dodatna potreba mora se unijeti kao dodatak.' },
   maxAvailableDelivery: { de: 'Max. aus Lieferung verfügbar:', ro: 'Max. disponibil din livrare:', pl: 'Maks. dostępne z dostawy:', hr: 'Maks. dostupno iz isporuke:' },
+  noMaterialsFound: { de: 'Keine passenden Materialien', ro: 'Niciun material găsit', pl: 'Nie znaleziono pasujących materiałów', hr: 'Nema pronađenih materijala' },
+  noMaterialsFoundSub: { de: 'Kein Produkt entspricht der Suche „{query}“.', ro: 'Nicio poziție nu corespunde căutării „{query}”.', pl: 'Żadna pozycja nie pasuje do wyszukiwania „{query}”.', hr: 'Nijedna stavka ne odgovara pretrazi „{query}”.' },
 
   // Nachtrag / Reorder
   nachtrag: { de: 'Nachtrag', ro: 'Supliment', pl: 'Dodatek', hr: 'Dodatak' },

@@ -112,15 +112,22 @@ export default function BookingScreen({
 
   const isFormValid = missingList.length === 0;
 
-  // Main screen search filter
+  // Main screen live search filter for material tiles
   const q = searchQuery.trim().toLowerCase();
-  const searchResults = q
+  const filteredMaterials = q
     ? materials.filter((m) =>
-        (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + m.group).toLowerCase().includes(q)
-      ).slice(0, 6)
+        `${m.pos || ''} ${m.name || ''} ${m.cleanName || ''} ${m.group || ''}`
+          .toLowerCase()
+          .includes(q)
+      )
     : [];
 
-  // Nachtrag Material GAEB Autosuggester
+  // When searching, display ONLY matching materials (pure filter, no separate autosuggester)
+  const displayMaterialIds = q
+    ? filteredMaterials.map((m) => m.id)
+    : activeMaterialIds;
+
+  // Nachtrag Material GAEB Autosuggester (inside Nachtrag modal)
   const nq = matTitle.trim().toLowerCase();
   const matSuggestions = (showMatSuggestions && nq.length >= 1 && activeTab === 'material')
     ? materials.filter((m) =>
@@ -128,28 +135,13 @@ export default function BookingScreen({
       ).slice(0, 8)
     : [];
 
-  // Unclear Product Autosuggester (Durchsucht alle bestellten / GAEB-Positionen)
+  // Unclear Product Autosuggester (inside Unclear modal)
   const uq = unclearText.trim().toLowerCase();
   const unclearSuggestions = (showUnclearSuggestions && uq.length >= 1)
     ? materials.filter((m) =>
         (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
       ).slice(0, 6)
     : [];
-
-  const handlePickMaterial = (id) => {
-    // Pin chosen position immediately to the very top (index 0) of the list
-    setActiveMaterialIds((prev) => [id, ...prev.filter((mId) => mId !== id)]);
-    setSearchQuery('');
-    Keyboard.dismiss();
-  };
-
-  // When searching, hoist matching materials to the top of the cards list immediately
-  const displayMaterialIds = searchQuery.trim()
-    ? [
-        ...searchResults.map((m) => m.id),
-        ...activeMaterialIds.filter((id) => !searchResults.some((m) => m.id === id)),
-      ]
-    : activeMaterialIds;
 
   const handleSelectMatSuggestion = (item) => {
     setMatTitle(item.cleanName || item.name);
@@ -238,6 +230,11 @@ export default function BookingScreen({
         );
         return;
       }
+    }
+
+    // Keep searched material visible in room list once interacted with
+    if (!activeMaterialIds.includes(matId)) {
+      setActiveMaterialIds((prev) => [matId, ...prev]);
     }
 
     onQuantityChange(matId, nextDelta);
@@ -545,11 +542,7 @@ export default function BookingScreen({
               placeholderTextColor={COLORS.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              onSubmitEditing={() => {
-                if (searchResults.length > 0) {
-                  handlePickMaterial(searchResults[0].id);
-                }
-              }}
+              onSubmitEditing={() => Keyboard.dismiss()}
               returnKeyType="search"
             />
             {searchQuery.length > 0 && (
@@ -562,41 +555,21 @@ export default function BookingScreen({
               </TouchableOpacity>
             )}
           </View>
-
-          {/* Autocomplete-Ergebnisse direkt unter dem Suchfeld */}
-          {searchResults.length > 0 && (
-            <View style={styles.resultsList}>
-              <View style={styles.resultsHeaderRow}>
-                <Text style={styles.resultsHeaderText}>{t('foundPositionsHeader', currentLang)}</Text>
-              </View>
-              {searchResults.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.resultRow}
-                  onPress={() => handlePickMaterial(item.id)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.resPosChip}>
-                    <Text style={styles.resPosChipText}>Pos {item.pos}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.resName}>{item.cleanName}</Text>
-                    <Text style={styles.resSub}>
-                      {item.group} · {item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}
-                      {item.containsHint ? ` · (${item.containsHint})` : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.resPickBadge}>
-                    <Text style={styles.resPickArrow}>↑ {t('moveToTop', currentLang)}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
         </View>
 
-        {/* Active Material Booking Rows (displayMaterialIds puts matching/selected items first!) */}
+        {/* Active Material Booking Rows (filtered live when typing) */}
         <View style={styles.rowsWrapper}>
+          {q && displayMaterialIds.length === 0 && (
+            <View style={styles.emptyFilterState}>
+              <Text style={styles.emptyFilterIcon}>🔍</Text>
+              <Text style={styles.emptyFilterTitle}>
+                {t('noMaterialsFound', currentLang)}
+              </Text>
+              <Text style={styles.emptyFilterSub}>
+                {t('noMaterialsFoundSub', currentLang, { query: searchQuery.trim() })}
+              </Text>
+            </View>
+          )}
           {displayMaterialIds.map((matId) => {
             const mat = materials.find((m) => m.id === matId);
             if (!mat) return null;
@@ -1814,76 +1787,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.muted,
   },
-  resultsList: {
+  emptyFilterState: {
     backgroundColor: '#FFFFFF',
+    borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#93C5FD',
-    borderRadius: 12,
-    marginTop: 6,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  resultsHeaderRow: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#DBEAFE',
-  },
-  resultsHeaderText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.primary,
-  },
-  resultRow: {
-    flexDirection: 'row',
+    borderColor: '#CBD5E1',
+    borderStyle: 'dashed',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEF2F6',
+    justifyContent: 'center',
+    marginVertical: 12,
   },
-  resPosChip: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginRight: 10,
+  emptyFilterIcon: {
+    fontSize: 32,
+    marginBottom: 8,
   },
-  resPosChipText: {
-    fontSize: 11,
+  emptyFilterTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: COLORS.primary,
-  },
-  resName: {
-    fontSize: 13.5,
-    fontWeight: '700',
     color: COLORS.ink,
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  resSub: {
-    fontSize: 11.5,
+  emptyFilterSub: {
+    fontSize: 13,
     color: COLORS.muted,
-    marginTop: 2,
-  },
-  resPickBadge: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    marginLeft: 8,
-  },
-  resPickArrow: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#15803D',
+    textAlign: 'center',
   },
   unclearBtn: {
     backgroundColor: '#FFFFFF',

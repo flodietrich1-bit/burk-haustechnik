@@ -12,6 +12,7 @@ const KEYS = {
   ADDENDUMS: 'ttapp_outbox_addendums',
   UNCLEAR: 'ttapp_outbox_unclear',
   USER_PROFILE: 'ttapp_monteur_profile',
+  LAST_SYNCED_AT: 'ttapp_last_synced_at',
 };
 
 // Ensure local proof photos directory exists
@@ -274,3 +275,73 @@ export async function enqueueAddendum(addendum) {
     throw e;
   }
 }
+
+export async function getPendingAddendums() {
+  try {
+    const all = await getAddendums();
+    return all.filter((a) => a.status === 'pending');
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function updateAddendumStatus(id, status, remoteData = {}) {
+  try {
+    const all = await getAddendums();
+    const updated = all.map((a) => {
+      if (a.id === id) {
+        return {
+          ...a,
+          status,
+          syncedAt: new Date().toISOString(),
+          ...remoteData,
+        };
+      }
+      return a;
+    });
+    await AsyncStorage.setItem(KEYS.ADDENDUMS, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Error updating addendum status:', e);
+  }
+}
+
+// -------------------------------------------------------------
+// 6. Two-Way Delta Sync Tracking
+// -------------------------------------------------------------
+export async function getLastSyncedAt() {
+  try {
+    return await AsyncStorage.getItem(KEYS.LAST_SYNCED_AT);
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function setLastSyncedAt(timestamp) {
+  try {
+    const val = timestamp || new Date().toISOString();
+    await AsyncStorage.setItem(KEYS.LAST_SYNCED_AT, val);
+    return val;
+  } catch (e) {
+    console.warn('Error saving lastSyncedAt:', e);
+    return null;
+  }
+}
+
+export async function getLocalUnsyncedDelta() {
+  const pendingBookings = await getPendingBookings();
+  const pendingAddendums = await getPendingAddendums();
+  const rooms = await getRooms();
+  const lastSyncedAt = await getLastSyncedAt();
+  const pendingRooms = rooms.filter(
+    (r) => r.isCompleted && (!r.syncedAt || (lastSyncedAt && r.completedAt && r.completedAt > lastSyncedAt))
+  );
+
+  return {
+    pendingBookings,
+    pendingAddendums,
+    pendingRooms,
+    hasLocalDelta: pendingBookings.length > 0 || pendingAddendums.length > 0 || pendingRooms.length > 0,
+    totalPendingCount: pendingBookings.length + pendingAddendums.length + pendingRooms.length,
+  };
+}
+

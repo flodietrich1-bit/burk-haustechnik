@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebase';
 import {
@@ -11,6 +11,10 @@ import {
   getLanguage,
   getRooms,
   getMaterials,
+  getLastSyncedAt,
+  setLastSyncedAt,
+  getLocalUnsyncedDelta,
+  updateAddendumStatus,
 } from './storageService';
 import { getActiveMonteur, syncMonteurToFirebase } from './authService';
 import { DEFAULT_PROJECT_ID } from '../constants/initialData';
@@ -22,8 +26,6 @@ import { t } from '../locales/i18n';
 export async function checkOnlineStatus() {
   try {
     const state = await NetInfo.fetch();
-    // Some local WiFis or cellular connections might have isInternetReachable null initially,
-    // so we treat isConnected === true and isInternetReachable !== false as connected.
     return !!(state.isConnected && state.isInternetReachable !== false);
   } catch (e) {
     return false;
@@ -51,9 +53,9 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
 }
 
 /**
- * Perform complete two-way sync:
- * 1. Push: Upload pending bookings + photos + monteur profile to Firebase
- * 2. Pull: Fetch updated project rooms & positions (with teammates' cumulative totals) from Firestore
+ * Perform strictly DELTA-based two-way sync:
+ * 1. Push: Upload ONLY new/pending local items (bookings, addendums, completions) since lastSyncedAt
+ * 2. Pull: Fetch ONLY items modified in Admin-Panel since lastSyncedAt (positions, rooms)
  * 
  * @param {Object} options
  * @param {boolean} options.silent - If true, do not display native alerts (e.g. for background auto-sync)
@@ -77,137 +79,284 @@ export async function syncBookings(options = {}) {
     return { success: false, syncedCount: 0, reason: 'offline' };
   }
 
-  // 2. Online Case
+  // 2. Online Case: Evaluate Delta in Both Directions
   try {
-    if (onProgress) onProgress(t('syncUploading', currentLang), 0.2);
-
-    const pendingBookings = await getPendingBookings();
+    const lastSyncedAt = await getLastSyncedAt();
+    const localDelta = await getLocalUnsyncedDelta();
     const monteur = await getActiveMonteur();
+    const projectId = DEFAULT_PROJECT_ID;
 
-    // Sync monteur profile
+    // Sync monteur profile if present
     if (monteur) {
       await syncMonteurToFirebase(monteur);
     }
 
-    let syncedCount = 0;
+    let pushedCount = 0;
 
-    // Check existing remote bookings for duplicate warning heuristics
-    const projectId = DEFAULT_PROJECT_ID;
-    let existingBookings = [];
-    try {
-      const snap = await getDocs(collection(db, 'projects', projectId, 'bookings'));
-      existingBookings = snap.docs.map((d) => d.data());
-    } catch (e) {
-      console.warn('Could not fetch existing remote bookings:', e.message);
-    }
+    // -------------------------------------------------------------
+    // DIRECTION 1 (App -> Admin-Panel): Push ONLY local delta
+    // -------------------------------------------------------------
+    if (localDelta.hasLocalDelta) {
+      if (onProgress) onProgress(t('syncUploading', currentLang), 0.2);
 
-    // Sequentially upload each pending booking
-    for (let i = 0; i < pendingBookings.length; i++) {
-      const booking = pendingBookings[i];
-      if (onProgress) {
-        const progressPct = 0.2 + (0.5 * (i / Math.max(1, pendingBookings.length)));
-        onProgress(`${t('syncUploading', currentLang)} (${i + 1}/${pendingBookings.length})`, progressPct);
-      }
+      const totalPending = localDelta.totalPendingCount;
+      let processed = 0;
 
-      // Upload local proof photos
-      const uploadedUrls = [];
-      const photosToUpload = booking.photoUris || [];
+      // 1a. Upload pending bookings
+      for (const booking of localDelta.pendingBookings) {
+        processed++;
+        if (onProgress) {
+          onProgress(
+            `${t('syncUploading', currentLang)} (${processed}/${totalPending})`,
+            0.2 + 0.4 * (processed / totalPending)
+          );
+        }
 
-      for (let pIdx = 0; pIdx < photosToUpload.length; pIdx++) {
-        const photoUri = photosToUpload[pIdx];
-        const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx);
-        if (cloudUrl) {
-          uploadedUrls.push(cloudUrl);
+        // Upload proof photos
+        const uploadedUrls = [];
+        const photosToUpload = booking.photoUris || [];
+        for (let pIdx = 0; pIdx < photosToUpload.length; pIdx++) {
+          const photoUri = photosToUpload[pIdx];
+          const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx);
+          if (cloudUrl) {
+            uploadedUrls.push(cloudUrl);
+          }
+        }
+
+        const now = new Date().toISOString();
+        const finalBookingData = {
+          ...booking,
+          photoUrls: uploadedUrls,
+          status: 'synced',
+          syncedAt: now,
+          updatedAt: now,
+        };
+
+        try {
+          const projectBookingRef = doc(db, 'projects', booking.projectId, 'bookings', booking.id);
+          await setDoc(projectBookingRef, finalBookingData, { merge: true });
+
+          const globalBookingRef = doc(db, 'bookings', booking.id);
+          await setDoc(globalBookingRef, finalBookingData, { merge: true });
+
+          await updateBookingStatus(booking.id, 'synced', {
+            photoUrls: uploadedUrls,
+          });
+
+          pushedCount++;
+        } catch (err) {
+          console.error(`Failed to push booking ${booking.id}:`, err);
         }
       }
 
-      // Check duplicate heuristic: same room, same item, same calendar week by another monteur
-      const isPossibleDuplicate = existingBookings.some((b) => (
-        b.roomId === booking.roomId &&
-        b.itemId === booking.itemId &&
-        b.calendarWeek === booking.calendarWeek &&
-        b.createdBy !== booking.createdBy
-      ));
+      // 1b. Upload pending addendums
+      for (const addendum of localDelta.pendingAddendums) {
+        processed++;
+        if (onProgress) {
+          onProgress(
+            `${t('syncUploading', currentLang)} (${processed}/${totalPending})`,
+            0.2 + 0.4 * (processed / totalPending)
+          );
+        }
 
-      const finalBookingData = {
-        ...booking,
-        photoUrls: uploadedUrls,
-        status: 'synced',
-        syncedAt: new Date().toISOString(),
-        possibleDuplicate: isPossibleDuplicate,
-        reviewRequired: isPossibleDuplicate,
-      };
+        const now = new Date().toISOString();
+        const finalAddendumData = {
+          ...addendum,
+          status: 'synced',
+          syncedAt: now,
+          updatedAt: now,
+        };
 
-      // Write to project subcollection and global collection for admin-web compatibility
-      try {
-        const projectBookingRef = doc(db, 'projects', booking.projectId, 'bookings', booking.id);
-        await setDoc(projectBookingRef, finalBookingData, { merge: true });
+        try {
+          const projectAddendumRef = doc(db, 'projects', addendum.projectId, 'addendums', addendum.id);
+          await setDoc(projectAddendumRef, finalAddendumData, { merge: true });
 
-        const globalBookingRef = doc(db, 'bookings', booking.id);
-        await setDoc(globalBookingRef, finalBookingData, { merge: true });
+          const globalAddendumRef = doc(db, 'addendums', addendum.id);
+          await setDoc(globalAddendumRef, finalAddendumData, { merge: true });
 
-        // Update local booking record
-        await updateBookingStatus(booking.id, 'synced', {
-          photoUrls: uploadedUrls,
-          possibleDuplicate: isPossibleDuplicate,
+          await updateAddendumStatus(addendum.id, 'synced');
+          pushedCount++;
+        } catch (err) {
+          console.error(`Failed to push addendum ${addendum.id}:`, err);
+        }
+      }
+
+      // 1c. Upload completed room status updates
+      for (const room of localDelta.pendingRooms) {
+        processed++;
+        const now = new Date().toISOString();
+        try {
+          const roomRef = doc(db, 'projects', projectId, 'rooms', room.id);
+          await setDoc(roomRef, {
+            pct: room.pct || 100,
+            isCompleted: true,
+            status: 'completed',
+            completedAt: room.completedAt || now,
+            completedBy: room.completedBy || 'Monteur',
+            completionDelta: room.completionDelta || [],
+            updatedAt: now,
+          }, { merge: true });
+
+          // Update local room record
+          const allRooms = await getRooms();
+          const updatedRooms = allRooms.map((r) => (r.id === room.id ? { ...r, syncedAt: now } : r));
+          await saveRooms(updatedRooms);
+
+          pushedCount++;
+        } catch (err) {
+          console.error(`Failed to push room completion for ${room.id}:`, err);
+        }
+      }
+    } else {
+      console.log('Sync Push: No local delta to push. Skipping upload.');
+    }
+
+    // -------------------------------------------------------------
+    // DIRECTION 2 (Admin-Panel -> App): Pull ONLY remote delta
+    // -------------------------------------------------------------
+    if (onProgress) onProgress(t('syncDownloading', currentLang), 0.75);
+
+    let pulledPositionsCount = 0;
+    let pulledRoomsCount = 0;
+
+    // 2a. Fetch positions delta
+    try {
+      let remotePositionsDelta = [];
+      if (lastSyncedAt) {
+        // Query only positions updated after lastSyncedAt
+        try {
+          const posQuery = query(
+            collection(db, 'projects', projectId, 'positions'),
+            where('updatedAt', '>', lastSyncedAt)
+          );
+          const snap = await getDocs(posQuery);
+          remotePositionsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch (queryErr) {
+          console.warn('Direct delta query on positions failed, using fallback:', queryErr.message);
+          const snap = await getDocs(collection(db, 'projects', projectId, 'positions'));
+          remotePositionsDelta = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((d) => d.updatedAt && d.updatedAt > lastSyncedAt);
+        }
+      } else {
+        // Baseline first sync: fetch all
+        const snap = await getDocs(collection(db, 'projects', projectId, 'positions'));
+        remotePositionsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      }
+
+      if (remotePositionsDelta.length > 0) {
+        const localPositions = await getMaterials();
+        const updated = localPositions.map((local) => {
+          const remote = remotePositionsDelta.find((rp) => rp.id === local.id || rp.posNr === local.pos);
+          if (remote) {
+            return {
+              ...local,
+              ...remote,
+              deliveredQty: remote.qty ?? remote.deliveredQty ?? local.deliveredQty,
+              installedQty: remote.installedQty ?? local.installedQty,
+            };
+          }
+          return local;
         });
 
-        syncedCount++;
-      } catch (err) {
-        console.error(`Failed to write booking ${booking.id} to Firestore:`, err);
+        // Insert new materials created remotely
+        remotePositionsDelta.forEach((remote) => {
+          if (!updated.some((m) => m.id === remote.id || m.pos === remote.posNr)) {
+            updated.push({
+              id: remote.id,
+              pos: remote.posNr || remote.pos || 'neu',
+              name: remote.name || 'Neues Material',
+              cleanName: remote.cleanName || remote.name || 'Neues Material',
+              group: remote.group || 'Allgemein',
+              qu: remote.qu || remote.unit || 'Stk',
+              deliveredQty: Number(remote.qty ?? remote.deliveredQty ?? 0),
+              installedQty: Number(remote.installedQty ?? 0),
+            });
+          }
+        });
+
+        await saveMaterials(updated);
+        pulledPositionsCount = remotePositionsDelta.length;
       }
+    } catch (posErr) {
+      console.warn('Could not pull positions delta:', posErr.message);
     }
 
-    // 3. Pull newest project state from Cloud (rooms, positions)
-    if (onProgress) onProgress(t('syncDownloading', currentLang), 0.8);
-
+    // 2b. Fetch rooms delta
     try {
-      const positionsSnap = await getDocs(collection(db, 'projects', projectId, 'positions'));
-      if (!positionsSnap.empty) {
-        const remotePositions = positionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (remotePositions.length > 0) {
-          // Merge remote installed quantities
-          const localPositions = await getMaterials();
-          const merged = localPositions.map((local) => {
-            const remote = remotePositions.find((rp) => rp.id === local.id || rp.posNr === local.pos);
-            if (remote) {
-              return {
-                ...local,
-                deliveredQty: remote.qty ?? remote.deliveredQty ?? local.deliveredQty,
-                installedQty: remote.deliveredQty ?? remote.installedQty ?? local.installedQty,
-              };
-            }
-            return local;
-          });
-          await saveMaterials(merged);
+      let remoteRoomsDelta = [];
+      if (lastSyncedAt) {
+        try {
+          const roomQuery = query(
+            collection(db, 'projects', projectId, 'rooms'),
+            where('updatedAt', '>', lastSyncedAt)
+          );
+          const snap = await getDocs(roomQuery);
+          remoteRoomsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        } catch (queryErr) {
+          console.warn('Direct delta query on rooms failed, using fallback:', queryErr.message);
+          const snap = await getDocs(collection(db, 'projects', projectId, 'rooms'));
+          remoteRoomsDelta = snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((d) => d.updatedAt && d.updatedAt > lastSyncedAt);
         }
+      } else {
+        // Baseline first sync: fetch all
+        const snap = await getDocs(collection(db, 'projects', projectId, 'rooms'));
+        remoteRoomsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       }
 
-      const roomsSnap = await getDocs(collection(db, 'projects', projectId, 'rooms'));
-      if (!roomsSnap.empty) {
-        const remoteRooms = roomsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (remoteRooms.length > 0) {
-          await saveRooms(remoteRooms);
-        }
+      if (remoteRoomsDelta.length > 0) {
+        const localRooms = await getRooms();
+        const updated = localRooms.map((local) => {
+          const remote = remoteRoomsDelta.find((rr) => rr.id === local.id);
+          return remote ? { ...local, ...remote } : local;
+        });
+
+        // Insert new rooms created remotely
+        remoteRoomsDelta.forEach((remote) => {
+          if (!updated.some((r) => r.id === remote.id)) {
+            updated.push(remote);
+          }
+        });
+
+        await saveRooms(updated);
+        pulledRoomsCount = remoteRoomsDelta.length;
       }
-    } catch (pullErr) {
-      console.warn('Could not pull latest cloud state, keeping local cache:', pullErr.message);
+    } catch (roomErr) {
+      console.warn('Could not pull rooms delta:', roomErr.message);
     }
+
+    // -------------------------------------------------------------
+    // Save New Sync Timestamp
+    // -------------------------------------------------------------
+    const newSyncTimestamp = new Date().toISOString();
+    await setLastSyncedAt(newSyncTimestamp);
+
+    const totalSyncedCount = pushedCount + pulledPositionsCount + pulledRoomsCount;
+    const hasDelta = localDelta.hasLocalDelta || pulledPositionsCount > 0 || pulledRoomsCount > 0;
 
     if (onProgress) onProgress(t('syncSuccessTitle', currentLang), 1.0);
 
     // Show native success alert if not silent
     if (!silent) {
-      const msg = syncedCount > 0
-        ? t('syncSuccessMsg', currentLang, { n: syncedCount })
+      const msg = hasDelta && totalSyncedCount > 0
+        ? t('syncSuccessMsg', currentLang, { n: totalSyncedCount })
         : t('syncNoPending', currentLang);
 
       Alert.alert(t('syncSuccessTitle', currentLang), msg, [{ text: t('ok', currentLang) }]);
     }
 
-    return { success: true, syncedCount };
+    return {
+      success: true,
+      syncedCount: totalSyncedCount,
+      pushedCount,
+      pulledCount: pulledPositionsCount + pulledRoomsCount,
+      hasDelta,
+      lastSyncedAt: newSyncTimestamp,
+    };
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('Delta sync error:', error);
     if (!silent) {
       Alert.alert('Sync Error', error.message || 'Synchronisation fehlgeschlagen.', [{ text: t('ok', currentLang) }]);
     }

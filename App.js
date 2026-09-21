@@ -19,6 +19,7 @@ import {
   getPendingBookings,
   enqueueBooking,
   enqueueAddendum,
+  getLocalUnsyncedDelta,
 } from './src/services/storageService';
 import { syncBookings, checkOnlineStatus } from './src/services/syncService';
 
@@ -65,20 +66,20 @@ export default function App() {
   useEffect(() => {
     async function initApp() {
       try {
-        const [savedLang, activeUser, cachedRooms, cachedMats, proj, pending] = await Promise.all([
+        const [savedLang, activeUser, cachedRooms, cachedMats, proj, delta] = await Promise.all([
           getLanguage(),
           getActiveMonteur(),
           getRooms(),
           getMaterials(),
           getProjectInfo(),
-          getPendingBookings(),
+          getLocalUnsyncedDelta(),
         ]);
 
         setCurrentLang(savedLang);
         setRooms(cachedRooms);
         setMaterials(cachedMats);
         setProject(proj);
-        setPendingCount(pending.length);
+        setPendingCount(delta.totalPendingCount);
 
         if (!activeUser) {
           setAppPhase('setup');
@@ -101,10 +102,10 @@ export default function App() {
       const online = !!(state.isConnected && state.isInternetReachable !== false);
       setIsOnline(online);
 
-      // If reconnected and in main app with pending bookings, trigger background sync
+      // If reconnected and in main app with pending delta, trigger background sync
       if (online && appPhase === 'app') {
-        const pending = await getPendingBookings();
-        if (pending.length > 0 && !isSyncing) {
+        const delta = await getLocalUnsyncedDelta();
+        if (delta.hasLocalDelta && !isSyncing) {
           syncBookings({ silent: true }).then((res) => {
             if (res.success) {
               refreshData();
@@ -118,14 +119,14 @@ export default function App() {
   }, [appPhase, isSyncing]);
 
   const refreshData = async () => {
-    const [r, m, pending] = await Promise.all([
+    const [r, m, delta] = await Promise.all([
       getRooms(),
       getMaterials(),
-      getPendingBookings(),
+      getLocalUnsyncedDelta(),
     ]);
     setRooms(r);
     setMaterials(m);
-    setPendingCount(pending.length);
+    setPendingCount(delta.totalPendingCount);
   };
 
   // 3. User Setup Complete
@@ -222,8 +223,8 @@ export default function App() {
   const handleAddNachtrag = async (nachtragData) => {
     try {
       await enqueueAddendum(nachtragData);
-      const pending = await getPendingBookings();
-      setPendingCount(pending.length);
+      const delta = await getLocalUnsyncedDelta();
+      setPendingCount(delta.totalPendingCount);
     } catch (e) {
       console.warn('Error saving addendum:', e);
     }
@@ -278,8 +279,8 @@ export default function App() {
         isCompleted: true,
       });
 
-      const pending = await getPendingBookings();
-      setPendingCount(pending.length);
+      const delta = await getLocalUnsyncedDelta();
+      setPendingCount(delta.totalPendingCount);
 
       Alert.alert(
         'Raum fertiggestellt',
