@@ -14,6 +14,7 @@ export default function Header({
   onSyncPress,
   isSyncing = false,
   monteurName = 'Monteur',
+  onSwitchProject = null,
 }) {
   return (
     <View style={styles.wrapper}>
@@ -24,14 +25,19 @@ export default function Header({
             <Text style={styles.logoBold}>burk</Text>
             <Text style={styles.logoSmall}>Haustechnik</Text>
           </View>
-          <View style={styles.projectTexts}>
+          <TouchableOpacity
+            style={styles.projectTexts}
+            onPress={onSwitchProject}
+            disabled={!onSwitchProject}
+            activeOpacity={0.7}
+          >
             <Text style={styles.projectTitle} numberOfLines={1}>
-              {projectName}
+              {projectName} {onSwitchProject ? '▾' : ''}
             </Text>
             <Text style={styles.projectSub} numberOfLines={1}>
               {subTitle}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.rightBadges}>

@@ -16,6 +16,7 @@ export default function RoomListScreen({
   project = {},
   currentLang = 'de',
   onSelectRoom,
+  onSwitchProject = null,
 }) {
   // Calculate total project stats
   const totalDeliveredVal = materials.reduce((acc, m) => acc + (m.deliveredQty * m.unitPrice), 0);
@@ -50,6 +51,16 @@ export default function RoomListScreen({
             <Text style={styles.kpiValue}>{formatEuro(totalDeliveredVal)}</Text>
           </View>
         </View>
+
+        {onSwitchProject && (
+          <TouchableOpacity
+            style={styles.switchProjectBtn}
+            onPress={onSwitchProject}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Section Title */}
@@ -169,6 +180,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
     marginTop: 2,
+  },
+  switchProjectBtn: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchProjectText: {
+    color: '#93C5FD',
+    fontSize: 12,
+    fontWeight: '800',
   },
   sectTitle: {
     fontSize: 12,

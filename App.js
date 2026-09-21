@@ -29,14 +29,16 @@ import Header from './src/components/Header';
 // Screens
 import SetupProfileScreen from './src/screens/SetupProfileScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
+import ProjectSelectScreen from './src/screens/ProjectSelectScreen';
 import SyncLoadingScreen from './src/screens/SyncLoadingScreen';
 import RoomListScreen from './src/screens/RoomListScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import PhotoCaptureScreen from './src/screens/PhotoCaptureScreen';
 import DoneScreen from './src/screens/DoneScreen';
+import { DEFAULT_PROJECT } from './src/constants/initialData';
 
 export default function App() {
-  // App Phase: 'loading' | 'setup' | 'pin' | 'app'
+  // App Phase: 'loading' | 'pin' | 'project_select' | 'app'
   const [appPhase, setAppPhase] = useState('loading');
   const [currentScreen, setCurrentScreen] = useState('rooms'); // 'rooms' | 'book' | 'photos' | 'done'
 
@@ -48,6 +50,7 @@ export default function App() {
   const [rooms, setRooms] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [project, setProject] = useState({});
+  const [availableProjects, setAvailableProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
 
   // Network State
@@ -81,15 +84,14 @@ export default function App() {
         setProject(proj);
         setPendingCount(delta.totalPendingCount);
 
-        if (!activeUser) {
-          setAppPhase('setup');
-        } else {
+        if (activeUser) {
           setMonteur(activeUser);
-          setAppPhase('pin');
         }
+        // Neutral PIN screen on app start / reload
+        setAppPhase('pin');
       } catch (err) {
         console.error('Error during app initialization:', err);
-        setAppPhase('setup');
+        setAppPhase('pin');
       }
     }
 
@@ -129,16 +131,27 @@ export default function App() {
     setPendingCount(delta.totalPendingCount);
   };
 
-  // 3. User Setup Complete
-  const handleSetupComplete = (newMonteur) => {
-    setMonteur(newMonteur);
-    handleUnlockWithAutoSync();
-  };
+  // 3. PIN Unlock, Sync & Multi-Project Routing
+  const handleUnlockWithAutoSync = async (authenticatedMonteur, assignedProjects = []) => {
+    if (authenticatedMonteur) {
+      setMonteur(authenticatedMonteur);
+    }
+    const projectsList = assignedProjects && assignedProjects.length > 0 ? assignedProjects : [DEFAULT_PROJECT];
+    setAvailableProjects(projectsList);
 
-  // 4. PIN Unlock & Seamless Auto-Sync Flow
-  const handleUnlockWithAutoSync = async () => {
     const online = await checkOnlineStatus();
     setIsOnline(online);
+
+    const proceedToAppOrSelect = () => {
+      if (projectsList.length > 1) {
+        setAppPhase('project_select');
+      } else {
+        const targetProj = projectsList[0] || DEFAULT_PROJECT;
+        setProject(targetProj);
+        setAppPhase('app');
+        setCurrentScreen('rooms');
+      }
+    };
 
     if (online) {
       // Show seamless sync overlay
@@ -161,18 +174,28 @@ export default function App() {
       } finally {
         setTimeout(() => {
           setSyncProgress({ visible: false, text: '', progress: 1 });
-          setAppPhase('app');
-          setCurrentScreen('rooms');
+          proceedToAppOrSelect();
         }, 600);
       }
     } else {
-      // Immediately open offline mode without waiting
-      setAppPhase('app');
-      setCurrentScreen('rooms');
+      // Offline mode
+      proceedToAppOrSelect();
     }
   };
 
-  // 5. Language Change
+  const handleSelectProject = (chosenProject) => {
+    setProject(chosenProject);
+    setAppPhase('app');
+    setCurrentScreen('rooms');
+  };
+
+  const handleSwitchProject = () => {
+    if (availableProjects.length > 1) {
+      setAppPhase('project_select');
+    }
+  };
+
+  // 4. Language Change
   const handleSelectLang = async (lang) => {
     setCurrentLang(lang);
     await setLanguage(lang);
@@ -423,24 +446,11 @@ export default function App() {
     );
   }
 
-  if (appPhase === 'setup') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
-        <SetupProfileScreen
-          currentLang={currentLang}
-          onComplete={handleSetupComplete}
-        />
-      </SafeAreaView>
-    );
-  }
-
   if (appPhase === 'pin') {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.bg} />
         <PinLockScreen
-          monteur={monteur}
           currentLang={currentLang}
           onUnlockSuccess={handleUnlockWithAutoSync}
         />
@@ -450,6 +460,18 @@ export default function App() {
           progress={syncProgress.progress}
         />
       </SafeAreaView>
+    );
+  }
+
+  if (appPhase === 'project_select') {
+    return (
+      <ProjectSelectScreen
+        monteur={monteur}
+        projects={availableProjects}
+        currentLang={currentLang}
+        onSelectLang={handleSelectLang}
+        onSelectProject={handleSelectProject}
+      />
     );
   }
 
@@ -470,6 +492,7 @@ export default function App() {
         onSyncPress={handleManualSync}
         isSyncing={isSyncing}
         monteurName={monteur?.name || 'Monteur'}
+        onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
       />
 
       {/* Screen Router */}
@@ -481,6 +504,7 @@ export default function App() {
             project={project}
             currentLang={currentLang}
             onSelectRoom={handleSelectRoom}
+            onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
           />
         )}
 

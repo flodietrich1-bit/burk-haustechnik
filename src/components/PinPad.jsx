@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../constants/theme';
 
-export default function PinPad({ pin = '', onDigitPress, onDeletePress, maxDigits = 4 }) {
+export default function PinPad({ pin = '', onDigitPress, onDeletePress, maxDigits = 4, disabled = false }) {
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
 
   return (
@@ -33,8 +33,9 @@ export default function PinPad({ pin = '', onDigitPress, onDeletePress, maxDigit
             return (
               <TouchableOpacity
                 key={index}
-                style={[styles.key, styles.keyAction]}
+                style={[styles.key, styles.keyAction, disabled && styles.keyDisabled]}
                 onPress={onDeletePress}
+                disabled={disabled}
                 activeOpacity={0.6}
               >
                 <Text style={styles.actionText}>⌫</Text>
@@ -44,8 +45,9 @@ export default function PinPad({ pin = '', onDigitPress, onDeletePress, maxDigit
           return (
             <TouchableOpacity
               key={index}
-              style={styles.key}
+              style={[styles.key, disabled && styles.keyDisabled]}
               onPress={() => onDigitPress(item)}
+              disabled={disabled}
               activeOpacity={0.6}
             >
               <Text style={styles.digitText}>{item}</Text>
@@ -121,5 +123,8 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     color: COLORS.muted,
+  },
+  keyDisabled: {
+    opacity: 0.35,
   },
 });
