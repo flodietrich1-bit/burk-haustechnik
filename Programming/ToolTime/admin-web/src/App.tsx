@@ -194,8 +194,8 @@ export function App() {
         />
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto p-6 md:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+          <div className="w-full space-y-6">
             
             {/* If no project is selected and not on User-Admin tab */}
             {!activeProject && activeTab !== 'users' ? (

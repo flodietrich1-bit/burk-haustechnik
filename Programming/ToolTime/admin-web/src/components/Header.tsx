@@ -53,10 +53,10 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-[#1C2A3B] text-white border-b border-slate-700 sticky top-0 z-40 shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         
         {/* Brand: Links soll nur dran stehen BURK ToolTime */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 shrink-0">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3B82C4] to-[#2FA36B] flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
             <Wrench className="w-5 h-5 text-white" />
           </div>
@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Projektname (+ Dropdown) links, daneben Neues Projekt Button rechts, Alerts, Live, User */}
+        {/* Center / Action Group: Projektname (links) + Button Neues Projekt (rechts) */}
         <div className="flex items-center space-x-2.5 sm:space-x-3">
           {/* Projektname & kleines Dropdown bei mehreren Projekten (links) */}
           {projects.length > 1 ? (
@@ -187,7 +187,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="sm:hidden">Neu</span>
             </button>
           )}
+        </div>
 
+        {/* Right Side: Alerts, Live, Name des Users ganz nach rechts aliniert */}
+        <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
           {/* Alert Notification Bell */}
           <div className="relative" ref={alertsRef}>
             <button
