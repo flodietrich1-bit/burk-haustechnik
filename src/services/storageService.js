@@ -374,15 +374,18 @@ export async function enqueueAddendum(addendum) {
       projectId: addendum.projectId || DEFAULT_PROJECT_ID,
       roomId: addendum.roomId,
       roomName: addendum.roomName,
-      type: addendum.type || 'material', // 'material' | 'stunden'
+      type: addendum.type || 'material', // 'material' | 'stunden' | 'unklar'
       title: addendum.title,
       quantity: addendum.quantity,
       qu: addendum.qu || 'Stk',
-      requestedBy: addendum.requestedBy || 'Bauleiter',
+      requestedBy: addendum.requestedBy || 'Monteur',
       note: addendum.note || '',
       signature: addendum.signature || null,
       status: 'pending',
       createdAt: new Date().toISOString(),
+      itemOz: addendum.itemOz || null,
+      materialId: addendum.materialId || null,
+      isOrdered: !!addendum.isOrdered,
     };
     const updated = [newAddendum, ...all];
     await AsyncStorage.setItem(KEYS.ADDENDUMS, JSON.stringify(updated));

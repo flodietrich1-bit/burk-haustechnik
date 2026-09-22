@@ -386,8 +386,41 @@ export default function App() {
     });
   };
 
-  const handleAddUnclearItem = (item) => {
+  const handleAddUnclearItem = async (item) => {
     setUnclearItems((prev) => [...prev, item]);
+    try {
+      const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+      await enqueueAddendum({
+        projectId: pId,
+        roomId: selectedRoom?.id || 'allgemein',
+        roomName: selectedRoom?.name || 'Baustelle',
+        type: 'unklar',
+        title: item.txt || 'Unklares Teil verbaut',
+        quantity: item.qty || '1 Stk',
+        qu: item.qu || (String(item.qty).includes('m') ? 'm' : 'Stk'),
+        requestedBy: monteur?.name || 'Monteur',
+        note: item.isOrdered 
+          ? `Bereits bestelltes Material (Pos: ${item.pos || item.itemOz || '–'}) verbaut, aber nicht im Raumplan hinterlegt.`
+          : 'Anderes / unklares Teil verbaut als im Plan vorgesehen (Erstmalig auf der Baustelle).',
+        itemOz: item.itemOz || item.pos || 'UNKLAR',
+        materialId: item.materialId || null,
+        isOrdered: !!item.isOrdered,
+        status: 'pending',
+      });
+      const delta = await getLocalUnsyncedDelta(pId);
+      setPendingCount(delta.totalPendingCount);
+
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      });
+    } catch (e) {
+      console.warn('Error saving unclear item as addendum:', e);
+    }
   };
 
   const handleAddNachtrag = async (nachtragData) => {

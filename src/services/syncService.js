@@ -202,7 +202,8 @@ export async function syncBookings(options = {}) {
         const now = new Date().toISOString();
         const finalAddendumData = {
           ...addendum,
-          status: 'synced',
+          status: (addendum.status && addendum.status !== 'synced') ? addendum.status : 'pending',
+          syncStatus: 'synced',
           syncedAt: now,
           updatedAt: now,
         };
