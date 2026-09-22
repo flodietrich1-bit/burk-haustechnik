@@ -237,6 +237,8 @@ export function App() {
                 {activeTab === 'positions' && (
                   <MaterialTable
                     positions={positions}
+                    bookings={bookings}
+                    rooms={rooms}
                     searchTerm={searchTerm}
                   />
                 )}
