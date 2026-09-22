@@ -4,6 +4,7 @@ import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X, Check
 import { saveRoom, deleteRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { CircularProgress } from './CircularProgress';
+import { generateTranslations } from '../services/dwgParser';
 
 interface RoomManagerProps {
   projectId: string;
@@ -34,6 +35,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   const handleCreate = async () => {
     if (!newRoom.name || !newRoom.code) return;
     const roomId = `room_${Date.now()}`;
+    const autoTrans = generateTranslations(newRoom.name);
     const roomToSave: Room = {
       id: roomId,
       name: newRoom.name,
@@ -41,9 +43,9 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
       floor: newRoom.floor || 'EG',
       source: 'manual',
       translations: {
-        ro: newRoom.translations?.ro || newRoom.name,
-        pl: newRoom.translations?.pl || newRoom.name,
-        hr: newRoom.translations?.hr || newRoom.name
+        ro: newRoom.translations?.ro || autoTrans.ro,
+        pl: newRoom.translations?.pl || autoTrans.pl,
+        hr: newRoom.translations?.hr || autoTrans.hr
       },
       materials: []
     };
@@ -217,6 +219,9 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
           const roomPercent = room.status === 'completed' ? 100 : (room.progressPercent || 0);
+          const roomTrans = (room.translations?.ro && room.translations.ro !== room.name)
+            ? room.translations
+            : generateTranslations(room.name);
 
           return (
             <div 
@@ -254,6 +259,15 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                             Manuell
                           </span>
                         )}
+                        <span 
+                          className="text-[10px] text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded cursor-help transition-colors flex items-center space-x-1"
+                          title={`Monteur-App Übersetzungen:\n🇷🇴 RO: ${roomTrans.ro}\n🇵🇱 PL: ${roomTrans.pl}\n🇭🇷 HR: ${roomTrans.hr}`}
+                        >
+                          <span className="text-[9px] font-medium text-slate-500">App:</span>
+                          <span>🇷🇴</span>
+                          <span>🇵🇱</span>
+                          <span>🇭🇷</span>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -274,28 +288,6 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                </div>
-
-                {/* Multi-language Badges */}
-                <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="flex items-center space-x-1">
-                      <span>🇷🇴 RO:</span>
-                      <span className="font-medium text-slate-700">{room.translations.ro || room.name}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="flex items-center space-x-1">
-                      <span>🇵🇱 PL:</span>
-                      <span className="font-medium text-slate-700">{room.translations.pl || room.name}</span>
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="flex items-center space-x-1">
-                      <span>🇭🇷 HR:</span>
-                      <span className="font-medium text-slate-700">{room.translations.hr || room.name}</span>
-                    </span>
                   </div>
                 </div>
 

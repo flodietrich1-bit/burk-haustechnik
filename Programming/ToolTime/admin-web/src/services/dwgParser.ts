@@ -338,34 +338,133 @@ function determineFloor(roomName: string): 'UG' | 'EG' | 'OG' | 'DG' {
   return 'EG';
 }
 
-function generateTranslations(nameDe: string) {
-  const lower = nameDe.toLowerCase();
-  if (lower.includes('bad')) {
-    return { ro: 'Baie', pl: 'Łazienka', hr: 'Kupaonica' };
+export function generateTranslations(nameDe: string): { ro: string; pl: string; hr: string } {
+  const lower = nameDe.toLowerCase().trim();
+
+  // 1. Schwimmbad / Hallenbad / Becken
+  if (lower.includes('schwimm') || lower.includes('becken') || lower.includes('hallenbad') || lower.includes('badegast')) {
+    return { ro: 'Hală Piscină / Bazin', pl: 'Hala Basenowa', hr: 'Dvorana Bazena' };
   }
-  if (lower.includes('küche') || lower.includes('kueche')) {
-    return { ro: 'Bucătărie', pl: 'Kuchnia', hr: 'Kuhinja' };
+
+  // 2. Kessel, Heizung, Verteiler
+  if (lower.includes('kessel') || (lower.includes('verteiler') && lower.includes('raum')) || lower.includes('heizzentrale') || lower.includes('heizraum')) {
+    return { ro: 'Cameră Cazane & Distribuitor', pl: 'Kotłownia & Rozdzielnia', hr: 'Kotlovnica i Razdjelnik' };
   }
-  if (lower.includes('gäste') || lower.includes('wc')) {
-    return { ro: 'Toaletă Oaspeți', pl: 'Toaleta dla gości', hr: 'Gostinjski WC' };
+
+  // 3. Lüftung / Lüftungszentrale
+  if (lower.includes('lüftung') || lower.includes('lueftung')) {
+    const isOg = lower.includes('og') || lower.includes('obergeschoss');
+    const suffixRo = isOg ? ' Etaj' : '';
+    const suffixPl = isOg ? ' Piętro' : '';
+    const suffixHr = isOg ? ' Kat' : '';
+    return { 
+      ro: `Centrală Ventilație${suffixRo}`, 
+      pl: `Centrala Wentylacyjna${suffixPl}`, 
+      hr: `Ventilacijska Centrala${suffixHr}` 
+    };
   }
-  if (lower.includes('hwr') || lower.includes('technik')) {
-    return { ro: 'Cameră Tehnică', pl: 'Pomieszczenie Gospodarcze', hr: 'Tehnička Soba' };
+
+  // 4. Behinderten- / Personal-WC
+  if (lower.includes('behindert') && (lower.includes('wc') || lower.includes('toilette'))) {
+    return { ro: 'Toaletă Personal & Dizabilități', pl: 'Toaleta dla Personelu i Niepełnosprawnych', hr: 'WC za Osoblje i Osobe s Invaliditetom' };
   }
-  if (lower.includes('flur')) {
-    return { ro: 'Hol', pl: 'Korytarz', hr: 'Hodnik' };
+  if (lower.includes('personal') && (lower.includes('wc') || lower.includes('toilette'))) {
+    return { ro: 'Toaletă Personal', pl: 'Toaleta dla Personelu', hr: 'WC za Osoblje' };
   }
+
+  // 5. Hebeanlage, Pumpen, Technikzentrale
+  if (lower.includes('hebeanlage') || (lower.includes('technik') && lower.includes('zentrale'))) {
+    return { ro: 'Centrală Tehnică / Pompare', pl: 'Centrala Techniczna / Pompownia', hr: 'Tehnička Centrala / Crpna Stanica' };
+  }
+  if (lower.includes('technik') || lower.includes('hwr') || lower.includes('hauswirtschaft')) {
+    return { ro: 'Cameră Tehnică', pl: 'Pomieszczenie Techniczne / Gospodarcze', hr: 'Tehnička Soba' };
+  }
+
+  // 6. Duschen
+  if (lower.includes('dusch') && lower.includes('herren')) {
+    return { ro: 'Dușuri Bărbați', pl: 'Prysznice Męskie', hr: 'Muški Tuševi' };
+  }
+  if (lower.includes('dusch') && lower.includes('damen')) {
+    return { ro: 'Dușuri Femei', pl: 'Prysznice Damskie', hr: 'Ženski Tuševi' };
+  }
+  if (lower.includes('dusch')) {
+    return { ro: 'Dușuri', pl: 'Prysznice', hr: 'Tuševi' };
+  }
+
+  // 7. Umkleiden
   if (lower.includes('umkleide') && lower.includes('herren')) {
     return { ro: 'Vestiar Bărbați', pl: 'Szatnia Męska', hr: 'Muška Svlačionica' };
   }
   if (lower.includes('umkleide') && lower.includes('damen')) {
     return { ro: 'Vestiar Femei', pl: 'Szatnia Damska', hr: 'Ženska Svlačionica' };
   }
-  if (lower.includes('dusch') && lower.includes('herren')) {
-    return { ro: 'Dușuri Bărbați', pl: 'Prysznice Męskie', hr: 'Muški Tuševi' };
+  if (lower.includes('umkleide') || lower.includes('garderobe')) {
+    return { ro: 'Vestiar', pl: 'Szatnia', hr: 'Svlačionica' };
   }
-  if (lower.includes('dusch') && lower.includes('damen')) {
-    return { ro: 'Dușuri Femei', pl: 'Prysznice Damskie', hr: 'Ženske Tuševi' };
+
+  // 8. Sanitär & WC
+  if (lower.includes('gäste') || lower.includes('gaeste') || lower.includes('wc') || lower.includes('toilette')) {
+    return { ro: 'Toaletă Oaspeți / WC', pl: 'Toaleta dla Gości / WC', hr: 'Gostinjski WC' };
   }
+  if (lower.includes('bad') || lower.includes('badezimmer')) {
+    return { ro: 'Baie', pl: 'Łazienka', hr: 'Kupaonica' };
+  }
+  if (lower.includes('sanitär') || lower.includes('sanitaer')) {
+    return { ro: 'Spațiu Sanitar', pl: 'Węzeł Sanitarny', hr: 'Sanitarni Čvor' };
+  }
+
+  // 9. Küche
+  if (lower.includes('küche') || lower.includes('kueche') || lower.includes('teeküche') || lower.includes('teekueche')) {
+    return { ro: 'Bucătărie', pl: 'Kuchnia', hr: 'Kuhinja' };
+  }
+
+  // 10. Flure, Eingang, Foyer
+  if (lower.includes('flur') || lower.includes('diele') || lower.includes('gang') || lower.includes('korridor')) {
+    return { ro: 'Hol / Coridor', pl: 'Korytarz / Przedpokój', hr: 'Hodnik' };
+  }
+  if (lower.includes('foyer') || lower.includes('windfang') || lower.includes('eingang') || lower.includes('empfang') || lower.includes('kasse')) {
+    return { ro: 'Foaier / Recepție / Intrare', pl: 'Hol / Recepcja / Wejście', hr: 'Predvorje / Recepcija / Ulaz' };
+  }
+
+  // 11. Büro, Verwaltung, Personalräume
+  if (lower.includes('büro') || lower.includes('buero') || lower.includes('verwaltung') || lower.includes('arbeitszimmer')) {
+    return { ro: 'Birou / Administrație', pl: 'Biuro / Administracja', hr: 'Ured / Uprava' };
+  }
+  if (lower.includes('pause') || lower.includes('aufenthalt') || lower.includes('personalraum')) {
+    return { ro: 'Sală de Odihnă / Personal', pl: 'Pokój Socjalny / Personel', hr: 'Soba za Odmor / Osoblje' };
+  }
+
+  // 12. Lager, Vorrat, Archiv
+  if (lower.includes('abstell') || lower.includes('lager') || lower.includes('magazin') || lower.includes('archiv')) {
+    return { ro: 'Depozit / Magazie', pl: 'Schowek / Magazyn', hr: 'Ostava / Skladište' };
+  }
+
+  // 13. Hausanschluss, Wasserzähler
+  if (lower.includes('wasserzähler') || lower.includes('wasserzaehler') || lower.includes('anschluss') || lower.includes('har')) {
+    return { ro: 'Cameră Branșamente Apă', pl: 'Węzeł Wodny / Przyłącze', hr: 'Priključak Vode / Vodomjeri' };
+  }
+
+  // 14. Keller & Dach
+  if (lower.includes('keller') || lower.includes('untergeschoss') || lower.includes('souterrain')) {
+    return { ro: 'Subsol / Pivniță', pl: 'Piwnica', hr: 'Podrum' };
+  }
+  if (lower.includes('dach') || lower.includes('speicher') || lower.includes('mansarde') || lower.includes('estrich')) {
+    return { ro: 'Mansardă / Pod', pl: 'Poddasze', hr: 'Potkrovlje' };
+  }
+
+  // 15. Wohnräume
+  if (lower.includes('schlaf')) {
+    return { ro: 'Dormitor', pl: 'Sypialnia', hr: 'Spavaća Soba' };
+  }
+  if (lower.includes('wohn') || lower.includes('essen') || lower.includes('esszimmer')) {
+    return { ro: 'Living / Sufragerie', pl: 'Salon / Pokój Dzienny', hr: 'Dnevni Boravak' };
+  }
+  if (lower.includes('kind')) {
+    return { ro: 'Cameră Copii', pl: 'Pokój Dziecięcy', hr: 'Dječja Soba' };
+  }
+  if (lower.includes('balkon') || lower.includes('terrasse')) {
+    return { ro: 'Balcon / Terasă', pl: 'Balkon / Taras', hr: 'Balkon / Terasa' };
+  }
+
   return { ro: nameDe, pl: nameDe, hr: nameDe };
 }
