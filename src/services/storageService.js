@@ -93,13 +93,74 @@ export async function getRooms(projectId) {
   return [];
 }
 
-export async function saveRooms(rooms, projectId) {
+export function computeRoomPercentage(room, materials = []) {
+  if (!room) return 0;
+  if (room.isCompleted || Number(room.pct) === 100) return 100;
+
+  let totalPlanned = 0;
+  let totalInstalled = 0;
+
+  // 1. Evaluate room.plannedItems
+  if (room.plannedItems && Object.keys(room.plannedItems).length > 0) {
+    Object.entries(room.plannedItems).forEach(([matId, item]) => {
+      const planned = Number(item.plannedQty || 0);
+      const installed = Number(item.installedQty || 0);
+      const draft = Number(room.draftQuantities?.[matId] || 0);
+      if (planned > 0) {
+        totalPlanned += planned;
+        totalInstalled += Math.min(planned, installed + draft);
+      }
+    });
+  } else if (Array.isArray(room.materials) && room.materials.length > 0) {
+    // 2. Evaluate room.materials
+    room.materials.forEach((m) => {
+      const mId = m.positionId || m.id;
+      const planned = Number(m.plannedQty || 0);
+      const installed = Number(m.installedQty || 0);
+      const draft = Number(room.draftQuantities?.[mId] || 0);
+      if (planned > 0) {
+        totalPlanned += planned;
+        totalInstalled += Math.min(planned, installed + draft);
+      }
+    });
+  } else if (Array.isArray(materials) && materials.length > 0) {
+    // 3. Match from project materials assigned to this room
+    const roomMats = materials.filter(
+      (m) => m && m.assignedRoomNames && m.assignedRoomNames.includes(room.name)
+    );
+    roomMats.forEach((m) => {
+      const planned = Number(m.qty || 0);
+      const installed = Number(m.installedQty || 0);
+      const draft = Number(room.draftQuantities?.[m.id] || 0);
+      if (planned > 0) {
+        totalPlanned += planned;
+        totalInstalled += Math.min(planned, installed + draft);
+      }
+    });
+  }
+
+  if (totalPlanned > 0) {
+    return Math.min(100, Math.round((totalInstalled / totalPlanned) * 100));
+  }
+
+  return Number(room.pct || 0);
+}
+
+export async function saveRooms(rooms, projectId, materials = []) {
   try {
     const pId = await resolveProjectId(projectId);
     const key = `${KEYS.ROOMS}_${pId}`;
-    await AsyncStorage.setItem(key, JSON.stringify(rooms));
+    const normalizedRooms = (Array.isArray(rooms) ? rooms : []).map((r) => {
+      if (!r) return r;
+      const pct = r.isCompleted || Number(r.pct) === 100 ? 100 : computeRoomPercentage(r, materials);
+      return {
+        ...r,
+        pct,
+      };
+    });
+    await AsyncStorage.setItem(key, JSON.stringify(normalizedRooms));
     if (pId === DEFAULT_PROJECT_ID) {
-      await AsyncStorage.setItem(KEYS.ROOMS, JSON.stringify(rooms));
+      await AsyncStorage.setItem(KEYS.ROOMS, JSON.stringify(normalizedRooms));
     }
   } catch (e) {
     console.warn('Error saving rooms:', e);

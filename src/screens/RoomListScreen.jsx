@@ -10,6 +10,7 @@ import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import ProgressRing from '../components/ProgressRing';
+import { computeRoomPercentage } from '../services/storageService';
 
 export default function RoomListScreen({
   rooms = [],
@@ -71,6 +72,8 @@ export default function RoomListScreen({
       <View style={styles.roomList}>
         {rooms.map((room) => {
           const transName = currentLang !== 'de' && room.translations?.[currentLang];
+          const pct = computeRoomPercentage(room, materials);
+          const isCompleted = room.isCompleted || pct === 100;
           return (
             <TouchableOpacity
               key={room.id}
@@ -80,16 +83,20 @@ export default function RoomListScreen({
             >
               {/* Progress Ring */}
               <View style={styles.ringWrapper}>
-                <ProgressRing size={46} strokeWidth={5} percentage={room.pct || 0} />
+                <ProgressRing size={46} strokeWidth={5} percentage={pct} />
               </View>
 
               {/* Room Texts */}
               <View style={styles.roomInfo}>
                 <View style={styles.nameRow}>
                   <Text style={styles.roomName}>{room.name}</Text>
-                  {room.isCompleted || room.pct === 100 ? (
+                  {isCompleted ? (
                     <View style={styles.completedBadge}>
                       <Text style={styles.completedBadgeText}>✓ 100 %</Text>
+                    </View>
+                  ) : pct > 0 ? (
+                    <View style={styles.inProgressBadge}>
+                      <Text style={styles.inProgressBadgeText}>{pct} %</Text>
                     </View>
                   ) : null}
                   {transName ? (
@@ -260,6 +267,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#234E52',
+  },
+  inProgressBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  inProgressBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#B45309',
   },
   translatedName: {
     fontSize: 13,

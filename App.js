@@ -21,6 +21,7 @@ import {
   enqueueBooking,
   enqueueAddendum,
   getLocalUnsyncedDelta,
+  computeRoomPercentage,
 } from './src/services/storageService';
 import { syncBookings, checkOnlineStatus } from './src/services/syncService';
 
@@ -299,17 +300,33 @@ export default function App() {
       const currentRooms = Array.isArray(rooms) ? rooms : [];
       const updatedRooms = currentRooms.map((r) => {
         if (r && r.id === selectedRoom.id) {
-          return {
+          const draft = {
             ...r,
             draftQuantities: { ...sessionQuantities },
             photos: [...sessionPhotos],
             draftUnclear: [...unclearItems],
           };
+          return {
+            ...draft,
+            pct: computeRoomPercentage(draft, materials),
+          };
         }
         return r;
       });
       setRooms(updatedRooms);
-      await saveRooms(updatedRooms, pId);
+      await saveRooms(updatedRooms, pId, materials);
+      const delta = await getLocalUnsyncedDelta(pId);
+      setPendingCount(delta.totalPendingCount);
+
+      // Check online status and auto-push
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      });
     }
     setSelectedRoom(null);
     setCurrentScreen('rooms');
@@ -326,11 +343,24 @@ export default function App() {
         draftQuantities: { ...sessionQuantities },
         draftUnclear: [...unclearItems],
       };
+      updatedRoom.pct = computeRoomPercentage(updatedRoom, materials);
       setSelectedRoom(updatedRoom);
       const currentRooms = Array.isArray(rooms) ? rooms : [];
       const updatedRooms = currentRooms.map((r) => (r && r.id === selectedRoom.id ? updatedRoom : r));
       setRooms(updatedRooms);
-      await saveRooms(updatedRooms, pId);
+      await saveRooms(updatedRooms, pId, materials);
+      const delta = await getLocalUnsyncedDelta(pId);
+      setPendingCount(delta.totalPendingCount);
+
+      // Check online status and auto-push
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      });
     }
     setCurrentScreen('book');
   };
@@ -361,9 +391,19 @@ export default function App() {
 
   const handleAddNachtrag = async (nachtragData) => {
     try {
-      await enqueueAddendum(nachtragData);
-      const delta = await getLocalUnsyncedDelta();
+      const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+      await enqueueAddendum({ ...nachtragData, projectId: pId });
+      const delta = await getLocalUnsyncedDelta(pId);
       setPendingCount(delta.totalPendingCount);
+
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      });
     } catch (e) {
       console.warn('Error saving addendum:', e);
     }
@@ -533,7 +573,17 @@ export default function App() {
       const delta = await getLocalUnsyncedDelta(pId);
       setPendingCount(delta.totalPendingCount);
 
-      // 8. Navigate to DoneScreen
+      // 8. Auto-sync if online
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch((err) => console.warn('Sync after complete room notice:', err));
+        }
+      });
+
+      // 9. Navigate to DoneScreen
       setLastSummary(summary);
       setSessionQuantities({});
       setSessionPhotos([]);
@@ -547,8 +597,9 @@ export default function App() {
 
   const handleOverConsumptionAlert = async (alertData) => {
     try {
+      const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
       await enqueueBooking({
-        projectId: project.id || 'hallenbad-weingarten',
+        projectId: pId,
         type: 'over_consumption_alert',
         roomId: alertData.roomId,
         roomName: alertData.roomName,
@@ -561,13 +612,22 @@ export default function App() {
         requestedTotal: alertData.requestedTotal,
         reason: alertData.reason,
         createdBy: alertData.monteurName,
-        calendarWeek: project.calendarWeek || 27,
+        calendarWeek: project?.calendarWeek || 27,
         needsReorder: true,
         isAlert: true,
       });
 
-      const pending = await getPendingBookings();
-      setPendingCount(pending.length);
+      const delta = await getLocalUnsyncedDelta(pId);
+      setPendingCount(delta.totalPendingCount);
+
+      checkOnlineStatus().then((online) => {
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      });
     } catch (e) {
       console.warn('Error queuing over-consumption alert:', e);
     }

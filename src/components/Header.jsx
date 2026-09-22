@@ -79,7 +79,7 @@ export default function Header({
           <TouchableOpacity
             style={[
               styles.syncButton,
-              pendingCount > 0 ? styles.syncButtonActive : styles.syncButtonIdle,
+              pendingCount > 0 ? styles.syncButtonPending : styles.syncButtonIdle,
               isSyncing && styles.syncButtonSyncing,
             ]}
             onPress={onSyncPress}
@@ -95,12 +95,13 @@ export default function Header({
               {isSyncing ? '⟳' : '⇅'}
             </Animated.Text>
             <Text style={styles.syncText}>
-              {isSyncing
-                ? 'Sync...'
-                : pendingCount > 0
-                ? `${t('syncBtn', currentLang)} (${pendingCount})`
-                : t('syncBtn', currentLang)}
+              {isSyncing ? 'Sync...' : t('syncBtn', currentLang)}
             </Text>
+            {pendingCount > 0 && !isSyncing && (
+              <View style={styles.syncRedBadge}>
+                <Text style={styles.syncRedBadgeText}>{pendingCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -222,8 +223,26 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 16,
   },
-  syncButtonActive: {
-    backgroundColor: COLORS.amber,
+  syncButtonPending: {
+    backgroundColor: '#37495E',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+  },
+  syncRedBadge: {
+    backgroundColor: '#EF4444',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  syncRedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   syncButtonIdle: {
     backgroundColor: '#37495E',
