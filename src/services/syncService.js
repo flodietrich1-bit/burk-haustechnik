@@ -222,8 +222,15 @@ export async function syncBookings(options = {}) {
 
     // 2a. Fetch positions delta
     try {
+      const localPositions = await getMaterials(projectId);
+      const hasCorruptedNames = localPositions.some(
+        (p) => !p.cleanName || p.cleanName === 'Neues Material' || p.name === 'Neues Material'
+      );
+
       let remotePositionsDelta = [];
-      if (lastSyncedAt) {
+      const needsFullPositionsFetch = !lastSyncedAt || hasCorruptedNames || localPositions.length === 0;
+
+      if (!needsFullPositionsFetch) {
         // Query only positions updated after lastSyncedAt
         try {
           const posQuery = query(
@@ -240,14 +247,14 @@ export async function syncBookings(options = {}) {
             .filter((d) => d.updatedAt && d.updatedAt > lastSyncedAt);
         }
       } else {
-        // Baseline first sync: fetch all
+        // Baseline first sync OR recovery from corrupted names: fetch all
         const snap = await getDocs(collection(db, 'projects', projectId, 'positions'));
         remotePositionsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       }
 
-      if (remotePositionsDelta.length > 0) {
+      if (remotePositionsDelta.length > 0 || needsFullPositionsFetch) {
         const mapRemotePos = (remote) => {
-          const name = remote.shortText || remote.name || remote.longText || 'Neues Material';
+          const name = remote.shortText || remote.name || remote.longText || (remote.posNr ? `Pos ${remote.posNr}` : 'Material');
           const pos = remote.posNr || remote.pos || 'neu';
           const qty = Number(remote.qty || 0);
           const deliveredQty = Number(
@@ -260,22 +267,37 @@ export async function syncBookings(options = {}) {
             pos,
             name,
             cleanName: name,
+            shortText: remote.shortText || name,
             group: remote.group || 'Allgemein',
             qu: remote.qu || remote.unit || 'Stk',
             deliveredQty,
             installedQty: Number(remote.installedQty || 0),
             unitPrice: Number(remote.unitPrice || 0),
             ...remote,
+            cleanName: name,
+            name,
           };
         };
 
         let updated;
-        if (!lastSyncedAt) {
-          // Baseline first sync: Remote positions from Firestore are the clean source of truth
-          updated = remotePositionsDelta.map(mapRemotePos);
+        if (needsFullPositionsFetch) {
+          // Fresh mapping from Firestore, preserving local installed quantities
+          const localInstalledMap = new Map();
+          localPositions.forEach((lp) => {
+            if (lp.id) localInstalledMap.set(lp.id, lp.installedQty || 0);
+            if (lp.pos) localInstalledMap.set(lp.pos, lp.installedQty || 0);
+          });
+
+          updated = remotePositionsDelta.map((remote) => {
+            const mapped = mapRemotePos(remote);
+            const preservedInstalled = localInstalledMap.get(remote.id) ?? localInstalledMap.get(mapped.pos) ?? mapped.installedQty;
+            return {
+              ...mapped,
+              installedQty: preservedInstalled,
+            };
+          });
         } else {
           // Delta sync: update existing positions or append new ones
-          const localPositions = await getMaterials(projectId);
           updated = localPositions.map((local) => {
             const remote = remotePositionsDelta.find((rp) => rp.id === local.id || rp.posNr === local.pos);
             if (remote) {
@@ -342,6 +364,12 @@ export async function syncBookings(options = {}) {
                 plannedItems[pId] = {
                   plannedQty: Number(m.plannedQty || 0),
                   installedQty: Number(m.installedQty ?? existingRoom?.plannedItems?.[pId]?.installedQty ?? 0),
+                  shortText: m.shortText || m.name || '',
+                  name: m.shortText || m.name || '',
+                  cleanName: m.shortText || m.cleanName || m.name || '',
+                  posNr: m.posNr || '',
+                  group: m.group || '',
+                  qu: m.qu || 'Stk',
                 };
               }
             });

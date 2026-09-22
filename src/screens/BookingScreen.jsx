@@ -66,10 +66,44 @@ export default function BookingScreen({
         return {
           plannedQty: Number(found.plannedQty || 0),
           installedQty: Number(found.installedQty || 0),
+          shortText: found.shortText || found.name || '',
+          name: found.shortText || found.name || '',
+          cleanName: found.shortText || found.cleanName || found.name || '',
+          posNr: found.posNr || '',
+          group: found.group || '',
+          qu: found.qu || 'Stk',
         };
       }
     }
     return null;
+  };
+
+  const getMaterialDisplayName = (mat, roomPlan = null) => {
+    if (mat?.cleanName && mat.cleanName !== 'Neues Material') {
+      return mat.cleanName;
+    }
+    if (mat?.shortText && mat.shortText !== 'Neues Material') {
+      return mat.shortText;
+    }
+    if (roomPlan?.shortText && roomPlan.shortText !== 'Neues Material') {
+      return roomPlan.shortText;
+    }
+    if (mat?.name && mat.name !== 'Neues Material') {
+      return mat.name;
+    }
+    if (roomPlan?.cleanName && roomPlan.cleanName !== 'Neues Material') {
+      return roomPlan.cleanName;
+    }
+    if (roomPlan?.name && roomPlan.name !== 'Neues Material') {
+      return roomPlan.name;
+    }
+    if (mat?.longText) {
+      return mat.longText;
+    }
+    if (mat?.pos || roomPlan?.posNr) {
+      return `Pos ${mat?.pos || roomPlan?.posNr}`;
+    }
+    return 'Material';
   };
 
   // Unclear item Fullscreen Modal
@@ -149,7 +183,7 @@ export default function BookingScreen({
   const q = searchQuery.trim().toLowerCase();
   const filteredMaterials = q
     ? materials.filter((m) =>
-        `${m.pos || ''} ${m.name || ''} ${m.cleanName || ''} ${m.group || ''}`
+        `${m.pos || ''} ${m.shortText || ''} ${m.name || ''} ${m.cleanName || ''} ${m.group || ''}`
           .toLowerCase()
           .includes(q)
       )
@@ -164,7 +198,7 @@ export default function BookingScreen({
   const nq = matTitle.trim().toLowerCase();
   const matSuggestions = (showMatSuggestions && nq.length >= 1 && activeTab === 'material')
     ? materials.filter((m) =>
-        (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + m.group).toLowerCase().includes(nq)
+        (m.pos + ' ' + (m.shortText || '') + ' ' + m.name + ' ' + m.cleanName + ' ' + m.group).toLowerCase().includes(nq)
       ).slice(0, 8)
     : [];
 
@@ -172,12 +206,12 @@ export default function BookingScreen({
   const uq = unclearText.trim().toLowerCase();
   const unclearSuggestions = (showUnclearSuggestions && uq.length >= 1)
     ? materials.filter((m) =>
-        (m.pos + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
+        (m.pos + ' ' + (m.shortText || '') + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
       ).slice(0, 6)
     : [];
 
   const handleSelectMatSuggestion = (item) => {
-    setMatTitle(item.cleanName || item.name);
+    setMatTitle(getMaterialDisplayName(item));
     if (item.qu === 'm') {
       setMatUnit('m');
     } else {
@@ -187,7 +221,7 @@ export default function BookingScreen({
   };
 
   const handleSelectUnclearSuggestion = (item) => {
-    setUnclearText(item.cleanName || item.name);
+    setUnclearText(getMaterialDisplayName(item));
     setSelectedUnclearMat(item);
     if (item.qu === 'm') {
       setUnclearUnit('m');
@@ -319,7 +353,7 @@ export default function BookingScreen({
         roomName: room.name,
         materialId: pendingOverMat.mat.id,
         materialPos: pendingOverMat.mat.pos,
-        materialName: pendingOverMat.mat.cleanName || pendingOverMat.mat.name,
+        materialName: getMaterialDisplayName(pendingOverMat.mat, getRoomPlannedItem(pendingOverMat.mat.id)),
         plannedQty: pendingOverMat.planned,
         requestedTotal: installedBefore + finalDelta,
         exceededBy: extraNum,
@@ -373,10 +407,23 @@ export default function BookingScreen({
   const handleConfirmCompleteRoom = () => {
     const deltaSummary = [];
     activeMaterialIds.forEach((matId) => {
-      const mat = materials.find((m) => m.id === matId);
+      let mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+      const roomPlan = getRoomPlannedItem(matId);
+      if (!mat && roomPlan) {
+        mat = {
+          id: matId,
+          pos: roomPlan.posNr || matId,
+          name: roomPlan.shortText || roomPlan.name || 'Material',
+          cleanName: roomPlan.shortText || roomPlan.cleanName || roomPlan.name || 'Material',
+          shortText: roomPlan.shortText || '',
+          group: roomPlan.group || 'Allgemein',
+          qu: roomPlan.qu || 'Stk',
+          deliveredQty: Number(roomPlan.plannedQty || 0),
+          installedQty: Number(roomPlan.installedQty || 0),
+        };
+      }
       if (!mat) return;
 
-      const roomPlan = getRoomPlannedItem(matId);
       const hasRoomPlan = Boolean(roomPlan);
       const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
       const installedBefore = hasRoomPlan
@@ -388,8 +435,8 @@ export default function BookingScreen({
       deltaSummary.push({
         materialId: mat.id,
         pos: mat.pos,
-        name: mat.cleanName || mat.name,
-        qu: mat.qu,
+        name: getMaterialDisplayName(mat, roomPlan),
+        qu: mat.qu || roomPlan?.qu || 'Stk',
         plannedQty: planned,
         installedQty: totalInstalled,
         diff: planned !== null ? Number((planned - totalInstalled).toFixed(2)) : 0,
@@ -592,11 +639,30 @@ export default function BookingScreen({
             </View>
           )}
           {displayMaterialIds.map((matId) => {
-            const mat = materials.find((m) => m.id === matId);
+            let mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+            const roomPlan = getRoomPlannedItem(matId);
+            if (!mat && roomPlan) {
+              mat = {
+                id: matId,
+                pos: roomPlan.posNr || matId,
+                name: roomPlan.shortText || roomPlan.name || 'Material',
+                cleanName: roomPlan.shortText || roomPlan.cleanName || roomPlan.name || 'Material',
+                shortText: roomPlan.shortText || '',
+                group: roomPlan.group || 'Allgemein',
+                qu: roomPlan.qu || 'Stk',
+                deliveredQty: Number(roomPlan.plannedQty || 0),
+                installedQty: Number(roomPlan.installedQty || 0),
+              };
+            }
             if (!mat) return null;
 
+            const displayName = getMaterialDisplayName(mat, roomPlan);
+            const displayGroup = (mat?.group && mat.group !== 'Allgemein')
+              ? mat.group
+              : (roomPlan?.group || mat?.group || 'Allgemein');
+            const displayQu = mat?.qu || roomPlan?.qu || 'Stk';
+
             const delta = Number(sessionQuantities[matId]) || 0;
-            const roomPlan = getRoomPlannedItem(matId);
             const hasRoomPlan = Boolean(roomPlan);
             const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
             const roomInstalledBefore = hasRoomPlan
@@ -660,17 +726,17 @@ export default function BookingScreen({
                       {isOver ? (
                         <View style={styles.overBadge}>
                           <Text style={styles.overBadgeText}>
-                            +{exceededBy.toFixed(1)} {mat.qu} {t('overConsumptionBadge', currentLang)}
+                            +{exceededBy.toFixed(1)} {displayQu} {t('overConsumptionBadge', currentLang)}
                           </Text>
                         </View>
                       ) : null}
                     </View>
 
                     <Text style={styles.matName}>
-                      {mat.cleanName}
+                      {displayName}
                       {gloss ? <Text style={styles.matGloss}> ({gloss})</Text> : null}
                     </Text>
-                    <Text style={styles.matGroup}>{mat.group}</Text>
+                    <Text style={styles.matGroup}>{displayGroup}</Text>
                   </View>
                 </View>
 
@@ -680,7 +746,7 @@ export default function BookingScreen({
                   <View style={styles.metricCell}>
                     <Text style={styles.metricLabel}>{t('matrixDelivered', currentLang)}</Text>
                     <Text style={styles.metricValue}>
-                      {projectDelivered} <Text style={styles.metricUnit}>{mat.qu}</Text>
+                      {projectDelivered} <Text style={styles.metricUnit}>{displayQu}</Text>
                     </Text>
                     <Text style={styles.metricSub}>{t('matrixTotal', currentLang)}</Text>
                   </View>
@@ -692,7 +758,7 @@ export default function BookingScreen({
                     <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
                     <Text style={styles.metricValue}>
                       {hasRoomPlan ? `${roomPlanned} ` : '–'}
-                      {hasRoomPlan ? <Text style={styles.metricUnit}>{mat.qu}</Text> : ''}
+                      {hasRoomPlan ? <Text style={styles.metricUnit}>{displayQu}</Text> : ''}
                     </Text>
                     <Text style={styles.metricSub}>
                       {hasRoomPlan ? t('matrixRoom', currentLang) : t('matrixOnlyGaeb', currentLang)}
@@ -705,7 +771,7 @@ export default function BookingScreen({
                   <View style={styles.metricCell}>
                     <Text style={styles.metricLabel}>{t('matrixInstalled', currentLang)}</Text>
                     <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
-                      {currentRoomVerb} <Text style={styles.metricUnit}>{mat.qu}</Text>
+                      {currentRoomVerb} <Text style={styles.metricUnit}>{displayQu}</Text>
                     </Text>
                     <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
                   </View>
@@ -726,7 +792,7 @@ export default function BookingScreen({
                       ]}
                     >
                       {isOver ? `-${exceededBy.toFixed(1)}` : roomRemaining.toFixed(1)}{' '}
-                      <Text style={styles.metricUnit}>{mat.qu}</Text>
+                      <Text style={styles.metricUnit}>{displayQu}</Text>
                     </Text>
                     <Text style={styles.metricSub}>
                       {isOver ? t('matrixOver', currentLang) : t('matrixOpen', currentLang)}
@@ -929,7 +995,7 @@ export default function BookingScreen({
                               </View>
                               <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}</Text>
                             </View>
-                            <Text style={styles.sugTitle}>{item.cleanName}</Text>
+                            <Text style={styles.sugTitle}>{getMaterialDisplayName(item)}</Text>
                             <Text style={styles.sugGroup}>{item.group}</Text>
                           </TouchableOpacity>
                         ))}
@@ -1182,13 +1248,8 @@ export default function BookingScreen({
                       </View>
                     </View>
                     <Text style={styles.overMatTitle}>
-                      {pendingOverMat?.mat?.cleanName || pendingOverMat?.mat?.name}
+                      {getMaterialDisplayName(pendingOverMat?.mat, getRoomPlannedItem(pendingOverMat?.mat?.id))}
                     </Text>
-                    {pendingOverMat?.mat?.name !== pendingOverMat?.mat?.cleanName ? (
-                      <Text style={styles.overMatSubtitle} numberOfLines={2}>
-                        {pendingOverMat?.mat?.name}
-                      </Text>
-                    ) : null}
                   </View>
                 </View>
 
@@ -1461,7 +1522,7 @@ export default function BookingScreen({
                       >
                         <View style={{ flex: 1 }}>
                           <Text style={styles.unclearSugName} numberOfLines={1}>
-                            {item.cleanName || item.name}
+                            {getMaterialDisplayName(item)}
                           </Text>
                           <Text style={styles.unclearSugMeta}>
                             Pos {item.pos} · {item.group}
@@ -1579,10 +1640,25 @@ export default function BookingScreen({
             {/* Delta Summary List */}
             <ScrollView style={styles.deltaScrollList}>
               {activeMaterialIds.map((matId) => {
-                const mat = materials.find((m) => m.id === matId);
+                let mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+                const roomPlan = getRoomPlannedItem(matId);
+                if (!mat && roomPlan) {
+                  mat = {
+                    id: matId,
+                    pos: roomPlan.posNr || matId,
+                    name: roomPlan.shortText || roomPlan.name || 'Material',
+                    cleanName: roomPlan.shortText || roomPlan.cleanName || roomPlan.name || 'Material',
+                    shortText: roomPlan.shortText || '',
+                    group: roomPlan.group || 'Allgemein',
+                    qu: roomPlan.qu || 'Stk',
+                    deliveredQty: Number(roomPlan.plannedQty || 0),
+                    installedQty: Number(roomPlan.installedQty || 0),
+                  };
+                }
                 if (!mat) return null;
 
-                const roomPlan = getRoomPlannedItem(matId);
+                const displayName = getMaterialDisplayName(mat, roomPlan);
+                const displayQu = mat?.qu || roomPlan?.qu || 'Stk';
                 const hasRoomPlan = Boolean(roomPlan);
                 const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
                 const installedBefore = hasRoomPlan
@@ -1599,12 +1675,12 @@ export default function BookingScreen({
                   <View key={mat.id} style={styles.deltaRow}>
                     <View style={{ flex: 1, paddingRight: 8 }}>
                       <Text style={styles.deltaMatName} numberOfLines={1}>
-                        Pos {mat.pos} · {mat.cleanName}
+                        Pos {mat.pos} · {displayName}
                       </Text>
                       <Text style={styles.deltaMatSub}>
                         {hasRoomPlan
-                          ? `${t('matrixPlanned', currentLang)}: ${planned} ${mat.qu}  |  ${t('matrixInstalled', currentLang)}: ${totalVerb} ${mat.qu}`
-                          : `${t('matrixInstalled', currentLang)}: ${totalVerb} ${mat.qu} (${t('matrixOnlyGaeb', currentLang)})`}
+                          ? `${t('matrixPlanned', currentLang)}: ${planned} ${displayQu}  |  ${t('matrixInstalled', currentLang)}: ${totalVerb} ${displayQu}`
+                          : `${t('matrixInstalled', currentLang)}: ${totalVerb} ${displayQu} (${t('matrixOnlyGaeb', currentLang)})`}
                       </Text>
                     </View>
 
@@ -1612,13 +1688,13 @@ export default function BookingScreen({
                       isUnder ? (
                         <View style={styles.deltaBadgeUnder}>
                           <Text style={styles.deltaBadgeUnderText}>
-                            +{diff.toFixed(1)} {mat.qu} {t('completeUnder', currentLang)}
+                            +{diff.toFixed(1)} {displayQu} {t('completeUnder', currentLang)}
                           </Text>
                         </View>
                       ) : isOver ? (
                         <View style={styles.deltaBadgeOver}>
                           <Text style={styles.deltaBadgeOverText}>
-                            -{Math.abs(diff).toFixed(1)} {mat.qu} {t('completeOver', currentLang)}
+                            -{Math.abs(diff).toFixed(1)} {displayQu} {t('completeOver', currentLang)}
                           </Text>
                         </View>
                       ) : (
@@ -1628,7 +1704,7 @@ export default function BookingScreen({
                       )
                     ) : (
                       <View style={styles.deltaBadgeExact}>
-                        <Text style={styles.deltaBadgeExactText}>{totalVerb} {mat.qu}</Text>
+                        <Text style={styles.deltaBadgeExactText}>{totalVerb} {displayQu}</Text>
                       </View>
                     )}
                   </View>
