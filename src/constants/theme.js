@@ -1,4 +1,5 @@
 export const COLORS = {
+  primary: '#2563EB',
   ink: '#1C2A3B',
   ink2: '#26384D',
   inkSoft: '#41505F',
