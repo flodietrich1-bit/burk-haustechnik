@@ -9,9 +9,50 @@ import {
   Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import { persistPhotoLocally } from '../services/storageService';
+
+const MAX_BYTES = 1000 * 1024; // 1000 KB
+
+/**
+ * Compress a photo URI until it is under MAX_BYTES.
+ * Tries quality reduction first, then also halves dimensions if needed.
+ */
+async function compressToUnder1MB(uri) {
+  let quality = 0.7;
+  let resize = null;
+  let result = { uri };
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const actions = resize ? [{ resize }] : [];
+    result = await ImageManipulator.manipulateAsync(uri, actions, {
+      compress: quality,
+      format: ImageManipulator.SaveFormat.JPEG,
+    });
+
+    try {
+      const info = await FileSystem.getInfoAsync(result.uri, { size: true });
+      if (!info.size || info.size <= MAX_BYTES) break;
+    } catch {
+      break; // Can't check size – accept as-is
+    }
+
+    // Reduce quality in steps; after 3 quality steps, also shrink dimensions
+    if (attempt < 3) {
+      quality = Math.max(0.2, quality - 0.15);
+    } else {
+      quality = 0.3;
+      resize = resize
+        ? { width: Math.round((resize.width || 1280) * 0.7) }
+        : { width: 900 };
+    }
+  }
+
+  return result.uri;
+}
 
 export default function PhotoCaptureScreen({
   room,
@@ -43,7 +84,8 @@ export default function PhotoCaptureScreen({
       });
 
       if (!result.canceled && result.assets?.[0]?.uri) {
-        const permanentUri = await persistPhotoLocally(result.assets[0].uri);
+        const compressedUri = await compressToUnder1MB(result.assets[0].uri);
+        const permanentUri = await persistPhotoLocally(compressedUri);
         onAddPhoto(permanentUri);
       }
     } catch (e) {
@@ -63,7 +105,8 @@ export default function PhotoCaptureScreen({
       if (!result.canceled && result.assets) {
         for (const asset of result.assets) {
           if (asset.uri) {
-            const permanentUri = await persistPhotoLocally(asset.uri);
+            const compressedUri = await compressToUnder1MB(asset.uri);
+            const permanentUri = await persistPhotoLocally(compressedUri);
             onAddPhoto(permanentUri);
           }
         }

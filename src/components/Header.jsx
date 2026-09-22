@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { LANGUAGES, t } from '../locales/i18n';
 
@@ -16,6 +16,36 @@ export default function Header({
   monteurName = 'Monteur',
   onSwitchProject = null,
 }) {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const loopRef = useRef(null);
+
+  useEffect(() => {
+    if (isSyncing) {
+      spinAnim.setValue(0);
+      loopRef.current = Animated.loop(
+        Animated.timing(spinAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        })
+      );
+      loopRef.current.start();
+    } else {
+      if (loopRef.current) {
+        loopRef.current.stop();
+        loopRef.current = null;
+      }
+      spinAnim.setValue(0);
+    }
+    return () => {
+      if (loopRef.current) loopRef.current.stop();
+    };
+  }, [isSyncing]);
+
+  const spinInterpolate = spinAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
   return (
     <View style={styles.wrapper}>
       {/* Top Brand & Project Bar */}
@@ -50,15 +80,23 @@ export default function Header({
             style={[
               styles.syncButton,
               pendingCount > 0 ? styles.syncButtonActive : styles.syncButtonIdle,
+              isSyncing && styles.syncButtonSyncing,
             ]}
             onPress={onSyncPress}
             disabled={isSyncing}
             activeOpacity={0.7}
           >
-            <Text style={styles.syncIcon}>{isSyncing ? '⟳' : '⇅'}</Text>
+            <Animated.Text
+              style={[
+                styles.syncIcon,
+                isSyncing && { transform: [{ rotate: spinInterpolate }] },
+              ]}
+            >
+              {isSyncing ? '⟳' : '⇅'}
+            </Animated.Text>
             <Text style={styles.syncText}>
               {isSyncing
-                ? '...'
+                ? 'Sync...'
                 : pendingCount > 0
                 ? `${t('syncBtn', currentLang)} (${pendingCount})`
                 : t('syncBtn', currentLang)}
@@ -189,6 +227,9 @@ const styles = StyleSheet.create({
   },
   syncButtonIdle: {
     backgroundColor: '#37495E',
+  },
+  syncButtonSyncing: {
+    backgroundColor: '#1D6FA4',
   },
   syncIcon: {
     color: '#FFFFFF',
