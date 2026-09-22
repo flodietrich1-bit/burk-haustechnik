@@ -207,8 +207,10 @@ export async function getPendingBookings() {
 
 export async function enqueueBooking(booking) {
   try {
-    const all = await getAllBookings();
+    const rawAll = await getAllBookings();
+    const all = Array.isArray(rawAll) ? rawAll.filter(Boolean) : [];
     const newBooking = {
+      ...booking,
       id: booking.id || `book_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       projectId: booking.projectId || DEFAULT_PROJECT_ID,
       roomId: booking.roomId,
@@ -228,11 +230,13 @@ export async function enqueueBooking(booking) {
       note: booking.note || '',
     };
 
-    const updated = [newBooking, ...all.filter((b) => b.id !== newBooking.id)];
+    const updated = [newBooking, ...all.filter((b) => b && b.id !== newBooking.id)];
     await AsyncStorage.setItem(KEYS.BOOKINGS, JSON.stringify(updated));
 
     // Also optimistically update locally installedQty of the material
-    await updateLocalMaterialInstalledQty(newBooking.itemId, newBooking.quantity);
+    try {
+      await updateLocalMaterialInstalledQty(newBooking.itemId, newBooking.quantity);
+    } catch {}
 
     return newBooking;
   } catch (e) {

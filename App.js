@@ -295,9 +295,10 @@ export default function App() {
 
   const handleLeaveRoomDraft = async () => {
     if (selectedRoom) {
-      const pId = project.id || 'hallenbad-weingarten';
-      const updatedRooms = rooms.map((r) => {
-        if (r.id === selectedRoom.id) {
+      const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+      const currentRooms = Array.isArray(rooms) ? rooms : [];
+      const updatedRooms = currentRooms.map((r) => {
+        if (r && r.id === selectedRoom.id) {
           return {
             ...r,
             draftQuantities: { ...sessionQuantities },
@@ -315,7 +316,7 @@ export default function App() {
   };
 
   const handleSavePhotos = async (newPhotos) => {
-    const pId = project.id || 'hallenbad-weingarten';
+    const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
     const photosToSave = Array.isArray(newPhotos) ? newPhotos : sessionPhotos;
     setSessionPhotos(photosToSave);
     if (selectedRoom) {
@@ -326,7 +327,8 @@ export default function App() {
         draftUnclear: [...unclearItems],
       };
       setSelectedRoom(updatedRoom);
-      const updatedRooms = rooms.map((r) => (r.id === selectedRoom.id ? updatedRoom : r));
+      const currentRooms = Array.isArray(rooms) ? rooms : [];
+      const updatedRooms = currentRooms.map((r) => (r && r.id === selectedRoom.id ? updatedRoom : r));
       setRooms(updatedRooms);
       await saveRooms(updatedRooms, pId);
     }
@@ -369,17 +371,21 @@ export default function App() {
 
   const handleCompleteRoom = async (roomId, deltaSummary, quantities = sessionQuantities, photos = sessionPhotos) => {
     try {
-      const pId = project.id || 'hallenbad-weingarten';
+      const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+      const calWeek = project?.calendarWeek || 27;
       const summary = [];
-      const effectivePhotos = photos && photos.length > 0 ? photos : (selectedRoom?.photos || []);
+      const effectivePhotos = Array.isArray(photos) && photos.length > 0 ? photos : (Array.isArray(selectedRoom?.photos) ? selectedRoom.photos : []);
+      const currentQuantities = quantities && typeof quantities === 'object' ? quantities : {};
+      const currentMats = Array.isArray(materials) ? materials : [];
+      const currentRooms = Array.isArray(rooms) ? rooms : [];
 
       // 1. Enqueue each material delta into outbox queue
-      for (const [matId, delta] of Object.entries(quantities)) {
+      for (const [matId, delta] of Object.entries(currentQuantities)) {
         if (Number(delta) > 0) {
-          const mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
-          const roomPlan = selectedRoom?.plannedItems?.[matId] || (Array.isArray(selectedRoom?.materials) ? selectedRoom.materials.find(m => (m.positionId || m.id) === matId || m.posNr === matId) : null);
+          const mat = currentMats.find((m) => m && (m.id === matId || m.pos === matId || m.posNr === matId));
+          const roomPlan = selectedRoom?.plannedItems?.[matId] || (Array.isArray(selectedRoom?.materials) ? selectedRoom.materials.find(m => m && ((m.positionId || m.id) === matId || m.posNr === matId)) : null);
           const matName = mat?.cleanName || mat?.shortText || roomPlan?.shortText || roomPlan?.name || 'Material';
-          const posNr = mat?.pos || roomPlan?.posNr || '–';
+          const posNr = mat?.pos || mat?.posNr || roomPlan?.posNr || '–';
           const qu = mat?.qu || roomPlan?.qu || 'Stk';
 
           await enqueueBooking({
@@ -389,16 +395,16 @@ export default function App() {
             itemId: matId,
             itemOz: posNr,
             itemText: matName,
-            quantity: Number(delta),
+            quantity: Number(delta) || 0,
             qu,
             photoUris: effectivePhotos,
             createdBy: monteur?.name || 'Monteur',
-            calendarWeek: project.calendarWeek || 27,
+            calendarWeek: calWeek,
           });
 
           summary.push({
             name: matName,
-            quantity: Number(delta),
+            quantity: Number(delta) || 0,
             qu,
           });
         }
@@ -417,7 +423,7 @@ export default function App() {
           qu: 'Fotos',
           photoUris: effectivePhotos,
           createdBy: monteur?.name || 'Monteur',
-          calendarWeek: project.calendarWeek || 27,
+          calendarWeek: calWeek,
         });
 
         summary.push({
@@ -428,28 +434,30 @@ export default function App() {
       }
 
       // 3. Save unclear items if any
-      for (const u of unclearItems) {
-        await enqueueBooking({
-          projectId: pId,
-          roomId,
-          roomName: selectedRoom?.name || 'Raum',
-          itemId: u.materialId || `unclear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          itemOz: u.itemOz || u.pos || 'UNKLAR',
-          itemText: u.txt,
-          quantity: u.qty,
-          qu: u.qu || (String(u.qty).includes('m') ? 'm' : 'Stk'),
-          photoUris: effectivePhotos,
-          createdBy: monteur?.name || 'Monteur',
-          calendarWeek: project.calendarWeek || 27,
-          isUnclear: true,
-          status: 'pending_assignment',
-        });
+      for (const u of (Array.isArray(unclearItems) ? unclearItems : [])) {
+        if (u) {
+          await enqueueBooking({
+            projectId: pId,
+            roomId,
+            roomName: selectedRoom?.name || 'Raum',
+            itemId: u.materialId || `unclear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            itemOz: u.itemOz || u.pos || 'UNKLAR',
+            itemText: u.txt || 'Unklares Material',
+            quantity: u.qty,
+            qu: u.qu || (String(u.qty).includes('m') ? 'm' : 'Stk'),
+            photoUris: effectivePhotos,
+            createdBy: monteur?.name || 'Monteur',
+            calendarWeek: calWeek,
+            isUnclear: true,
+            status: 'pending_assignment',
+          });
 
-        summary.push({
-          name: `${u.txt} (Zuordnung offen)`,
-          quantity: u.qty,
-          qu: '',
-        });
+          summary.push({
+            name: `${u.txt || 'Unklares Material'} (Zuordnung offen)`,
+            quantity: u.qty,
+            qu: '',
+          });
+        }
       }
 
       // 4. Enqueue room completion event
@@ -463,20 +471,21 @@ export default function App() {
         itemText: `Raum ${selectedRoom?.name || roomId} zu 100% fertiggestellt`,
         quantity: 1,
         qu: 'Raum',
-        deltaSummary,
+        deltaSummary: Array.isArray(deltaSummary) ? deltaSummary : [],
         photoUris: effectivePhotos,
         createdBy: monteur?.name || 'Monteur',
-        calendarWeek: project.calendarWeek || 27,
+        calendarWeek: calWeek,
         isCompleted: true,
       });
 
       // 5. Update local materials installedQty
-      const updatedMaterials = materials.map((m) => {
-        const delta = Number(quantities[m.id]) || 0;
+      const updatedMaterials = currentMats.map((m) => {
+        if (!m) return m;
+        const delta = Number(currentQuantities[m.id]) || 0;
         if (delta > 0) {
           return {
             ...m,
-            installedQty: (m.installedQty || 0) + delta,
+            installedQty: (Number(m.installedQty) || 0) + delta,
           };
         }
         return m;
@@ -485,8 +494,8 @@ export default function App() {
       await saveMaterials(updatedMaterials, pId);
 
       // 6. Update local room (marked 100% completed, photos attached, draft cleared)
-      const updatedRooms = rooms.map((r) => {
-        if (r.id === roomId) {
+      const updatedRooms = currentRooms.map((r) => {
+        if (r && r.id === roomId) {
           return {
             ...r,
             pct: 100,
@@ -495,7 +504,7 @@ export default function App() {
             photos: effectivePhotos,
             completedAt: new Date().toISOString(),
             completedBy: monteur?.name || 'Monteur',
-            completionDelta: deltaSummary,
+            completionDelta: Array.isArray(deltaSummary) ? deltaSummary : [],
             draftQuantities: {},
             draftUnclear: [],
           };
@@ -514,7 +523,7 @@ export default function App() {
           photos: effectivePhotos,
           completedAt: new Date().toISOString(),
           completedBy: monteur?.name || 'Monteur',
-          completionDelta: deltaSummary,
+          completionDelta: Array.isArray(deltaSummary) ? deltaSummary : [],
           draftQuantities: {},
           draftUnclear: [],
         });
@@ -532,7 +541,7 @@ export default function App() {
       setCurrentScreen('done');
     } catch (e) {
       console.warn('Error completing room:', e);
-      Alert.alert('Fehler', 'Raumabschluss konnte nicht gespeichert werden.');
+      Alert.alert('Fehler', `Raumabschluss konnte nicht gespeichert werden: ${e?.message || e}`);
     }
   };
 
