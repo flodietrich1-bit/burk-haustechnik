@@ -42,6 +42,27 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
     return u.role === roleFilter;
   });
 
+  // Track which user's project assignment is being edited
+  const [editingProjectUserId, setEditingProjectUserId] = useState<string | null>(null);
+  const [editingProjectIds, setEditingProjectIds] = useState<string[]>([]);
+
+  const handleStartEditProjects = (user: User) => {
+    setEditingProjectUserId(user.id);
+    setEditingProjectIds(user.assignedProjectIds || []);
+  };
+
+  const handleToggleProject = (pId: string) => {
+    setEditingProjectIds(prev =>
+      prev.includes(pId) ? prev.filter(id => id !== pId) : [...prev, pId]
+    );
+  };
+
+  const handleSaveProjects = async (user: User) => {
+    const updated: User = { ...user, assignedProjectIds: editingProjectIds };
+    await saveUser(updated);
+    setEditingProjectUserId(null);
+  };
+
   const handleSaveNewUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name) return;
@@ -280,19 +301,68 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
 
                     {/* Assigned Projects */}
                     <td className="py-3.5 px-4">
-                      {user.assignedProjectIds && user.assignedProjectIds.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {user.assignedProjectIds.map(pId => (
-                            <span 
-                              key={pId}
-                              className="bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded text-[11px] border border-slate-200"
+                      {user.role === 'monteur' ? (
+                        editingProjectUserId === user.id ? (
+                          <div className="space-y-1.5">
+                            {projects.length === 0 ? (
+                              <span className="text-slate-400 italic text-[11px]">Keine Projekte vorhanden</span>
+                            ) : (
+                              projects.map(p => (
+                                <label key={p.id} className="flex items-center space-x-2 cursor-pointer text-[11px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={editingProjectIds.includes(p.id)}
+                                    onChange={() => handleToggleProject(p.id)}
+                                    className="accent-[#3B82C4]"
+                                  />
+                                  <span className="text-slate-700 font-medium truncate max-w-[140px]">{p.name || p.id}</span>
+                                </label>
+                              ))
+                            )}
+                            <div className="flex items-center space-x-1.5 mt-1.5">
+                              <button
+                                onClick={() => handleSaveProjects(user)}
+                                className="p-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                                title="Speichern"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingProjectUserId(null)}
+                                className="p-1 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"
+                                title="Abbrechen"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start space-x-2">
+                            <div className="flex flex-wrap gap-1 flex-1">
+                              {user.assignedProjectIds && user.assignedProjectIds.length > 0 ? (
+                                user.assignedProjectIds.map(pId => (
+                                  <span
+                                    key={pId}
+                                    className="bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded text-[11px] border border-slate-200"
+                                  >
+                                    {projectMap.get(pId) || pId}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-slate-400 text-[11px] italic">Alle Projekte (Standard)</span>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => handleStartEditProjects(user)}
+                              className="text-slate-400 hover:text-[#3B82C4] p-1 transition-colors shrink-0"
+                              title="Projekt-Zuweisung ändern"
                             >
-                              {projectMap.get(pId) || pId}
-                            </span>
-                          ))}
-                        </div>
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )
                       ) : (
-                        <span className="text-slate-400 text-[11px] italic">Alle Projekte (Standard)</span>
+                        <span className="text-slate-400 text-[11px] italic">-</span>
                       )}
                     </td>
 

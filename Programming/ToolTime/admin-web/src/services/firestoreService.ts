@@ -141,10 +141,45 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
   callback(getLocalProjects());
 
   const colRef = collection(db, 'projects');
-  const unsubFirestore = onSnapshot(colRef, (snap) => {
+  const unsubFirestore = onSnapshot(colRef, async (snap) => {
     if (!snap.empty) {
+      // Firestore has data → use it as source of truth
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Project);
       saveLocalProjects(list);
+    } else {
+      // Firestore is empty → migrate localStorage projects to Firestore (one-time)
+      const localProjects = getLocalProjects();
+      if (localProjects.length > 0) {
+        console.log(`Migrating ${localProjects.length} local project(s) to Firestore...`);
+        for (const project of localProjects) {
+          try {
+            const projectRef = doc(db, 'projects', project.id);
+            await setDoc(projectRef, project, { merge: true });
+
+            // Also migrate positions and rooms for each project
+            const posRaw = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id);
+            if (posRaw) {
+              const positions: Position[] = JSON.parse(posRaw);
+              for (const pos of positions) {
+                if (!pos.id) continue;
+                const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
+                await setDoc(pRef, pos, { merge: true });
+              }
+            }
+            const roomsRaw = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id);
+            if (roomsRaw) {
+              const rooms: Room[] = JSON.parse(roomsRaw);
+              for (const room of rooms) {
+                const rRef = doc(db, 'projects', project.id, 'rooms', room.id);
+                await setDoc(rRef, room, { merge: true });
+              }
+            }
+            console.log(`✅ Migrated project: ${project.id}`);
+          } catch (err: any) {
+            console.warn(`Failed to migrate project ${project.id}:`, err.message);
+          }
+        }
+      }
     }
   }, () => {
     // Ignore in fallback mode
