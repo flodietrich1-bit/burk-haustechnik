@@ -263,28 +263,86 @@ export default function App() {
     }
   };
 
-  // 7. Room Navigation
+  // 7. Room Navigation & Draft Restoration
   const handleSelectRoom = (room) => {
     setSelectedRoom(room);
-    setSessionQuantities({});
-    setSessionPhotos([]);
-    setUnclearItems([]);
+    setSessionQuantities(room.draftQuantities ? { ...room.draftQuantities } : {});
+    setSessionPhotos(Array.isArray(room.photos) ? [...room.photos] : []);
+    setUnclearItems(Array.isArray(room.draftUnclear) ? [...room.draftUnclear] : []);
     setCurrentScreen('book');
   };
 
   const handleQuantityChange = (matId, qty) => {
-    setSessionQuantities((prev) => ({
-      ...prev,
-      [matId]: qty,
-    }));
+    setSessionQuantities((prev) => {
+      const updated = {
+        ...prev,
+        [matId]: qty,
+      };
+      if (selectedRoom) {
+        setSelectedRoom((r) => ({ ...r, draftQuantities: updated }));
+      }
+      return updated;
+    });
+  };
+
+  const handleLeaveRoomDraft = async () => {
+    if (selectedRoom) {
+      const pId = project.id || 'hallenbad-weingarten';
+      const updatedRooms = rooms.map((r) => {
+        if (r.id === selectedRoom.id) {
+          return {
+            ...r,
+            draftQuantities: { ...sessionQuantities },
+            photos: [...sessionPhotos],
+            draftUnclear: [...unclearItems],
+          };
+        }
+        return r;
+      });
+      setRooms(updatedRooms);
+      await saveRooms(updatedRooms, pId);
+    }
+    setSelectedRoom(null);
+    setCurrentScreen('rooms');
+  };
+
+  const handleSavePhotos = async (newPhotos) => {
+    const pId = project.id || 'hallenbad-weingarten';
+    const photosToSave = Array.isArray(newPhotos) ? newPhotos : sessionPhotos;
+    setSessionPhotos(photosToSave);
+    if (selectedRoom) {
+      const updatedRoom = {
+        ...selectedRoom,
+        photos: [...photosToSave],
+        draftQuantities: { ...sessionQuantities },
+        draftUnclear: [...unclearItems],
+      };
+      setSelectedRoom(updatedRoom);
+      const updatedRooms = rooms.map((r) => (r.id === selectedRoom.id ? updatedRoom : r));
+      setRooms(updatedRooms);
+      await saveRooms(updatedRooms, pId);
+    }
+    setCurrentScreen('book');
   };
 
   const handleAddPhoto = (uri) => {
-    setSessionPhotos((prev) => [...prev, uri]);
+    setSessionPhotos((prev) => {
+      const updated = [...prev, uri];
+      if (selectedRoom) {
+        setSelectedRoom((r) => ({ ...r, photos: updated }));
+      }
+      return updated;
+    });
   };
 
   const handleRemovePhoto = (index) => {
-    setSessionPhotos((prev) => prev.filter((_, i) => i !== index));
+    setSessionPhotos((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      if (selectedRoom) {
+        setSelectedRoom((r) => ({ ...r, photos: updated }));
+      }
+      return updated;
+    });
   };
 
   const handleAddUnclearItem = (item) => {
@@ -301,41 +359,94 @@ export default function App() {
     }
   };
 
-  const handleCompleteRoom = async (roomId, deltaSummary) => {
+  const handleCompleteRoom = async (roomId, deltaSummary, quantities = sessionQuantities, photos = sessionPhotos) => {
     try {
-      const updatedRooms = rooms.map((r) => {
-        if (r.id === roomId) {
-          return {
-            ...r,
-            pct: 100,
-            isCompleted: true,
-            status: 'completed',
-            completedAt: new Date().toISOString(),
-            completedBy: monteur?.name || 'Monteur',
-            completionDelta: deltaSummary,
-          };
+      const pId = project.id || 'hallenbad-weingarten';
+      const summary = [];
+      const effectivePhotos = photos && photos.length > 0 ? photos : (selectedRoom?.photos || []);
+
+      // 1. Enqueue each material delta into outbox queue
+      for (const [matId, delta] of Object.entries(quantities)) {
+        if (Number(delta) > 0) {
+          const mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+          const roomPlan = selectedRoom?.plannedItems?.[matId] || (Array.isArray(selectedRoom?.materials) ? selectedRoom.materials.find(m => (m.positionId || m.id) === matId || m.posNr === matId) : null);
+          const matName = mat?.cleanName || mat?.shortText || roomPlan?.shortText || roomPlan?.name || 'Material';
+          const posNr = mat?.pos || roomPlan?.posNr || '–';
+          const qu = mat?.qu || roomPlan?.qu || 'Stk';
+
+          await enqueueBooking({
+            projectId: pId,
+            roomId,
+            roomName: selectedRoom?.name || 'Raum',
+            itemId: matId,
+            itemOz: posNr,
+            itemText: matName,
+            quantity: Number(delta),
+            qu,
+            photoUris: effectivePhotos,
+            createdBy: monteur?.name || 'Monteur',
+            calendarWeek: project.calendarWeek || 27,
+          });
+
+          summary.push({
+            name: matName,
+            quantity: Number(delta),
+            qu,
+          });
         }
-        return r;
-      });
+      }
 
-      setRooms(updatedRooms);
-      await saveRooms(updatedRooms);
+      // 2. If only photos taken without material delta (or proof inspection)
+      if (summary.length === 0 && effectivePhotos.length > 0) {
+        await enqueueBooking({
+          projectId: pId,
+          roomId,
+          roomName: selectedRoom?.name || 'Raum',
+          itemId: 'photo_doc',
+          itemOz: 'DOKU',
+          itemText: 'Foto-Belegdokumentation',
+          quantity: effectivePhotos.length,
+          qu: 'Fotos',
+          photoUris: effectivePhotos,
+          createdBy: monteur?.name || 'Monteur',
+          calendarWeek: project.calendarWeek || 27,
+        });
 
-      if (selectedRoom && selectedRoom.id === roomId) {
-        setSelectedRoom({
-          ...selectedRoom,
-          pct: 100,
-          isCompleted: true,
-          status: 'completed',
-          completedAt: new Date().toISOString(),
-          completedBy: monteur?.name || 'Monteur',
-          completionDelta: deltaSummary,
+        summary.push({
+          name: 'Foto-Belegdokumentation',
+          quantity: effectivePhotos.length,
+          qu: 'Fotos',
         });
       }
 
-      // Enqueue room completion event to offline outbox
+      // 3. Save unclear items if any
+      for (const u of unclearItems) {
+        await enqueueBooking({
+          projectId: pId,
+          roomId,
+          roomName: selectedRoom?.name || 'Raum',
+          itemId: u.materialId || `unclear_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          itemOz: u.itemOz || u.pos || 'UNKLAR',
+          itemText: u.txt,
+          quantity: u.qty,
+          qu: u.qu || (String(u.qty).includes('m') ? 'm' : 'Stk'),
+          photoUris: effectivePhotos,
+          createdBy: monteur?.name || 'Monteur',
+          calendarWeek: project.calendarWeek || 27,
+          isUnclear: true,
+          status: 'pending_assignment',
+        });
+
+        summary.push({
+          name: `${u.txt} (Zuordnung offen)`,
+          quantity: u.qty,
+          qu: '',
+        });
+      }
+
+      // 4. Enqueue room completion event
       await enqueueBooking({
-        projectId: project.id || 'hallenbad-weingarten',
+        projectId: pId,
         roomId,
         roomName: selectedRoom?.name || 'Raum',
         type: 'room_completion',
@@ -345,20 +456,75 @@ export default function App() {
         quantity: 1,
         qu: 'Raum',
         deltaSummary,
+        photoUris: effectivePhotos,
         createdBy: monteur?.name || 'Monteur',
         calendarWeek: project.calendarWeek || 27,
         isCompleted: true,
       });
 
-      const delta = await getLocalUnsyncedDelta();
+      // 5. Update local materials installedQty
+      const updatedMaterials = materials.map((m) => {
+        const delta = Number(quantities[m.id]) || 0;
+        if (delta > 0) {
+          return {
+            ...m,
+            installedQty: (m.installedQty || 0) + delta,
+          };
+        }
+        return m;
+      });
+      setMaterials(updatedMaterials);
+      await saveMaterials(updatedMaterials, pId);
+
+      // 6. Update local room (marked 100% completed, photos attached, draft cleared)
+      const updatedRooms = rooms.map((r) => {
+        if (r.id === roomId) {
+          return {
+            ...r,
+            pct: 100,
+            isCompleted: true,
+            status: 'completed',
+            photos: effectivePhotos,
+            completedAt: new Date().toISOString(),
+            completedBy: monteur?.name || 'Monteur',
+            completionDelta: deltaSummary,
+            draftQuantities: {},
+            draftUnclear: [],
+          };
+        }
+        return r;
+      });
+      setRooms(updatedRooms);
+      await saveRooms(updatedRooms, pId);
+
+      if (selectedRoom && selectedRoom.id === roomId) {
+        setSelectedRoom({
+          ...selectedRoom,
+          pct: 100,
+          isCompleted: true,
+          status: 'completed',
+          photos: effectivePhotos,
+          completedAt: new Date().toISOString(),
+          completedBy: monteur?.name || 'Monteur',
+          completionDelta: deltaSummary,
+          draftQuantities: {},
+          draftUnclear: [],
+        });
+      }
+
+      // 7. Update pending delta count
+      const delta = await getLocalUnsyncedDelta(pId);
       setPendingCount(delta.totalPendingCount);
 
-      Alert.alert(
-        'Raum fertiggestellt',
-        `Der Raum ${selectedRoom?.name || ''} wurde erfolgreich auf 100 % gesetzt. Das Mengen-Delta wurde für den Bauleiter hinterlegt.`
-      );
+      // 8. Navigate to DoneScreen
+      setLastSummary(summary);
+      setSessionQuantities({});
+      setSessionPhotos([]);
+      setUnclearItems([]);
+      setCurrentScreen('done');
     } catch (e) {
       console.warn('Error completing room:', e);
+      Alert.alert('Fehler', 'Raumabschluss konnte nicht gespeichert werden.');
     }
   };
 
@@ -563,10 +729,11 @@ export default function App() {
             monteur={monteur}
             currentLang={currentLang}
             sessionQuantities={sessionQuantities}
+            sessionPhotos={sessionPhotos}
             onQuantityChange={handleQuantityChange}
-            photoCount={sessionPhotos.length}
+            photoCount={sessionPhotos.length || (selectedRoom.photos?.length || 0)}
             onGoToPhotos={() => setCurrentScreen('photos')}
-            onBack={() => setCurrentScreen('rooms')}
+            onBack={handleLeaveRoomDraft}
             unclearItems={unclearItems}
             onAddUnclearItem={handleAddUnclearItem}
             onAddNachtrag={handleAddNachtrag}
@@ -578,10 +745,10 @@ export default function App() {
         {currentScreen === 'photos' && selectedRoom && (
           <PhotoCaptureScreen
             room={selectedRoom}
-            photos={sessionPhotos}
+            photos={sessionPhotos.length > 0 ? sessionPhotos : (selectedRoom.photos || [])}
             onAddPhoto={handleAddPhoto}
             onRemovePhoto={handleRemovePhoto}
-            onFinishBooking={handleFinishBooking}
+            onSavePhotos={handleSavePhotos}
             onBackToBook={() => setCurrentScreen('book')}
             currentLang={currentLang}
           />

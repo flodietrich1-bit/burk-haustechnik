@@ -24,6 +24,7 @@ export default function BookingScreen({
   monteur,
   currentLang = 'de',
   sessionQuantities = {},
+  sessionPhotos = [],
   onQuantityChange,
   photoCount = 0,
   onGoToPhotos,
@@ -233,28 +234,61 @@ export default function BookingScreen({
 
   // Stepper with Over-Quantity / Mehrverbrauch check capped at delivered quantity
   const handleStep = (matId, stepDelta) => {
-    const mat = materials.find((m) => m.id === matId);
+    let mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+    const roomPlan = getRoomPlannedItem(matId);
+    if (!mat && roomPlan) {
+      mat = {
+        id: matId,
+        pos: roomPlan.posNr || matId,
+        name: roomPlan.shortText || roomPlan.name || 'Material',
+        cleanName: roomPlan.shortText || roomPlan.cleanName || roomPlan.name || 'Material',
+        shortText: roomPlan.shortText || '',
+        group: roomPlan.group || 'Allgemein',
+        qu: roomPlan.qu || 'Stk',
+        deliveredQty: Number(roomPlan.plannedQty || 0),
+        installedQty: Number(roomPlan.installedQty || 0),
+      };
+    }
     if (!mat) return;
 
     const currentDelta = Number(sessionQuantities[matId]) || 0;
-    const nextDelta = Math.max(0, currentDelta + stepDelta);
 
-    const roomPlan = getRoomPlannedItem(matId);
+    // Stepping down: always allowed down to 0
+    if (stepDelta < 0) {
+      const nextDelta = Math.max(0, currentDelta + stepDelta);
+      onQuantityChange(matId, nextDelta);
+      return;
+    }
+
+    // Stepping up: Check delivery stock
+    const delivered = Number(mat.deliveredQty !== undefined && mat.deliveredQty !== null ? mat.deliveredQty : 0);
     const hasRoomPlan = Boolean(roomPlan);
-    const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : Number(mat.deliveredQty || mat.qty || 0);
+    const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : delivered;
     const installedBefore = hasRoomPlan
       ? Number(roomPlan.installedQty || 0)
       : Number(mat.installedQty || 0);
+
+    const availableToInstall = delivered - (installedBefore + currentDelta);
+
+    // If delivered is 0 or nothing left in stock
+    if (delivered === 0 || availableToInstall <= 0) {
+      Alert.alert(
+        'Leider nichts mehr da',
+        'Leider nichts mehr da. Bitte nachbestellen.'
+      );
+      return;
+    }
+
+    const nextDelta = currentDelta + stepDelta;
     const nextTotalVerb = installedBefore + nextDelta;
-    const delivered = Number(mat.deliveredQty || mat.qty || 0);
 
     // If stepping UP and exceeding planned quantity
-    if (stepDelta > 0 && nextTotalVerb > planned) {
+    if (nextTotalVerb > planned) {
       // 1. Overall cap: Cannot exceed delivered quantity of the project
-      if (delivered > 0 && nextTotalVerb > delivered) {
+      if (nextTotalVerb > delivered) {
         Alert.alert(
-          t('maxDeliveryReached', currentLang),
-          t('maxDeliveryReachedMsg', currentLang, { delivered, qu: mat.qu })
+          'Leider nichts mehr da',
+          'Leider nichts mehr da. Bitte nachbestellen.'
         );
         return;
       }
@@ -287,15 +321,6 @@ export default function BookingScreen({
         setOverExtraQty(String(initialExtra % 1 === 0 ? initialExtra : initialExtra.toFixed(1)));
         setOverReason('');
         setShowOverModal(true);
-        return;
-      }
-
-      // 4. If already explained, still enforce delivery ceiling
-      if (delivered > 0 && nextTotalVerb > delivered) {
-        Alert.alert(
-          t('maxDeliveryReached', currentLang),
-          t('maxDeliveryReachedMsg', currentLang, { delivered, qu: mat.qu })
-        );
         return;
       }
     }
@@ -368,16 +393,40 @@ export default function BookingScreen({
   };
 
   // Check photos & status for "Monteur fertig" button
-  const effectivePhotoCount = photoCount + (room.photos?.length || 0);
+  const effectivePhotos = (sessionPhotos && sessionPhotos.length > 0)
+    ? sessionPhotos
+    : (Array.isArray(room.photos) ? room.photos : []);
+  const effectivePhotoCount = effectivePhotos.length;
   const isRoomCompleted = room.isCompleted || room.pct === 100;
+
+  // Calculate live room percentage based on installed before + current delta
+  const calculateCurrentRoomPct = () => {
+    if (room.isCompleted) return 100;
+    let totalPlanned = 0;
+    let totalInstalled = 0;
+    activeMaterialIds.forEach((matId) => {
+      const roomPlan = getRoomPlannedItem(matId);
+      const mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
+      const planned = roomPlan ? Number(roomPlan.plannedQty || 0) : Number(mat?.deliveredQty || 0);
+      const installedBefore = roomPlan ? Number(roomPlan.installedQty || 0) : Number(mat?.installedQty || 0);
+      const delta = Number(sessionQuantities[matId]) || 0;
+      totalPlanned += planned;
+      totalInstalled += (installedBefore + delta);
+    });
+
+    if (totalPlanned > 0) {
+      return Math.min(100, Math.round((totalInstalled / totalPlanned) * 100));
+    }
+    return room.pct !== undefined ? room.pct : 0;
+  };
 
   const handleMonteurFertigPress = () => {
     if (effectivePhotoCount === 0 && !isRoomCompleted) {
       Alert.alert(
-        t('photosRequiredTitle', currentLang),
-        t('photosRequiredMsg', currentLang),
+        t('photosRequiredTitle', currentLang) || 'Fotos erforderlich',
+        t('photosRequiredMsg', currentLang) || 'Bitte hinterlege mindestens 1 Foto der Montagearbeiten, bevor du den Raum abschließt.',
         [
-          { text: t('cancel', currentLang), style: 'cancel' },
+          { text: t('cancel', currentLang) || 'Abbrechen', style: 'cancel' },
           {
             text: t('toPhotos', currentLang) || 'Fotos aufnehmen',
             onPress: () => {
@@ -389,7 +438,7 @@ export default function BookingScreen({
       return;
     }
 
-    const roomPct = room.pct !== undefined ? room.pct : 0;
+    const roomPct = calculateCurrentRoomPct();
     Alert.alert(
       'Monteur fertig',
       `Der Raum ist zu ${roomPct}% fertig.\n\nBist du aus deiner Sicht wirklich fertig, sodass die Abnahme beginnen kann?`,
@@ -447,7 +496,7 @@ export default function BookingScreen({
     });
 
     if (onCompleteRoom) {
-      onCompleteRoom(room.id, deltaSummary);
+      onCompleteRoom(room.id, deltaSummary, sessionQuantities, effectivePhotos);
     }
     setShowCompleteModal(false);
   };
@@ -879,8 +928,9 @@ export default function BookingScreen({
       <View style={styles.footCta}>
         <TouchableOpacity style={styles.primaryButton} onPress={onGoToPhotos} activeOpacity={0.8}>
           <Text style={styles.primaryButtonText}>
-            {t('toPhotos', currentLang)}
-            {photoCount > 0 ? ` (${photoCount})` : ''}
+            {effectivePhotoCount > 0
+              ? `📸 ${effectivePhotoCount} ${effectivePhotoCount === 1 ? 'Foto' : 'Fotos'} hinterlegt (anzeigen / hinzufügen)`
+              : `📸 ${t('toPhotos', currentLang) || 'Fotos aufnehmen'} (für Abnahme erforderlich)`}
           </Text>
         </TouchableOpacity>
 
@@ -900,8 +950,8 @@ export default function BookingScreen({
             {isRoomCompleted
               ? '✓ Raum fertiggestellt'
               : (effectivePhotoCount === 0
-                ? 'Monteur fertig'
-                : '✓ Monteur fertig')}
+                ? 'Monteur fertig (Fotos erforderlich)'
+                : '✓ Monteur fertig (Abnahme starten)')}
           </Text>
         </TouchableOpacity>
       </View>
