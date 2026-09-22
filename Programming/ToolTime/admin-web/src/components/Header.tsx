@@ -68,22 +68,9 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Neues Projekt button, Projektname & Dropdown daneben, Alerts, Live, User */}
+        {/* Right Side: Projektname (+ Dropdown) links, daneben Neues Projekt Button rechts, Alerts, Live, User */}
         <div className="flex items-center space-x-2.5 sm:space-x-3">
-          {/* Primary Action: New Project (Only Admin) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              onClick={onOpenNewProject}
-              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
-              title="Neues Projekt anlegen"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Neues Projekt</span>
-              <span className="sm:hidden">Neu</span>
-            </button>
-          )}
-
-          {/* Direkt rechts neben dem Button: Projektname & kleines Dropdown bei mehreren Projekten */}
+          {/* Projektname & kleines Dropdown bei mehreren Projekten (links) */}
           {projects.length > 1 ? (
             <div className="relative" ref={dropdownRef}>
               <button
@@ -109,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Dropdown Menu */}
               {isDropdownOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 mb-1">
                     <span>Projekt wechseln</span>
                     <span className="text-slate-500">{projects.length} vorhanden</span>
@@ -173,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
           ) : (
-            /* Einzelnes Projekt: Nur Projektname ohne Dropdown */
+            /* Einzelnes Projekt: Nur Projektname ohne Dropdown (links) */
             activeProject && (
               <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/80 text-xs shadow-xs">
                 <span className="font-bold text-white truncate max-w-[130px] sm:max-w-[200px] md:max-w-[260px]">
@@ -186,6 +173,19 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </div>
             )
+          )}
+
+          {/* Rechts daneben: Button Neues Projekt (Only Admin) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={onOpenNewProject}
+              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              title="Neues Projekt anlegen"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Neues Projekt</span>
+              <span className="sm:hidden">Neu</span>
+            </button>
           )}
 
           {/* Alert Notification Bell */}
