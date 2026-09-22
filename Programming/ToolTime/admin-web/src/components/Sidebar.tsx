@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import type { User } from '../types';
+import { ADMIN_PANEL_VERSION } from '../version';
 
 export type TabType = 
   | 'positions' 
@@ -196,8 +197,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             Live
           </span>
         </div>
-        <div className="text-[10px] text-slate-500 truncate">
-          ToolTime Cockpit v2.4
+        <div className="flex items-center justify-between pt-0.5">
+          <span className="text-[10px] text-slate-400 font-medium">Version</span>
+          <span className="bg-[#3B82C4]/25 text-[#60A5FA] border border-[#3B82C4]/50 px-2 py-0.5 rounded font-mono text-xs font-bold tracking-wide">
+            {ADMIN_PANEL_VERSION}
+          </span>
         </div>
       </div>
     </aside>
