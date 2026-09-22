@@ -102,6 +102,11 @@ export default function App() {
             })
             .catch(() => {});
         }
+
+        // If cached materials have 0 deliveredQty, auto-refresh from Firestore
+        if (cachedMats.length > 0 && cachedMats.some(m => !m.deliveredQty || Number(m.deliveredQty) === 0)) {
+          syncBookings({ silent: true, projectId: proj?.id }).then(() => refreshData(proj?.id)).catch(() => {});
+        }
       } catch (err) {
         console.error('Error during app initialization:', err);
         setAppPhase('pin');
@@ -188,13 +193,15 @@ export default function App() {
       });
 
       try {
+        const targetPId = projectsList[0]?.id;
         await syncBookings({
           silent: true,
+          projectId: targetPId,
           onProgress: (text, progress) => {
             setSyncProgress({ visible: true, text, progress });
           },
         });
-        await refreshData();
+        await refreshData(targetPId);
       } catch (err) {
         console.warn('Auto-sync notice:', err);
       } finally {
@@ -229,7 +236,7 @@ export default function App() {
     // Immediately sync data from cloud for the selected project
     setTimeout(async () => {
       try {
-        await syncBookings({ silent: true });
+        await syncBookings({ silent: true, projectId: pId });
         await refreshData(pId);
       } catch (err) {
         console.warn('Post-project-select sync notice:', err);
@@ -254,9 +261,10 @@ export default function App() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const res = await syncBookings({ silent: false });
+      const pId = project?.id;
+      const res = await syncBookings({ silent: false, projectId: pId });
       if (res.success) {
-        await refreshData();
+        await refreshData(pId);
       }
     } finally {
       setIsSyncing(false);

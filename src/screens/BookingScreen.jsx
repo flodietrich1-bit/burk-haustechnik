@@ -261,7 +261,11 @@ export default function BookingScreen({
     }
 
     // Stepping up: Check delivery stock
-    const delivered = Number(mat.deliveredQty !== undefined && mat.deliveredQty !== null ? mat.deliveredQty : 0);
+    const delivered = Number(
+      mat.deliveredQty !== undefined && mat.deliveredQty !== null && Number(mat.deliveredQty) > 0
+        ? mat.deliveredQty
+        : (mat.qty || (roomPlan && roomPlan.plannedQty) || 0)
+    );
     const hasRoomPlan = Boolean(roomPlan);
     const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : delivered;
     const installedBefore = hasRoomPlan
@@ -719,7 +723,11 @@ export default function BookingScreen({
               : Number(mat.installedQty || 0);
 
             const currentRoomVerb = roomInstalledBefore + delta;
-            const projectDelivered = Number(mat.deliveredQty || 0);
+            const projectDelivered = Number(
+              mat.deliveredQty !== undefined && mat.deliveredQty !== null && Number(mat.deliveredQty) > 0
+                ? mat.deliveredQty
+                : (mat.qty || (roomPlan && roomPlan.plannedQty) || 0)
+            );
 
             // Remaining for this room: planned - verbaut (or delivered - verbaut if pure GAEB)
             const roomRemaining = hasRoomPlan

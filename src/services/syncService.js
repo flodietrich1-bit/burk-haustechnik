@@ -62,7 +62,7 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
  * @param {Function} options.onProgress - Optional callback for live progress updates
  */
 export async function syncBookings(options = {}) {
-  const { silent = false, onProgress = null } = options;
+  const { silent = false, onProgress = null, projectId: targetProjectId = null } = options;
   const currentLang = await getLanguage();
 
   const isOnline = await checkOnlineStatus();
@@ -82,8 +82,8 @@ export async function syncBookings(options = {}) {
   // 2. Online Case: Evaluate Delta in Both Directions
   try {
     const monteur = await getActiveMonteur();
-    // Use the monteur's active project — fall back to DEFAULT_PROJECT_ID only as last resort
-    const projectId = monteur?.projectId || monteur?.assignedProjectIds?.[0] || DEFAULT_PROJECT_ID;
+    // Use explicit project, monteur's active project, or fall back to DEFAULT_PROJECT_ID
+    const projectId = targetProjectId || monteur?.projectId || monteur?.assignedProjectIds?.[0] || DEFAULT_PROJECT_ID;
     const lastSyncedAt = await getLastSyncedAt(projectId);
     const localDelta = await getLocalUnsyncedDelta(projectId);
 
@@ -226,9 +226,12 @@ export async function syncBookings(options = {}) {
       const hasCorruptedNames = localPositions.some(
         (p) => !p.cleanName || p.cleanName === 'Neues Material' || p.name === 'Neues Material'
       );
+      const hasMissingDelivered = localPositions.some(
+        (p) => p.deliveredQty === undefined || p.deliveredQty === null || Number(p.deliveredQty) === 0
+      );
 
       let remotePositionsDelta = [];
-      const needsFullPositionsFetch = !lastSyncedAt || hasCorruptedNames || localPositions.length === 0;
+      const needsFullPositionsFetch = !lastSyncedAt || hasCorruptedNames || hasMissingDelivered || localPositions.length === 0;
 
       if (!needsFullPositionsFetch) {
         // Query only positions updated after lastSyncedAt
