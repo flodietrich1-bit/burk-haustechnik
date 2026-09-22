@@ -55,47 +55,61 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-[#1C2A3B] text-white border-b border-slate-700 sticky top-0 z-40 shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
-        {/* Brand & Project Selector */}
-        <div className="flex items-center space-x-4">
+        {/* Brand: Links soll nur dran stehen BURK ToolTime */}
+        <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3B82C4] to-[#2FA36B] flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
             <Wrench className="w-5 h-5 text-white" />
           </div>
+          <div className="flex items-center space-x-2">
+            <span className="font-bold text-lg tracking-wide text-white">BURK</span>
+            <span className="text-[11px] bg-[#3B82C4] text-white px-2 py-0.5 rounded-full font-bold">
+              ToolTime
+            </span>
+          </div>
+        </div>
 
-          {/* Project Switcher / Display */}
+        {/* Right Side: Neues Projekt button, Projektname & Dropdown daneben, Alerts, Live, User */}
+        <div className="flex items-center space-x-2.5 sm:space-x-3">
+          {/* Primary Action: New Project (Only Admin) */}
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={onOpenNewProject}
+              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              title="Neues Projekt anlegen"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Neues Projekt</span>
+              <span className="sm:hidden">Neu</span>
+            </button>
+          )}
+
+          {/* Direkt rechts neben dem Button: Projektname & kleines Dropdown bei mehreren Projekten */}
           {projects.length > 1 ? (
-            /* Multi-project mode: Dropdown to switch between projects */
             <div className="relative" ref={dropdownRef}>
               <button
+                type="button"
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition-all text-left group shadow-sm"
+                className="flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-600 transition-all text-left group shadow-sm cursor-pointer"
+                title="Projekt wechseln"
               >
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-base tracking-wide text-white">BURK</span>
-                    <span className="text-[10px] bg-[#3B82C4] text-white px-2 py-0.2 rounded-full font-bold">
-                      TOOL-TIME
+                <div className="flex items-center space-x-1.5 truncate max-w-[130px] sm:max-w-[180px] md:max-w-[240px]">
+                  <span className="text-xs font-bold text-white truncate">
+                    {activeProject?.name || 'Projekt wählen'}
+                  </span>
+                  {activeProject?.projectNumber && (
+                    <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+                      ({activeProject.projectNumber})
                     </span>
-                    <span className="text-[10px] bg-slate-700/80 text-slate-300 px-1.5 py-0.2 rounded font-semibold">
-                      {projects.length} Projekte
-                    </span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
-                  </div>
-                  <div className="flex items-center space-x-2 text-xs font-medium truncate max-w-[220px] sm:max-w-xs md:max-w-md mt-0.5">
-                    <span className="text-white font-bold truncate">
-                      {activeProject?.name || 'Projekt auswählen...'}
-                    </span>
-                    {activeProject?.projectNumber && (
-                      <span className="text-slate-400 font-mono text-[11px]">
-                        ({activeProject.projectNumber})
-                      </span>
-                    )}
-                  </div>
+                  )}
+                </div>
+                <div className="flex items-center pl-1 border-l border-slate-700/80 shrink-0">
+                  <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
                 </div>
               </button>
 
               {/* Dropdown Menu */}
               {isDropdownOpen && (
-                <div className="absolute left-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 mb-1">
                     <span>Projekt wechseln</span>
                     <span className="text-slate-500">{projects.length} vorhanden</span>
@@ -111,37 +125,28 @@ export const Header: React.FC<HeaderProps> = ({
                             onSelectProject(p.id);
                             setIsDropdownOpen(false);
                           }}
-                          className={`w-full text-left p-3 rounded-xl transition-all flex items-start justify-between space-x-2 ${
+                          className={`w-full text-left p-2.5 rounded-xl transition-all flex items-start justify-between space-x-2 cursor-pointer ${
                             isSelected
                               ? 'bg-[#3B82C4]/20 border border-[#3B82C4]/60 text-white shadow-inner'
                               : 'hover:bg-slate-800/80 text-slate-300 hover:text-white border border-transparent'
                           }`}
                         >
-                          <div className="space-y-1 truncate">
+                          <div className="space-y-0.5 truncate">
                             <div className="flex items-center space-x-2">
                               <span className="font-bold text-xs truncate text-white">{p.name}</span>
-                              {isSelected ? (
+                              {isSelected && (
                                 <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.2 rounded font-bold flex items-center space-x-1 shrink-0">
                                   <Check className="w-3 h-3" />
                                   <span>Aktiv</span>
                                 </span>
-                              ) : (
-                                <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded font-medium shrink-0">
-                                  Wechseln
-                                </span>
                               )}
                             </div>
-                            
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
-                              {p.projectNumber && (
-                                <span className="font-mono text-slate-400">Nr: {p.projectNumber}</span>
-                              )}
-                              {p.location && (
-                                <span className="text-slate-300">{p.location}</span>
-                              )}
-                            </div>
+                            {p.projectNumber && (
+                              <span className="text-[10px] font-mono text-slate-400 block">
+                                Nr: {p.projectNumber}
+                              </span>
+                            )}
                           </div>
-
                           <span className="text-[10px] font-bold bg-slate-800 text-slate-400 px-2 py-0.5 rounded shrink-0">
                             {p.totalPositions} Pos.
                           </span>
@@ -157,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
                           setIsDropdownOpen(false);
                           onOpenNewProject();
                         }}
-                        className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20"
+                        className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white py-2 rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer"
                       >
                         <Plus className="w-4 h-4" />
                         <span>Neues Projekt anlegen</span>
@@ -168,40 +173,19 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
           ) : (
-            /* Single or zero project mode: Static display without dropdown */
-            <div className="flex flex-col px-2 py-1 text-left">
-              <div className="flex items-center space-x-2">
-                <span className="font-bold text-base tracking-wide text-white">BURK</span>
-                <span className="text-[10px] bg-[#3B82C4] text-white px-2 py-0.2 rounded-full font-bold">
-                  TOOL-TIME
+            /* Einzelnes Projekt: Nur Projektname ohne Dropdown */
+            activeProject && (
+              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/80 text-xs shadow-xs">
+                <span className="font-bold text-white truncate max-w-[130px] sm:max-w-[200px] md:max-w-[260px]">
+                  {activeProject.name}
                 </span>
-              </div>
-              <div className="flex items-center space-x-2 text-xs font-semibold text-white truncate max-w-[240px] sm:max-w-xs md:max-w-md mt-0.5">
-                <span className="truncate">
-                  {activeProject?.name || 'Kein aktives Projekt'}
-                </span>
-                {activeProject?.projectNumber && (
-                  <span className="text-slate-400 font-mono font-normal text-[11px]">
+                {activeProject.projectNumber && (
+                  <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
                     ({activeProject.projectNumber})
                   </span>
                 )}
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Side: Only New Project button, Notification Bell & Live badge */}
-        <div className="flex items-center space-x-3">
-          {/* Primary Action: New Project (Only Admin) */}
-          {currentUser?.role === 'admin' && (
-            <button
-              onClick={onOpenNewProject}
-              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
-              title="Neues Projekt anlegen"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Neues Projekt</span>
-            </button>
+            )
           )}
 
           {/* Alert Notification Bell */}
