@@ -89,15 +89,27 @@ export const TRANSLATIONS = {
 
   // Mehrverbrauch / Over-Consumption Fullscreen Overlay
   overTitle: { de: 'Mehraufwand / Mehrverbrauch', ro: 'Consum suplimentar / Mehraufwand', pl: 'Dodatkowy nakład / zużycie', hr: 'Dodatni rad / potrošnja' },
+  overProductHint: {
+    de: 'Bei diesem Produkt hast du mehr als geplant verbaut!',
+    ro: 'La acest produs ai montat mai mult decât planificat!',
+    pl: 'W tym produkcie zamontowano więcej niż zaplanowano!',
+    hr: 'Za ovaj proizvod ugradili ste više od planiranog!',
+  },
   overPlannedRoom: { de: 'Geplant Raum', ro: 'Planificat încăpere', pl: 'Plan pomieszczenia', hr: 'Planirano u prostoriji' },
   overNewInstalled: { de: 'Neu verbaut', ro: 'Nou montat', pl: 'Nowo zamontowane', hr: 'Novo ugrađeno' },
   overExcess: { de: 'Mehrverbrauch', ro: 'Consum suplimentar', pl: 'Nadmierne zużycie', hr: 'Dodatna potrošnja' },
   overExtraQtyLabel: { de: 'Zusätzlich benötigte Menge:', ro: 'Cantitate suplimentară necesară:', pl: 'Dodatkowo potrzebna ilość:', hr: 'Dodatno potrebna količina:' },
+  overDeliveryExceededWarn: {
+    de: 'Übersteigt bisherige Liefermenge auf der Baustelle ({delivered} {qu})',
+    ro: 'Depășește cantitatea livrată anterior pe șantier ({delivered} {qu})',
+    pl: 'Przekracza dotychczasową ilość dostarczoną na budowę ({delivered} {qu})',
+    hr: 'Premašuje dosad isporučenu količinu na gradilištu ({delivered} {qu})',
+  },
   overQuickLabel: { de: 'Schnellauswahl für Mehraufwand:', ro: 'Selectare rapidă supliment:', pl: 'Szybki wybór:', hr: 'Brzi odabir:' },
   overReasonLabel: { de: 'Grund für Bauleiter & Nachtrag wählen:', ro: 'Alege motivul pentru șeful de șantier:', pl: 'Wybierz powód dla kierownika budowy:', hr: 'Odaberi razlog za voditelja gradilišta:' },
   overDetailReasonLabel: { de: 'Detail-Begründung (3 Zeilen für Baustellen-Notizen):', ro: 'Justificare detaliată (3 rânduri pentru note de șantier):', pl: 'Szczegółowe uzasadnienie (3 linie notatki):', hr: 'Detaljno obrazloženje (3 retka za bilješke):' },
   overCommentPlaceholder: { de: 'Begründung für Mehraufwand eingeben (erscheint im Bauleiter-Dashboard)...', ro: 'Introdu justificarea suplimentului (apare în tabloul de bord)...', pl: 'Wpisz uzasadnienie dodatkowego nakładu...', hr: 'Unesi obrazloženje dodatnog rada...' },
-  overConfirmBtn: { de: '✓ Mehraufwand buchen', ro: '✓ Înregistrează suplimentul', pl: '✓ Zapisz dodatkowy nakład', hr: '✓ Uknjiži dodatni rad' },
+  overConfirmBtn: { de: 'Mehraufwand buchen', ro: 'Înregistrează suplimentul', pl: 'Zapisz dodatkowy nakład', hr: 'Uknjiži dodatni rad' },
   overConsumptionBadge: { de: 'Mehrverbrauch', ro: 'Consum suplimentar', pl: 'Nadmierne zużycie', hr: 'Dodatna potrošnja' },
   overRecorded: { de: 'Mehrverbrauch erfasst', ro: 'Consum suplimentar înregistrat', pl: 'Zarejestrowano nadmierne zużycie', hr: 'Zabilježena dodatna potrošnja' },
 
