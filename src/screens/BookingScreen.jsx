@@ -18,6 +18,12 @@ import { t, GLOSSARY } from '../locales/i18n';
 import ProgressBar from '../components/ProgressBar';
 import SignaturePad from '../components/SignaturePad';
 
+const formatQty = (val) => {
+  if (val === null || val === undefined || isNaN(val)) return '0';
+  const num = Number(val);
+  return num % 1 === 0 ? String(num) : num.toFixed(1);
+};
+
 export default function BookingScreen({
   room,
   materials = [],
@@ -729,21 +735,16 @@ export default function BookingScreen({
                 : (mat.qty || (roomPlan && roomPlan.plannedQty) || 0)
             );
 
-            // Remaining for this room: planned - verbaut (or delivered - verbaut if pure GAEB)
-            const roomRemaining = hasRoomPlan
-              ? Math.max(0, roomPlanned - currentRoomVerb)
-              : Math.max(0, projectDelivered - currentRoomVerb);
+            // Target for planning
+            const baseTarget = hasRoomPlan ? roomPlanned : projectDelivered;
 
-            const isOver = hasRoomPlan
-              ? currentRoomVerb > roomPlanned
-              : currentRoomVerb > projectDelivered;
+            // Verfügbar: Geht mit jedem verbaut nach unten :)
+            const availableQty = Math.max(0, baseTarget - currentRoomVerb);
 
-            const exceededBy = hasRoomPlan
-              ? Math.max(0, currentRoomVerb - roomPlanned)
-              : Math.max(0, currentRoomVerb - projectDelivered);
+            const isOver = currentRoomVerb > baseTarget;
+            const exceededBy = Math.max(0, currentRoomVerb - baseTarget);
 
             // Progress percentage: strictly capped at 100%
-            const baseTarget = hasRoomPlan ? roomPlanned : projectDelivered;
             const progressPct = baseTarget > 0
               ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100))
               : 0;
@@ -783,7 +784,7 @@ export default function BookingScreen({
                       {isOver ? (
                         <View style={styles.overBadge}>
                           <Text style={styles.overBadgeText}>
-                            +{exceededBy.toFixed(1)} {displayQu} {t('overConsumptionBadge', currentLang)}
+                            +{formatQty(exceededBy)} {displayQu} {t('overConsumptionBadge', currentLang)}
                           </Text>
                         </View>
                       ) : null}
@@ -797,24 +798,13 @@ export default function BookingScreen({
                   </View>
                 </View>
 
-                {/* 2. 4-Metrics Matrix: Geliefert | Geplant | Verbaut | Rest */}
+                {/* 2. 3-Metrics Matrix: Geplant | Verfügbar | Verbaut */}
                 <View style={styles.metricsContainer}>
-                  {/* Geliefert (Gesamtbaustelle) */}
-                  <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>{t('matrixDelivered', currentLang)}</Text>
-                    <Text style={styles.metricValue}>
-                      {projectDelivered} <Text style={styles.metricUnit}>{displayQu}</Text>
-                    </Text>
-                    <Text style={styles.metricSub}>{t('matrixTotal', currentLang)}</Text>
-                  </View>
-
-                  <View style={styles.metricDivider} />
-
                   {/* Geplant (Raum oder GAEB-Fallback) */}
                   <View style={styles.metricCell}>
                     <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
                     <Text style={styles.metricValue}>
-                      {hasRoomPlan ? `${roomPlanned} ` : '–'}
+                      {hasRoomPlan ? `${formatQty(roomPlanned)} ` : '–'}
                       {hasRoomPlan ? <Text style={styles.metricUnit}>{displayQu}</Text> : ''}
                     </Text>
                     <Text style={styles.metricSub}>
@@ -824,36 +814,36 @@ export default function BookingScreen({
 
                   <View style={styles.metricDivider} />
 
-                  {/* Verbaut (In Raum) */}
+                  {/* Verfügbar (Geht mit jedem verbaut nach unten :) */}
                   <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>{t('matrixInstalled', currentLang)}</Text>
-                    <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
-                      {currentRoomVerb} <Text style={styles.metricUnit}>{displayQu}</Text>
-                    </Text>
-                    <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
-                  </View>
-
-                  <View style={styles.metricDivider} />
-
-                  {/* Rest (Im Raum noch zu verbauen) */}
-                  <View style={styles.metricCell}>
-                    <Text style={styles.metricLabel}>{t('matrixRemaining', currentLang)}</Text>
+                    <Text style={styles.metricLabel}>{t('matrixAvailable', currentLang)}</Text>
                     <Text
                       style={[
                         styles.metricValue,
                         isOver
                           ? styles.metricValOver
-                          : roomRemaining === 0
+                          : availableQty === 0
                           ? styles.metricValDone
                           : null,
                       ]}
                     >
-                      {isOver ? `-${exceededBy.toFixed(1)}` : roomRemaining.toFixed(1)}{' '}
+                      {isOver ? `-${formatQty(exceededBy)}` : formatQty(availableQty)}{' '}
                       <Text style={styles.metricUnit}>{displayQu}</Text>
                     </Text>
                     <Text style={styles.metricSub}>
                       {isOver ? t('matrixOver', currentLang) : t('matrixOpen', currentLang)}
                     </Text>
+                  </View>
+
+                  <View style={styles.metricDivider} />
+
+                  {/* Verbaut (In Raum) */}
+                  <View style={styles.metricCell}>
+                    <Text style={styles.metricLabel}>{t('matrixInstalled', currentLang)}</Text>
+                    <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
+                      {formatQty(currentRoomVerb)} <Text style={styles.metricUnit}>{displayQu}</Text>
+                    </Text>
+                    <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
                   </View>
                 </View>
 

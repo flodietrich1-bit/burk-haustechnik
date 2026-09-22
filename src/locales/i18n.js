@@ -51,9 +51,10 @@ export const TRANSLATIONS = {
   unitPcsShort: { de: 'Stk', ro: 'buc', pl: 'szt', hr: 'kom' },
   unitMShort: { de: 'm', ro: 'm', pl: 'm', hr: 'm' },
 
-  // Card 4-Metric Matrix
+  // Card Metric Matrix
   matrixDelivered: { de: 'Geliefert', ro: 'Livrat', pl: 'Dostarczone', hr: 'Isporučeno' },
   matrixPlanned: { de: 'Geplant', ro: 'Planificat', pl: 'Planowane', hr: 'Planirano' },
+  matrixAvailable: { de: 'Verfügbar', ro: 'Disponibil', pl: 'Dostępne', hr: 'Dostupno' },
   matrixInstalled: { de: 'Verbaut', ro: 'Montat', pl: 'Zamontowane', hr: 'Ugrađeno' },
   matrixRemaining: { de: 'Rest', ro: 'Rest', pl: 'Pozostało', hr: 'Ostatak' },
   matrixTotal: { de: 'Gesamt', ro: 'Total', pl: 'Łącznie', hr: 'Ukupno' },
