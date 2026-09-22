@@ -29,9 +29,25 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
 
   useEffect(() => {
     if (project) {
-      setForm({ ...project });
+      // Auto-resolve projectManagerId if empty
+      const pmId = project.projectManagerId || users.find(u => 
+        (project.projectManagerEmail && u.email?.toLowerCase() === project.projectManagerEmail.toLowerCase()) ||
+        (project.projectManager && u.name.toLowerCase() === project.projectManager.toLowerCase())
+      )?.id || '';
+
+      // Auto-resolve commercialManagerId if empty
+      const cmId = project.commercialManagerId || users.find(u => 
+        (project.commercialManagerEmail && u.email?.toLowerCase() === project.commercialManagerEmail.toLowerCase()) ||
+        (project.commercialManager && u.name.toLowerCase() === project.commercialManager.toLowerCase())
+      )?.id || '';
+
+      setForm({
+        ...project,
+        projectManagerId: pmId || project.projectManagerId || '',
+        commercialManagerId: cmId || project.commercialManagerId || ''
+      });
     }
-  }, [project]);
+  }, [project, users]);
 
   if (!project) {
     return (
@@ -42,7 +58,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
   }
 
   const bauleiterUsers = users.filter(u => u.role === 'bauleiter' || u.role === 'admin');
-  const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || u.role === 'admin');
+  const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || (u.role as string) === 'kaufmännisch' || u.role === 'admin');
   const monteurUsers = users.filter(u => u.role === 'monteur');
 
   const handleBauleiterChange = (userId: string) => {
@@ -319,9 +335,16 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               <Wrench className="w-4 h-4 text-emerald-600" />
               <span>3. Auf dieser Baustelle eingesetzte Monteure</span>
             </h3>
-            <span className="text-xs font-semibold text-[#3B82C4] bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-              {(form.assignedMonteurIds || []).length} Monteure zugeordnet
-            </span>
+            <div className="flex items-center space-x-2">
+              {isBauleiter && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
+                  ✓ Für Bauleiter freigegeben
+                </span>
+              )}
+              <span className="text-xs font-semibold text-[#3B82C4] bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                {(form.assignedMonteurIds || []).length} Monteure zugeordnet
+              </span>
+            </div>
           </div>
 
           <p className="text-xs text-slate-500">

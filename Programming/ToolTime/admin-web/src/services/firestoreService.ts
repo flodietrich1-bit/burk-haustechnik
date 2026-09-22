@@ -762,7 +762,15 @@ const LOCAL_STORAGE_USERS_KEY = 'burk_tooltime_users';
 export function getLocalUsers(): User[] {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const map = new Map<string, User>();
+        MOCK_USERS.forEach(u => map.set(u.id, u));
+        parsed.forEach(u => map.set(u.id, { ...map.get(u.id), ...u }));
+        return Array.from(map.values());
+      }
+    }
   } catch (e) {
     console.warn('Error reading users from localStorage:', e);
   }
@@ -770,17 +778,23 @@ export function getLocalUsers(): User[] {
 }
 
 export function listenToUsers(callback: (users: User[]) => void) {
+  // Synchronous immediate delivery
+  callback(getLocalUsers());
+
   const colRef = collection(db, 'users');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as User);
-      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(list));
-      callback(list);
+      const map = new Map<string, User>();
+      MOCK_USERS.forEach(u => map.set(u.id, u));
+      list.forEach(u => map.set(u.id, { ...map.get(u.id), ...u }));
+      const merged = Array.from(map.values());
+      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(merged));
+      callback(merged);
     } else {
       callback(getLocalUsers());
     }
-  }, (err) => {
-    console.warn('Firestore fallback mode for users:', err.message);
+  }, () => {
     callback(getLocalUsers());
   });
 }
@@ -807,7 +821,7 @@ export async function updateUserPin(userId: string, pin: string) {
 
   try {
     const ref = doc(db, 'users', userId);
-    await updateDoc(ref, { pin });
+    await setDoc(ref, { pin }, { merge: true });
   } catch (err: any) {
     console.warn('Firestore updateUserPin error:', err.message);
   }
@@ -830,10 +844,10 @@ export async function updateProjectDetails(projectId: string, partial: Partial<P
 
   try {
     const ref = doc(db, 'projects', projectId);
-    await updateDoc(ref, {
+    await setDoc(ref, {
       ...partial,
       updatedAt: new Date().toISOString()
-    });
+    }, { merge: true });
   } catch (err: any) {
     console.warn('Firestore updateProjectDetails error:', err.message);
   }
