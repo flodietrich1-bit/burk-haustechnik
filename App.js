@@ -16,6 +16,7 @@ import {
   getRooms,
   saveRooms,
   getMaterials,
+  saveMaterials,
   getProjectInfo,
   getPendingBookings,
   enqueueBooking,
