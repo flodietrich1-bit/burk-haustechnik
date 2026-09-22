@@ -298,21 +298,17 @@ export async function authenticateByPin(enteredPin) {
   if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
     assignedProjects = allProjects.filter((p) => userProjectIds.includes(p.id));
     if (assignedProjects.length === 0) {
-      assignedProjects = userProjectIds.map((pId) => {
-        const found = AVAILABLE_PROJECTS.find((ap) => ap.id === pId);
-        return (
-          found || {
-            id: pId,
-            name: pId === 'gemeindehaus-bavendorf' ? 'Gemeindehaus Bavendorf Sanierung' : pId,
-            client: 'Burk Haustechnik',
-            calendarWeek: 27,
-            totalDeliveredPercentage: 50,
-          }
-        );
-      });
+      // Assigned IDs not found in Firestore → show ALL real projects instead of fake placeholders
+      // This handles the case where the admin panel uses different project IDs than the seeds
+      if (allProjects.length > 0) {
+        assignedProjects = allProjects;
+      } else {
+        // Absolute last resort: only now use AVAILABLE_PROJECTS seed
+        assignedProjects = AVAILABLE_PROJECTS;
+      }
     }
   } else {
-    // If no explicit projectIds assigned, assign default
+    // No explicit projectIds assigned → show all available real projects
     assignedProjects = allProjects.length > 0 ? allProjects : AVAILABLE_PROJECTS;
   }
 
