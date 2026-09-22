@@ -51,62 +51,114 @@ export async function setLanguage(lang) {
 }
 
 // -------------------------------------------------------------
-// 2. Master Data (Rooms, Materials, Project)
+// Helper to resolve active project ID
 // -------------------------------------------------------------
-export async function getRooms() {
+async function resolveProjectId(projectId) {
+  if (projectId) return projectId;
   try {
-    const data = await AsyncStorage.getItem(KEYS.ROOMS);
+    const raw = await AsyncStorage.getItem('ttapp_active_monteur');
+    if (raw) {
+      const m = JSON.parse(raw);
+      if (m?.projectId) return m.projectId;
+      if (m?.assignedProjectIds?.[0]) return m.assignedProjectIds[0];
+    }
+  } catch {}
+  return DEFAULT_PROJECT_ID;
+}
+
+// -------------------------------------------------------------
+// 2. Master Data (Rooms, Materials, Project) - Scoped per Project
+// -------------------------------------------------------------
+export async function getRooms(projectId) {
+  try {
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.ROOMS}_${pId}`;
+    const data = await AsyncStorage.getItem(key);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
+    }
+    // For default Weingarten project only, check legacy key or INITIAL_ROOMS
+    if (pId === DEFAULT_PROJECT_ID) {
+      const legacyData = await AsyncStorage.getItem(KEYS.ROOMS);
+      if (legacyData) {
+        const parsed = JSON.parse(legacyData);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_ROOMS;
     }
   } catch (e) {
     console.warn('Error reading rooms:', e);
   }
-  return INITIAL_ROOMS;
+  return [];
 }
 
-export async function saveRooms(rooms) {
+export async function saveRooms(rooms, projectId) {
   try {
-    await AsyncStorage.setItem(KEYS.ROOMS, JSON.stringify(rooms));
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.ROOMS}_${pId}`;
+    await AsyncStorage.setItem(key, JSON.stringify(rooms));
+    if (pId === DEFAULT_PROJECT_ID) {
+      await AsyncStorage.setItem(KEYS.ROOMS, JSON.stringify(rooms));
+    }
   } catch (e) {
     console.warn('Error saving rooms:', e);
   }
 }
 
-export async function getMaterials() {
+export async function getMaterials(projectId) {
   try {
-    const data = await AsyncStorage.getItem(KEYS.MATERIALS);
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.MATERIALS}_${pId}`;
+    const data = await AsyncStorage.getItem(key);
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
+    }
+    if (pId === DEFAULT_PROJECT_ID) {
+      const legacy = await AsyncStorage.getItem(KEYS.MATERIALS);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_MATERIALS;
     }
   } catch (e) {
     console.warn('Error reading materials:', e);
   }
-  return INITIAL_MATERIALS;
+  return [];
 }
 
-export async function saveMaterials(materials) {
+export async function saveMaterials(materials, projectId) {
   try {
-    await AsyncStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.MATERIALS}_${pId}`;
+    await AsyncStorage.setItem(key, JSON.stringify(materials));
+    if (pId === DEFAULT_PROJECT_ID) {
+      await AsyncStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
+    }
   } catch (e) {
     console.warn('Error saving materials:', e);
   }
 }
 
-export async function getProjectInfo() {
+export async function getProjectInfo(projectId) {
   try {
-    const data = await AsyncStorage.getItem(KEYS.PROJECT);
+    const pId = await resolveProjectId(projectId);
+    const data = await AsyncStorage.getItem(`${KEYS.PROJECT}_${pId}`);
     if (data) return JSON.parse(data);
+    const legacy = await AsyncStorage.getItem(KEYS.PROJECT);
+    if (legacy) return JSON.parse(legacy);
   } catch (e) {
     console.warn('Error reading project info:', e);
   }
   return DEFAULT_PROJECT;
 }
 
-export async function saveProjectInfo(project) {
+export async function saveProjectInfo(project, projectId) {
   try {
+    const pId = projectId || project?.id || DEFAULT_PROJECT_ID;
+    await AsyncStorage.setItem(`${KEYS.PROJECT}_${pId}`, JSON.stringify(project));
     await AsyncStorage.setItem(KEYS.PROJECT, JSON.stringify(project));
   } catch (e) {
     console.warn('Error saving project info:', e);
@@ -306,20 +358,22 @@ export async function updateAddendumStatus(id, status, remoteData = {}) {
 }
 
 // -------------------------------------------------------------
-// 6. Two-Way Delta Sync Tracking
+// 6. Two-Way Delta Sync Tracking (Scoped per Project)
 // -------------------------------------------------------------
-export async function getLastSyncedAt() {
+export async function getLastSyncedAt(projectId) {
   try {
-    return await AsyncStorage.getItem(KEYS.LAST_SYNCED_AT);
+    const pId = await resolveProjectId(projectId);
+    return await AsyncStorage.getItem(`${KEYS.LAST_SYNCED_AT}_${pId}`);
   } catch (e) {
     return null;
   }
 }
 
-export async function setLastSyncedAt(timestamp) {
+export async function setLastSyncedAt(timestamp, projectId) {
   try {
+    const pId = await resolveProjectId(projectId);
     const val = timestamp || new Date().toISOString();
-    await AsyncStorage.setItem(KEYS.LAST_SYNCED_AT, val);
+    await AsyncStorage.setItem(`${KEYS.LAST_SYNCED_AT}_${pId}`, val);
     return val;
   } catch (e) {
     console.warn('Error saving lastSyncedAt:', e);
@@ -327,11 +381,14 @@ export async function setLastSyncedAt(timestamp) {
   }
 }
 
-export async function getLocalUnsyncedDelta() {
-  const pendingBookings = await getPendingBookings();
-  const pendingAddendums = await getPendingAddendums();
-  const rooms = await getRooms();
-  const lastSyncedAt = await getLastSyncedAt();
+export async function getLocalUnsyncedDelta(projectId) {
+  const pId = await resolveProjectId(projectId);
+  const allBookings = await getPendingBookings();
+  const allAddendums = await getPendingAddendums();
+  const pendingBookings = allBookings.filter((b) => !b.projectId || b.projectId === pId);
+  const pendingAddendums = allAddendums.filter((a) => !a.projectId || a.projectId === pId);
+  const rooms = await getRooms(pId);
+  const lastSyncedAt = await getLastSyncedAt(pId);
   const pendingRooms = rooms.filter(
     (r) => r.isCompleted && (!r.syncedAt || (lastSyncedAt && r.completedAt && r.completedAt > lastSyncedAt))
   );

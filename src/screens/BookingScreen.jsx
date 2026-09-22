@@ -319,7 +319,19 @@ export default function BookingScreen({
       );
       return;
     }
-    setShowCompleteModal(true);
+
+    const roomPct = room.pct !== undefined ? room.pct : 0;
+    Alert.alert(
+      'Monteur fertig',
+      `Der Raum ist zu ${roomPct}% fertig.\n\nBist du aus deiner Sicht wirklich fertig, sodass die Abnahme beginnen kann?`,
+      [
+        { text: t('cancel', currentLang) || 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Ja, fertigstellen',
+          onPress: () => handleConfirmCompleteRoom(),
+        },
+      ]
+    );
   };
 
   // Confirming 100% Room Completion & Calculating Delta
@@ -460,7 +472,7 @@ export default function BookingScreen({
           </Text>
         </View>
 
-        {/* 3 Action Buttons nebeneinander direkt unter dem Titel */}
+        {/* Action Buttons direkt unter dem Titel */}
         <View style={styles.topActionsRow}>
           {/* Button 1: Nachtrag */}
           <TouchableOpacity
@@ -479,33 +491,6 @@ export default function BookingScreen({
           >
             <Text style={styles.actionBtnUnclearText}>
               ❓ {t('unclearBtnShort', currentLang)}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Button 3: Monteur fertig (Grau wenn noch keine Fotos, Grün mit Häkchen wenn Fotos vorhanden) */}
-          <TouchableOpacity
-            style={[
-              styles.actionBtnComplete,
-              (effectivePhotoCount === 0 && !isRoomCompleted)
-                ? styles.actionBtnCompleteGrey
-                : styles.actionBtnCompleteGreen,
-              isRoomCompleted && styles.actionBtnCompleteDone,
-            ]}
-            onPress={handleMonteurFertigPress}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.actionBtnCompleteText,
-                (effectivePhotoCount === 0 && !isRoomCompleted)
-                  ? styles.actionBtnCompleteGreyText
-                  : styles.actionBtnCompleteGreenText,
-                isRoomCompleted && styles.actionBtnCompleteDoneText,
-              ]}
-              numberOfLines={1}
-            >
-              {(effectivePhotoCount === 0 && !isRoomCompleted) ? '📷 ' : '✓ '}
-              {t('completeBtnShort', currentLang)}
             </Text>
           </TouchableOpacity>
         </View>
@@ -793,6 +778,27 @@ export default function BookingScreen({
           <Text style={styles.primaryButtonText}>
             {t('toPhotos', currentLang)}
             {photoCount > 0 ? ` (${photoCount})` : ''}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Monteur fertig Button (direkt unter Weiter zu Fotos) */}
+        <TouchableOpacity
+          style={[
+            styles.monteurFertigBtn,
+            (effectivePhotoCount === 0 && !isRoomCompleted)
+              ? styles.monteurFertigBtnGrey
+              : styles.monteurFertigBtnGreen,
+            isRoomCompleted && styles.monteurFertigBtnDone,
+          ]}
+          onPress={handleMonteurFertigPress}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.monteurFertigBtnText}>
+            {isRoomCompleted
+              ? '✓ Raum fertiggestellt'
+              : (effectivePhotoCount === 0
+                ? 'Monteur fertig'
+                : '✓ Monteur fertig')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -1623,7 +1629,7 @@ const styles = StyleSheet.create({
   },
   scroll: {
     padding: 16,
-    paddingBottom: 90,
+    paddingBottom: 160,
   },
   backButton: {
     marginBottom: 8,
@@ -2354,6 +2360,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 15,
+  },
+  monteurFertigBtn: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  monteurFertigBtnGrey: {
+    backgroundColor: '#718096',
+  },
+  monteurFertigBtnGreen: {
+    backgroundColor: '#16A34A',
+  },
+  monteurFertigBtnDone: {
+    backgroundColor: '#2F855A',
+  },
+  monteurFertigBtnText: {
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 15,

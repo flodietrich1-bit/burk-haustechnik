@@ -133,11 +133,12 @@ export default function App() {
     return () => unsubscribe();
   }, [appPhase, isSyncing]);
 
-  const refreshData = async () => {
+  const refreshData = async (targetProjectId) => {
+    const pId = targetProjectId || project?.id;
     const [r, m, delta] = await Promise.all([
-      getRooms(),
-      getMaterials(),
-      getLocalUnsyncedDelta(),
+      getRooms(pId),
+      getMaterials(pId),
+      getLocalUnsyncedDelta(pId),
     ]);
     setRooms(r);
     setMaterials(m);
@@ -155,15 +156,23 @@ export default function App() {
     const online = await checkOnlineStatus();
     setIsOnline(online);
 
-    const proceedToAppOrSelect = () => {
+    const proceedToAppOrSelect = async () => {
       if (projectsList.length > 1) {
         setAppPhase('project_select');
       } else {
         const targetProj = projectsList[0] || DEFAULT_PROJECT;
         setProject(targetProj);
-        // Persist project ID so syncService uses the correct Firestore path
+        // Persist project ID and load its cached data
         if (targetProj?.id) {
-          setActiveProjectId(targetProj.id);
+          await setActiveProjectId(targetProj.id);
+          const [r, m, delta] = await Promise.all([
+            getRooms(targetProj.id),
+            getMaterials(targetProj.id),
+            getLocalUnsyncedDelta(targetProj.id),
+          ]);
+          setRooms(r);
+          setMaterials(m);
+          setPendingCount(delta.totalPendingCount);
         }
         setAppPhase('app');
         setCurrentScreen('rooms');
@@ -189,34 +198,43 @@ export default function App() {
       } catch (err) {
         console.warn('Auto-sync notice:', err);
       } finally {
-        setTimeout(() => {
+        setTimeout(async () => {
           setSyncProgress({ visible: false, text: '', progress: 1 });
-          proceedToAppOrSelect();
+          await proceedToAppOrSelect();
         }, 600);
       }
     } else {
       // Offline mode
-      proceedToAppOrSelect();
+      await proceedToAppOrSelect();
     }
   };
 
   const handleSelectProject = async (chosenProject) => {
     setProject(chosenProject);
-    // Persist chosen project ID so syncService uses the correct Firestore path
-    if (chosenProject?.id) {
-      await setActiveProjectId(chosenProject.id);
+    const pId = chosenProject?.id;
+    // Persist chosen project ID and immediately load its rooms & positions
+    if (pId) {
+      await setActiveProjectId(pId);
+      const [r, m, delta] = await Promise.all([
+        getRooms(pId),
+        getMaterials(pId),
+        getLocalUnsyncedDelta(pId),
+      ]);
+      setRooms(r);
+      setMaterials(m);
+      setPendingCount(delta.totalPendingCount);
     }
     setAppPhase('app');
     setCurrentScreen('rooms');
-    // Immediately sync data for the selected project (silent background sync)
+    // Immediately sync data from cloud for the selected project
     setTimeout(async () => {
       try {
         await syncBookings({ silent: true });
-        await refreshData();
+        await refreshData(pId);
       } catch (err) {
         console.warn('Post-project-select sync notice:', err);
       }
-    }, 500);
+    }, 100);
   };
 
   const handleSwitchProject = () => {
