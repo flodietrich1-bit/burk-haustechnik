@@ -9,6 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
+import { APP_VERSION } from '../constants/version';
 import { t, LANGUAGES } from '../locales/i18n';
 
 export default function ProjectSelectScreen({
@@ -129,6 +130,11 @@ export default function ProjectSelectScreen({
             </View>
           </TouchableOpacity>
         ))}
+
+        {/* App Version Footer */}
+        <View style={styles.footerVersionBox}>
+          <Text style={styles.footerVersionText}>TTApp {APP_VERSION}</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -350,5 +356,17 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  footerVersionBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    marginTop: 8,
+  },
+  footerVersionText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 0.5,
   },
 });

@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
+import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import ProgressRing from '../components/ProgressRing';
 
@@ -105,6 +106,11 @@ export default function RoomListScreen({
             </TouchableOpacity>
           );
         })}
+      </View>
+
+      {/* App Version Footer */}
+      <View style={styles.footerVersionBox}>
+        <Text style={styles.footerVersionText}>TTApp {APP_VERSION}</Text>
       </View>
     </ScrollView>
   );
@@ -270,5 +276,17 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '400',
     color: '#C4CDD6',
+  },
+  footerVersionBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    marginTop: 8,
+  },
+  footerVersionText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 0.5,
   },
 });

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Alert, SafeAreaView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import * as Updates from 'expo-updates';
 import { COLORS } from '../constants/theme';
+import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import PinPad from '../components/PinPad';
 import {
@@ -176,6 +177,9 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
         >
           <Text style={styles.reloadText}>🔄 App neu laden / Updates prüfen</Text>
         </TouchableOpacity>
+
+        {/* App Version Badge */}
+        <Text style={styles.versionBadgeText}>Version {APP_VERSION}</Text>
       </View>
     </SafeAreaView>
   );
@@ -306,5 +310,12 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '700',
     color: COLORS.inkSoft,
+  },
+  versionBadgeText: {
+    marginTop: 10,
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+    letterSpacing: 0.5,
   },
 });
