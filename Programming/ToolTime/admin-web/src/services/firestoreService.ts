@@ -316,20 +316,54 @@ export function listenToBookings(projectId: string, callback: (bookings: Booking
     callback([]);
     return () => {};
   }
-  const colRef = collection(db, 'bookings');
-  return onSnapshot(colRef, (snap) => {
+
+  let globalBookings: Booking[] = [];
+  let projectBookings: Booking[] = [];
+
+  const emitMerged = () => {
+    const map = new Map<string, Booking>();
+    globalBookings.forEach(b => {
+      if (b.projectId === projectId || !b.projectId) {
+        map.set(b.id, b);
+      }
+    });
+    projectBookings.forEach(b => {
+      const existing = map.get(b.id);
+      map.set(b.id, existing ? { ...existing, ...b } : b);
+    });
+    callback(Array.from(map.values()));
+  };
+
+  const globalRef = collection(db, 'bookings');
+  const unsubGlobal = onSnapshot(globalRef, (snap) => {
     if (!snap.empty) {
-      const list = snap.docs
+      globalBookings = snap.docs
         .map(d => ({ id: d.id, ...d.data() }) as Booking)
-        .filter(b => b.projectId === projectId);
-      callback(list);
+        .filter(b => !b.projectId || b.projectId === projectId);
     } else {
-      callback([]);
+      globalBookings = [];
     }
+    emitMerged();
   }, (err) => {
-    console.warn('Firestore fallback mode for bookings:', err.message);
-    callback([]);
+    console.warn('Firestore global bookings fallback:', err.message);
   });
+
+  const projectRef = collection(db, 'projects', projectId, 'bookings');
+  const unsubProject = onSnapshot(projectRef, (snap) => {
+    if (!snap.empty) {
+      projectBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Booking);
+    } else {
+      projectBookings = [];
+    }
+    emitMerged();
+  }, (err) => {
+    console.warn('Firestore project bookings fallback:', err.message);
+  });
+
+  return () => {
+    unsubGlobal();
+    unsubProject();
+  };
 }
 
 export function listenToAddendums(projectId: string, callback: (addendums: Addendum[]) => void) {

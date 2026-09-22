@@ -33,13 +33,15 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms }) => {
         ) : (
           bookings.map((booking) => {
             const roomName = roomMap.get(booking.roomId) || booking.roomId;
-            const dateStr = new Date(booking.createdAt).toLocaleString('de-DE', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
-            });
+            const dateStr = booking.createdAt 
+              ? new Date(booking.createdAt).toLocaleString('de-DE', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })
+              : '-';
 
             return (
               <div key={booking.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:border-slate-300 transition-colors space-y-3">

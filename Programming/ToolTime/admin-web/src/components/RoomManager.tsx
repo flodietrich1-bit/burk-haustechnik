@@ -1,6 +1,22 @@
-import React, { useState } from 'react';
-import type { Room, Position, Booking } from '../types';
-import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X, CheckCircle2, BarChart2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import type { Room, Position, Booking, RoomMaterialRequirement } from '../types';
+import { 
+  Plus, 
+  Globe, 
+  Trash2, 
+  Package, 
+  ChevronDown, 
+  ChevronUp, 
+  Compass, 
+  X, 
+  CheckCircle2, 
+  BarChart2,
+  Camera,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  Download
+} from 'lucide-react';
 import { saveRoom, deleteRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { CircularProgress } from './CircularProgress';
@@ -20,6 +36,34 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<string | null>(null);
 
   const selectedRoomForDetail = rooms.find(r => r.id === selectedRoomIdForDetail) || null;
+
+  // Fullscreen Photo Lightbox Gallery State
+  const [selectedGallery, setSelectedGallery] = useState<{
+    roomTitle: string;
+    photos: string[];
+    currentIndex: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!selectedGallery) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedGallery(null);
+      } else if (e.key === 'ArrowLeft' && selectedGallery.photos.length > 0) {
+        setSelectedGallery(prev => prev ? {
+          ...prev,
+          currentIndex: (prev.currentIndex - 1 + prev.photos.length) % prev.photos.length
+        } : null);
+      } else if (e.key === 'ArrowRight' && selectedGallery.photos.length > 0) {
+        setSelectedGallery(prev => prev ? {
+          ...prev,
+          currentIndex: (prev.currentIndex + 1) % prev.photos.length
+        } : null);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [selectedGallery]);
 
   // Assign Material Modal State
   const [assigningRoom, setAssigningRoom] = useState<Room | null>(null);
@@ -115,12 +159,53 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     await saveRoom(projectId, updatedRoom);
   };
 
+  const getRoomPhotos = (r: Room): string[] => {
+    const list: string[] = [];
+
+    // 1. From r.photos
+    if (Array.isArray(r.photos)) {
+      r.photos.forEach(p => {
+        if (typeof p === 'string' && p.trim() && !list.includes(p)) {
+          list.push(p);
+        }
+      });
+    }
+
+    // 2. From bookings matching this room (by id or code or roomName)
+    const matching = bookings.filter(b => 
+      b.roomId === r.id || 
+      b.roomId === r.code || 
+      (b as any).roomName === r.name
+    );
+
+    matching.forEach(b => {
+      if (Array.isArray(b.photoUrls)) {
+        b.photoUrls.forEach(url => {
+          if (typeof url === 'string' && url.trim() && !list.includes(url)) list.push(url);
+        });
+      }
+      if (Array.isArray(b.photoUris)) {
+        b.photoUris.forEach(uri => {
+          if (typeof uri === 'string' && uri.trim() && !list.includes(uri)) list.push(uri);
+        });
+      }
+      if (Array.isArray((b as any).photos)) {
+        (b as any).photos.forEach((p: any) => {
+          if (typeof p === 'string' && p.trim() && !list.includes(p)) list.push(p);
+        });
+      }
+    });
+
+    return list;
+  };
+
   const getRoomInfo = (r: Room) => {
-    const roomBookings = bookings.filter(b => b.roomId === r.id);
+    const roomBookings = bookings.filter(b => b.roomId === r.id || b.roomId === r.code || (b as any).roomName === r.name);
     const hasCompletionBooking = roomBookings.some(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion');
     const isCompleted = r.status === 'completed' || r.isCompleted || (r.pct === 100) || hasCompletionBooking;
     const roomPercent = isCompleted ? 100 : (r.pct ?? r.progressPercent ?? 0);
-    return { isCompleted, roomPercent, roomBookings };
+    const photos = getRoomPhotos(r);
+    return { isCompleted, roomPercent, roomBookings, photos };
   };
 
   // Calculate Progress Metrics for the Status Pie Chart
@@ -227,7 +312,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const isExpanded = expandedRoomId === room.id;
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
-          const { isCompleted, roomPercent } = getRoomInfo(room);
+          const { isCompleted, roomPercent, photos } = getRoomInfo(room);
           const roomTrans = (room.translations?.ro && room.translations.ro !== room.name)
             ? room.translations
             : generateTranslations(room.name);
@@ -352,6 +437,57 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                     </div>
                   )}
                 </div>
+
+                {/* Proof Photos Thumbnail Section - Direkt unter den hinterlegten Materialien */}
+                {photos && photos.length > 0 && (
+                  <div className="pt-2.5 border-t border-slate-100">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
+                        <Camera className="w-3.5 h-3.5 text-[#3B82C4]" />
+                        <span>Beweisfotos & Montage-Doku:</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-[#3B82C4] bg-blue-50 px-2 py-0.5 rounded">
+                        {photos.length} {photos.length === 1 ? 'Foto' : 'Fotos'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                      {photos.map((photoUrl, pIdx) => {
+                        const isDeviceFile = typeof photoUrl === 'string' && photoUrl.startsWith('file://');
+                        return (
+                          <button
+                            key={pIdx}
+                            type="button"
+                            onClick={() => setSelectedGallery({
+                              roomTitle: `${room.name} (${room.code || 'Raum'})`,
+                              photos,
+                              currentIndex: pIdx,
+                            })}
+                            className="group relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 hover:border-[#3B82C4] shadow-xs shrink-0 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/40 transition-all hover:scale-105 bg-slate-100"
+                            title={`Foto ${pIdx + 1} vergrößern`}
+                          >
+                            {!isDeviceFile ? (
+                              <img
+                                src={photoUrl}
+                                alt={`Beweisfoto ${pIdx + 1} - ${room.name}`}
+                                className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center p-1 text-center">
+                                <Camera className="w-4 h-4 text-[#3B82C4]" />
+                                <span className="text-[8px] font-bold text-slate-600 mt-0.5 leading-none">Foto {pIdx + 1}</span>
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Eye className="w-4 h-4 text-white drop-shadow" />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions: Room Detail / Delta & Add Material */}
@@ -556,9 +692,126 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         projectName={projectName || 'Hallenbad Weingarten'}
         room={selectedRoomForDetail}
         positions={positions}
+        photos={selectedRoomForDetail ? getRoomPhotos(selectedRoomForDetail) : []}
         isOpen={!!selectedRoomForDetail}
         onClose={() => setSelectedRoomIdForDetail(null)}
       />
+
+      {/* Lightbox / Fullscreen Gallery Modal */}
+      {selectedGallery && selectedGallery.photos.length > 0 && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 sm:p-6 animate-in fade-in duration-200 select-none"
+          onClick={() => setSelectedGallery(null)}
+        >
+          {/* Header */}
+          <div 
+            className="w-full max-w-5xl flex items-center justify-between text-white py-2 px-3 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-bold text-base sm:text-lg flex items-center space-x-2">
+                <Camera className="w-5 h-5 text-[#3B82C4]" />
+                <span>{selectedGallery.roomTitle}</span>
+              </h3>
+              <p className="text-xs text-slate-300">
+                Beweisfoto {selectedGallery.currentIndex + 1} von {selectedGallery.photos.length}
+              </p>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              {typeof selectedGallery.photos[selectedGallery.currentIndex] === 'string' && !selectedGallery.photos[selectedGallery.currentIndex].startsWith('file://') && (
+                <a
+                  href={selectedGallery.photos[selectedGallery.currentIndex]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  title="Im neuen Tab öffnen / herunterladen"
+                  download
+                >
+                  <Download className="w-4 h-4" />
+                </a>
+              )}
+              <button
+                onClick={() => setSelectedGallery(null)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Schließen (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Main Photo with Prev / Next Navigation */}
+          <div 
+            className="relative flex-1 w-full max-w-5xl flex items-center justify-center p-2 my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {selectedGallery.photos.length > 1 && (
+              <button
+                onClick={() => setSelectedGallery(prev => prev ? {
+                  ...prev,
+                  currentIndex: (prev.currentIndex - 1 + prev.photos.length) % prev.photos.length
+                } : null)}
+                className="absolute left-2 sm:left-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 shadow-lg backdrop-blur-sm transition-transform hover:scale-110 active:scale-95"
+                title="Vorheriges Bild (Pfeiltaste links)"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <div className="max-h-[75vh] max-w-full flex items-center justify-center rounded-2xl overflow-hidden shadow-2xl bg-black/40">
+              {typeof selectedGallery.photos[selectedGallery.currentIndex] === 'string' && !selectedGallery.photos[selectedGallery.currentIndex].startsWith('file://') ? (
+                <img
+                  src={selectedGallery.photos[selectedGallery.currentIndex]}
+                  alt={`Beweisfoto ${selectedGallery.currentIndex + 1}`}
+                  className="max-h-[75vh] max-w-full object-contain rounded-xl"
+                />
+              ) : (
+                <div className="p-8 text-center bg-slate-900 text-white rounded-xl max-w-md">
+                  <Camera className="w-12 h-12 text-[#3B82C4] mx-auto mb-3" />
+                  <h4 className="font-bold text-base">Foto auf Monteur-Smartphone erfasst</h4>
+                  <p className="text-xs text-slate-400 mt-2 font-mono break-all">{selectedGallery.photos[selectedGallery.currentIndex]}</p>
+                </div>
+              )}
+            </div>
+
+            {selectedGallery.photos.length > 1 && (
+              <button
+                onClick={() => setSelectedGallery(prev => prev ? {
+                  ...prev,
+                  currentIndex: (prev.currentIndex + 1) % prev.photos.length
+                } : null)}
+                className="absolute right-2 sm:right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 shadow-lg backdrop-blur-sm transition-transform hover:scale-110 active:scale-95"
+                title="Nächstes Bild (Pfeiltaste rechts)"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom Thumbnails Strip */}
+          {selectedGallery.photos.length > 1 && (
+            <div 
+              className="w-full max-w-3xl flex items-center justify-center gap-2 overflow-x-auto py-2 px-4 z-10 scrollbar-thin"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {selectedGallery.photos.map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setSelectedGallery(prev => prev ? { ...prev, currentIndex: idx } : null)}
+                  className={`w-14 h-14 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
+                    idx === selectedGallery.currentIndex
+                      ? 'border-[#3B82C4] scale-105 shadow-md shadow-blue-500/30'
+                      : 'border-white/20 opacity-50 hover:opacity-100 hover:border-white/60'
+                  }`}
+                >
+                  <img src={p} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

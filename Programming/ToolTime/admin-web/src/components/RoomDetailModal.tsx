@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Room, Position } from '../types';
 import { 
   X, 
@@ -9,7 +9,11 @@ import {
   ArrowDownRight, 
   Layers, 
   Check, 
-  AlertCircle
+  AlertCircle,
+  Camera,
+  Eye,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { completeRoom, updateRoomMaterialActual } from '../services/firestoreService';
 import { exportRoomVobAufmassToExcel } from '../services/excelExporter';
@@ -19,6 +23,7 @@ interface RoomDetailModalProps {
   projectName: string;
   room: Room | null;
   positions: Position[];
+  photos?: string[];
   isOpen: boolean;
   onClose: () => void;
 }
@@ -28,12 +33,28 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   projectName,
   room,
   positions,
+  photos = [],
   isOpen,
   onClose
 }) => {
   const [editingPosId, setEditingPosId] = useState<string | null>(null);
   const [tempActualVal, setTempActualVal] = useState<number>(0);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
+  const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activePhotoIdx === null) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActivePhotoIdx(null);
+      else if (e.key === 'ArrowLeft' && photos.length > 0) {
+        setActivePhotoIdx(prev => prev !== null ? (prev - 1 + photos.length) % photos.length : 0);
+      } else if (e.key === 'ArrowRight' && photos.length > 0) {
+        setActivePhotoIdx(prev => prev !== null ? (prev + 1) % photos.length : 0);
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [activePhotoIdx, photos.length]);
 
   if (!isOpen || !room) return null;
 
@@ -236,6 +257,50 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           </div>
         </div>
 
+        {/* Beweisfotos & Montage-Dokumentation Section */}
+        {photos && photos.length > 0 && (
+          <div className="px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-800 flex items-center space-x-2">
+                <Camera className="w-4 h-4 text-[#3B82C4]" />
+                <span>Beweisfotos & Montage-Dokumentation ({photos.length})</span>
+              </span>
+              <span className="text-[11px] text-slate-500 font-medium">Klicken zum Vergrößern</span>
+            </div>
+            <div className="flex items-center gap-3 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+              {photos.map((photoUrl, pIdx) => {
+                const isDeviceFile = typeof photoUrl === 'string' && photoUrl.startsWith('file://');
+                return (
+                  <button
+                    key={pIdx}
+                    type="button"
+                    onClick={() => setActivePhotoIdx(pIdx)}
+                    className="group relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-200 hover:border-[#3B82C4] shadow-xs shrink-0 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/40 transition-all hover:scale-105 bg-slate-100"
+                    title={`Beweisfoto ${pIdx + 1} öffnen`}
+                  >
+                    {!isDeviceFile ? (
+                      <img
+                        src={photoUrl}
+                        alt={`Beweisfoto ${pIdx + 1} - ${room.name}`}
+                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center p-1 text-center">
+                        <Camera className="w-5 h-5 text-[#3B82C4]" />
+                        <span className="text-[9px] font-bold text-slate-600 mt-1">Foto {pIdx + 1}</span>
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Eye className="w-5 h-5 text-white drop-shadow" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Material Delta Table */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6">
           <div className="mb-3 flex items-center justify-between">
@@ -415,6 +480,104 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Lightbox / Fullscreen Preview Modal */}
+      {activePhotoIdx !== null && photos[activePhotoIdx] && (
+        <div 
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex flex-col items-center justify-between p-4 sm:p-6 animate-in fade-in duration-200 select-none"
+          onClick={() => setActivePhotoIdx(null)}
+        >
+          {/* Header */}
+          <div 
+            className="w-full max-w-5xl flex items-center justify-between text-white py-2 px-3 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <h3 className="font-bold text-base sm:text-lg flex items-center space-x-2">
+                <Camera className="w-5 h-5 text-[#3B82C4]" />
+                <span>{room.name} ({room.code || 'Raum'})</span>
+              </h3>
+              <p className="text-xs text-slate-300">
+                Beweisfoto {activePhotoIdx + 1} von {photos.length}
+              </p>
+            </div>
+            
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setActivePhotoIdx(null)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                title="Schließen (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Main Photo with Prev / Next Navigation */}
+          <div 
+            className="relative flex-1 w-full max-w-5xl flex items-center justify-center p-2 my-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {photos.length > 1 && (
+              <button
+                onClick={() => setActivePhotoIdx((activePhotoIdx - 1 + photos.length) % photos.length)}
+                className="absolute left-2 sm:left-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 shadow-lg backdrop-blur-sm transition-transform hover:scale-110 active:scale-95"
+                title="Vorheriges Bild (Pfeiltaste links)"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            <div className="max-h-[72vh] max-w-full flex items-center justify-center rounded-2xl overflow-hidden shadow-2xl bg-black/40">
+              {typeof photos[activePhotoIdx] === 'string' && !photos[activePhotoIdx].startsWith('file://') ? (
+                <img
+                  src={photos[activePhotoIdx]}
+                  alt={`Beweisfoto ${activePhotoIdx + 1}`}
+                  className="max-h-[72vh] max-w-full object-contain rounded-xl"
+                />
+              ) : (
+                <div className="p-8 text-center bg-slate-900 text-white rounded-xl max-w-md">
+                  <Camera className="w-12 h-12 text-[#3B82C4] mx-auto mb-3" />
+                  <h4 className="font-bold text-base">Foto auf Monteur-Smartphone erfasst</h4>
+                  <p className="text-xs text-slate-400 mt-2 font-mono break-all">{photos[activePhotoIdx]}</p>
+                </div>
+              )}
+            </div>
+
+            {photos.length > 1 && (
+              <button
+                onClick={() => setActivePhotoIdx((activePhotoIdx + 1) % photos.length)}
+                className="absolute right-2 sm:right-4 z-10 p-3 rounded-full bg-black/60 hover:bg-black/80 text-white border border-white/20 shadow-lg backdrop-blur-sm transition-transform hover:scale-110 active:scale-95"
+                title="Nächstes Bild (Pfeiltaste rechts)"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Bottom Thumbnails Strip */}
+          {photos.length > 1 && (
+            <div 
+              className="w-full max-w-3xl flex items-center justify-center gap-2 overflow-x-auto py-2 px-4 z-10 scrollbar-thin"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {photos.map((p, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActivePhotoIdx(idx)}
+                  className={`w-14 h-14 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
+                    idx === activePhotoIdx
+                      ? 'border-[#3B82C4] scale-105 shadow-md shadow-blue-500/30'
+                      : 'border-white/20 opacity-50 hover:opacity-100 hover:border-white/60'
+                  }`}
+                >
+                  <img src={p} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

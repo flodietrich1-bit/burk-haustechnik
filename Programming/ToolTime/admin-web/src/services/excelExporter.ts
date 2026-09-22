@@ -30,7 +30,7 @@ export function exportMaterialReportToExcel(
 
   // Sheet 2: Bookings Log
   const bookData = bookings.map(b => ({
-    'Datum': new Date(b.createdAt).toLocaleString('de-DE'),
+    'Datum': b.createdAt ? new Date(b.createdAt).toLocaleString('de-DE') : '-',
     'KW': b.calendarWeek || '-',
     'Monteur': b.createdBy,
     'Raum': roomMap.get(b.roomId) || b.roomId,
