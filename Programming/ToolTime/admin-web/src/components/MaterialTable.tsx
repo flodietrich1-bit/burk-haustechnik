@@ -13,35 +13,38 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
-  // Map of positionId -> installedQty from bookings and rooms
+  // Map of positionId/posNr -> installed quantity from bookings and rooms
   const installedMap = useMemo(() => {
-    const map = new Map<string, number>();
-
     // 1. From bookings
+    const fromBookings = new Map<string, number>();
     if (bookings && bookings.length > 0) {
       bookings.forEach(b => {
         const qty = Number(b.quantity) || 0;
         if (b.positionId) {
-          map.set(b.positionId, (map.get(b.positionId) || 0) + qty);
+          fromBookings.set(b.positionId, (fromBookings.get(b.positionId) || 0) + qty);
         }
         if (b.positionNr && b.positionNr !== b.positionId) {
-          map.set(b.positionNr, (map.get(b.positionNr) || 0) + qty);
+          fromBookings.set(b.positionNr, (fromBookings.get(b.positionNr) || 0) + qty);
         }
       });
     }
 
-    // 2. From rooms (materials.actualQty)
+    // 2. From rooms (materials.actualQty or plannedQty if completed)
+    const fromRooms = new Map<string, number>();
     if (rooms && rooms.length > 0) {
       rooms.forEach(r => {
         if (Array.isArray(r.materials)) {
           r.materials.forEach(m => {
-            const qty = Number(m.actualQty) || 0;
+            const qty = m.actualQty !== undefined 
+              ? (Number(m.actualQty) || 0) 
+              : (r.status === 'completed' ? (Number(m.plannedQty) || 0) : 0);
+
             if (qty > 0) {
               if (m.positionId) {
-                map.set(m.positionId, Math.max(map.get(m.positionId) || 0, qty));
+                fromRooms.set(m.positionId, (fromRooms.get(m.positionId) || 0) + qty);
               }
-              if (m.posNr) {
-                map.set(m.posNr, Math.max(map.get(m.posNr) || 0, qty));
+              if (m.posNr && m.posNr !== m.positionId) {
+                fromRooms.set(m.posNr, (fromRooms.get(m.posNr) || 0) + qty);
               }
             }
           });
@@ -49,7 +52,14 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       });
     }
 
-    return map;
+    // Combine: take the max of bookings vs rooms per position
+    const merged = new Map<string, number>();
+    const allKeys = new Set([...fromBookings.keys(), ...fromRooms.keys()]);
+    allKeys.forEach(k => {
+      merged.set(k, Math.max(fromBookings.get(k) || 0, fromRooms.get(k) || 0));
+    });
+
+    return merged;
   }, [bookings, rooms]);
 
   const getPositionMetrics = useMemo(() => {
@@ -61,14 +71,15 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       );
       const planned = Number(pos.qty) || 0;
       const delivered = Number(pos.deliveredQty) || 0;
-      const rest = Math.max(0, delivered - installed);
+      const targetQty = planned > 0 ? planned : delivered;
+      const rest = Math.max(0, targetQty - installed);
 
-      // Fortschritt: wie viel wurde verbaut von dem, was geliefert wurde
-      const percent = delivered > 0
-        ? Math.min(100, Math.round((installed / delivered) * 100))
-        : (planned > 0 ? Math.min(100, Math.round((installed / planned) * 100)) : 0);
+      // Fortschritt: wie viel wurde verbaut von dem, was geplant/geliefert wurde
+      const percent = targetQty > 0
+        ? Math.min(100, Math.round((installed / targetQty) * 100))
+        : 0;
 
-      const isCompleted = (delivered > 0 && installed >= delivered) || (delivered === 0 && planned > 0 && installed >= planned);
+      const isCompleted = targetQty > 0 && installed >= targetQty;
       const isPartial = installed > 0 && !isCompleted;
       const isOpen = installed === 0;
 

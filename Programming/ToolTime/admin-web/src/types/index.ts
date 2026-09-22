@@ -34,6 +34,7 @@ export interface Position {
   qty: number;
   qu: string; // unit e.g. 'm', 'Stk', 'qm', 'Paar'
   deliveredQty: number;
+  installedQty?: number;
   unitPrice?: number;
   isCutMaterial?: boolean;
   status?: 'open' | 'partial' | 'completed' | 'overdelivered';
