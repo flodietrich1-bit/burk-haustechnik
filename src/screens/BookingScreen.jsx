@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,9 +35,42 @@ export default function BookingScreen({
   onOverConsumptionAlert,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeMaterialIds, setActiveMaterialIds] = useState(
-    room.defaultMaterialIds || ['m2', 'm3', 'm4', 'm5']
-  );
+
+  const getInitialMaterialIds = () => {
+    if (Array.isArray(room.materials) && room.materials.length > 0) {
+      const ids = room.materials.map((m) => m.positionId || m.id).filter(Boolean);
+      if (ids.length > 0) return ids;
+    }
+    if (Array.isArray(room.defaultMaterialIds) && room.defaultMaterialIds.length > 0) {
+      return room.defaultMaterialIds;
+    }
+    if (Array.isArray(materials) && materials.length > 0) {
+      return materials.map((m) => m.id);
+    }
+    return [];
+  };
+
+  const [activeMaterialIds, setActiveMaterialIds] = useState(getInitialMaterialIds);
+
+  useEffect(() => {
+    setActiveMaterialIds(getInitialMaterialIds());
+  }, [room.id, materials.length]);
+
+  const getRoomPlannedItem = (matId) => {
+    if (room.plannedItems && room.plannedItems[matId]) {
+      return room.plannedItems[matId];
+    }
+    if (Array.isArray(room.materials)) {
+      const found = room.materials.find((m) => (m.positionId || m.id) === matId || m.posNr === matId);
+      if (found) {
+        return {
+          plannedQty: Number(found.plannedQty || 0),
+          installedQty: Number(found.installedQty || 0),
+        };
+      }
+    }
+    return null;
+  };
 
   // Unclear item Fullscreen Modal
   const [showUnclearModal, setShowUnclearModal] = useState(false);
@@ -172,13 +205,14 @@ export default function BookingScreen({
     const currentDelta = Number(sessionQuantities[matId]) || 0;
     const nextDelta = Math.max(0, currentDelta + stepDelta);
 
-    const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
-    const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : Number(mat.deliveredQty || 0);
+    const roomPlan = getRoomPlannedItem(matId);
+    const hasRoomPlan = Boolean(roomPlan);
+    const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : Number(mat.deliveredQty || mat.qty || 0);
     const installedBefore = hasRoomPlan
-      ? Number(room.plannedItems[matId].installedQty || 0)
+      ? Number(roomPlan.installedQty || 0)
       : Number(mat.installedQty || 0);
     const nextTotalVerb = installedBefore + nextDelta;
-    const delivered = Number(mat.deliveredQty || 0);
+    const delivered = Number(mat.deliveredQty || mat.qty || 0);
 
     // If stepping UP and exceeding planned quantity
     if (stepDelta > 0 && nextTotalVerb > planned) {
@@ -259,11 +293,12 @@ export default function BookingScreen({
       extraNum = max;
     }
 
-    const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[pendingOverMat.mat.id]);
+    const roomPlan = getRoomPlannedItem(pendingOverMat.mat.id);
+    const hasRoomPlan = Boolean(roomPlan);
     const installedBefore = pendingOverMat.installedBefore !== undefined
       ? pendingOverMat.installedBefore
       : (hasRoomPlan
-          ? Number(room.plannedItems[pendingOverMat.mat.id].installedQty || 0)
+          ? Number(roomPlan.installedQty || 0)
           : Number(pendingOverMat.mat.installedQty || 0));
 
     const neededToReachPlan = Math.max(0, pendingOverMat.planned - installedBefore);
@@ -341,10 +376,11 @@ export default function BookingScreen({
       const mat = materials.find((m) => m.id === matId);
       if (!mat) return;
 
-      const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
-      const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+      const roomPlan = getRoomPlannedItem(matId);
+      const hasRoomPlan = Boolean(roomPlan);
+      const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
       const installedBefore = hasRoomPlan
-        ? Number(room.plannedItems[matId].installedQty || 0)
+        ? Number(roomPlan.installedQty || 0)
         : Number(mat.installedQty || 0);
       const delta = Number(sessionQuantities[matId]) || 0;
       const totalInstalled = installedBefore + delta;
@@ -560,10 +596,11 @@ export default function BookingScreen({
             if (!mat) return null;
 
             const delta = Number(sessionQuantities[matId]) || 0;
-            const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
-            const roomPlanned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+            const roomPlan = getRoomPlannedItem(matId);
+            const hasRoomPlan = Boolean(roomPlan);
+            const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
             const roomInstalledBefore = hasRoomPlan
-              ? Number(room.plannedItems[matId].installedQty || 0)
+              ? Number(roomPlan.installedQty || 0)
               : Number(mat.installedQty || 0);
 
             const currentRoomVerb = roomInstalledBefore + delta;
@@ -1545,10 +1582,11 @@ export default function BookingScreen({
                 const mat = materials.find((m) => m.id === matId);
                 if (!mat) return null;
 
-                const hasRoomPlan = Boolean(room.plannedItems && room.plannedItems[matId]);
-                const planned = hasRoomPlan ? Number(room.plannedItems[matId].plannedQty) : null;
+                const roomPlan = getRoomPlannedItem(matId);
+                const hasRoomPlan = Boolean(roomPlan);
+                const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
                 const installedBefore = hasRoomPlan
-                  ? Number(room.plannedItems[matId].installedQty || 0)
+                  ? Number(roomPlan.installedQty || 0)
                   : Number(mat.installedQty || 0);
                 const delta = Number(sessionQuantities[matId]) || 0;
                 const totalVerb = installedBefore + delta;

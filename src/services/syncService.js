@@ -246,31 +246,44 @@ export async function syncBookings(options = {}) {
       }
 
       if (remotePositionsDelta.length > 0) {
+        const mapRemotePos = (remote) => {
+          const name = remote.shortText || remote.name || remote.longText || 'Neues Material';
+          const pos = remote.posNr || remote.pos || 'neu';
+          const qty = Number(remote.qty || 0);
+          const deliveredQty = Number(
+            remote.deliveredQty !== undefined && remote.deliveredQty !== null && Number(remote.deliveredQty) > 0
+              ? remote.deliveredQty
+              : (qty > 0 ? qty : 0)
+          );
+          return {
+            id: remote.id,
+            pos,
+            name,
+            cleanName: name,
+            group: remote.group || 'Allgemein',
+            qu: remote.qu || remote.unit || 'Stk',
+            deliveredQty,
+            installedQty: Number(remote.installedQty || 0),
+            unitPrice: Number(remote.unitPrice || 0),
+            ...remote,
+          };
+        };
+
         let updated;
         if (!lastSyncedAt) {
           // Baseline first sync: Remote positions from Firestore are the clean source of truth
-          updated = remotePositionsDelta.map((remote) => ({
-            id: remote.id,
-            pos: remote.posNr || remote.pos || 'neu',
-            name: remote.name || 'Neues Material',
-            cleanName: remote.cleanName || remote.name || 'Neues Material',
-            group: remote.group || 'Allgemein',
-            qu: remote.qu || remote.unit || 'Stk',
-            deliveredQty: Number(remote.qty ?? remote.deliveredQty ?? 0),
-            installedQty: Number(remote.installedQty ?? 0),
-            ...remote,
-          }));
+          updated = remotePositionsDelta.map(mapRemotePos);
         } else {
           // Delta sync: update existing positions or append new ones
           const localPositions = await getMaterials(projectId);
           updated = localPositions.map((local) => {
             const remote = remotePositionsDelta.find((rp) => rp.id === local.id || rp.posNr === local.pos);
             if (remote) {
+              const mapped = mapRemotePos(remote);
               return {
                 ...local,
-                ...remote,
-                deliveredQty: remote.qty ?? remote.deliveredQty ?? local.deliveredQty,
-                installedQty: remote.installedQty ?? local.installedQty,
+                ...mapped,
+                installedQty: remote.installedQty !== undefined ? Number(remote.installedQty) : local.installedQty,
               };
             }
             return local;
@@ -279,17 +292,7 @@ export async function syncBookings(options = {}) {
           // Insert new materials created remotely
           remotePositionsDelta.forEach((remote) => {
             if (!updated.some((m) => m.id === remote.id || m.pos === remote.posNr)) {
-              updated.push({
-                id: remote.id,
-                pos: remote.posNr || remote.pos || 'neu',
-                name: remote.name || 'Neues Material',
-                cleanName: remote.cleanName || remote.name || 'Neues Material',
-                group: remote.group || 'Allgemein',
-                qu: remote.qu || remote.unit || 'Stk',
-                deliveredQty: Number(remote.qty ?? remote.deliveredQty ?? 0),
-                installedQty: Number(remote.installedQty ?? 0),
-                ...remote,
-              });
+              updated.push(mapRemotePos(remote));
             }
           });
         }
@@ -326,28 +329,49 @@ export async function syncBookings(options = {}) {
       }
 
       if (remoteRoomsDelta.length > 0) {
+        const mapRemoteRoom = (rr, existingRoom = null) => {
+          const defaultMaterialIds = Array.isArray(rr.materials) && rr.materials.length > 0
+            ? rr.materials.map((m) => m.positionId || m.id).filter(Boolean)
+            : (rr.defaultMaterialIds || existingRoom?.defaultMaterialIds || []);
+
+          const plannedItems = { ...(existingRoom?.plannedItems || {}), ...(rr.plannedItems || {}) };
+          if (Array.isArray(rr.materials)) {
+            rr.materials.forEach((m) => {
+              const pId = m.positionId || m.id;
+              if (pId) {
+                plannedItems[pId] = {
+                  plannedQty: Number(m.plannedQty || 0),
+                  installedQty: Number(m.installedQty ?? existingRoom?.plannedItems?.[pId]?.installedQty ?? 0),
+                };
+              }
+            });
+          }
+
+          return {
+            ...existingRoom,
+            ...rr,
+            defaultMaterialIds,
+            plannedItems,
+            pct: Number(rr.pct !== undefined ? rr.pct : (existingRoom?.pct || 0)),
+          };
+        };
+
         let updated;
         if (!lastSyncedAt) {
           // Baseline first sync: Remote rooms from Firestore are the clean source of truth for THIS project!
-          updated = remoteRoomsDelta.map((rr) => ({
-            ...rr,
-            pct: Number(rr.pct !== undefined ? rr.pct : 0),
-          }));
+          updated = remoteRoomsDelta.map((rr) => mapRemoteRoom(rr));
         } else {
           // Delta sync: merge changes with local rooms of this project
           const localRooms = await getRooms(projectId);
           updated = localRooms.map((local) => {
             const remote = remoteRoomsDelta.find((rr) => rr.id === local.id);
-            return remote ? { ...local, ...remote, pct: Number(remote.pct !== undefined ? remote.pct : local.pct || 0) } : local;
+            return remote ? mapRemoteRoom(remote, local) : local;
           });
 
           // Insert new rooms created remotely
           remoteRoomsDelta.forEach((remote) => {
             if (!updated.some((r) => r.id === remote.id)) {
-              updated.push({
-                ...remote,
-                pct: Number(remote.pct !== undefined ? remote.pct : 0),
-              });
+              updated.push(mapRemoteRoom(remote));
             }
           });
         }

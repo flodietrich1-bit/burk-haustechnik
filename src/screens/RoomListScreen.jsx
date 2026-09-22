@@ -22,7 +22,7 @@ export default function RoomListScreen({
   // Calculate total project stats
   const totalDeliveredVal = materials.reduce((acc, m) => acc + (m.deliveredQty * m.unitPrice), 0);
   const totalInstalledVal = materials.reduce((acc, m) => acc + (m.installedQty * m.unitPrice), 0);
-  const totalProg = totalDeliveredVal > 0 ? Math.round((totalInstalledVal / totalDeliveredVal) * 100) : 42;
+  const totalProg = totalDeliveredVal > 0 ? Math.round((totalInstalledVal / totalDeliveredVal) * 100) : 0;
 
   const formatEuro = (val) => {
     return Math.round(val).toLocaleString('de-DE') + ' €';
