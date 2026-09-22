@@ -2,6 +2,8 @@ import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import * as FileSystem from 'expo-file-system';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { db, storage } from './firebase';
 import {
   getPendingBookings,
@@ -33,10 +35,15 @@ export async function checkOnlineStatus() {
 }
 
 /**
- * Upload local photo file to Firebase Storage
+ * Upload local photo file to Firebase Storage or compress to base64 Data URI
  */
 async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex) {
   if (!localUri) return null;
+  if (typeof localUri === 'string' && (localUri.startsWith('http://') || localUri.startsWith('https://') || localUri.startsWith('data:'))) {
+    return localUri;
+  }
+
+  // 1. Try Firebase Storage if available
   try {
     const response = await fetch(localUri);
     const blob = await response.blob();
@@ -45,11 +52,37 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
 
     await uploadBytes(storageRef, blob);
     const downloadUrl = await getDownloadURL(storageRef);
-    return downloadUrl;
-  } catch (error) {
-    console.warn(`Failed to upload photo ${localUri}:`, error.message);
-    return null;
+    if (downloadUrl) return downloadUrl;
+  } catch (storageError) {
+    console.warn(`Firebase storage direct upload unavailable, falling back to compressed base64 data URI:`, storageError.message);
   }
+
+  // 2. Resilient Fallback: Compress and read as base64 Data URI
+  try {
+    const manip = await ImageManipulator.manipulateAsync(
+      localUri,
+      [{ resize: { width: 800 } }],
+      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    if (manip && manip.base64) {
+      return `data:image/jpeg;base64,${manip.base64}`;
+    }
+  } catch (manipErr) {
+    console.warn('ImageManipulator base64 failed, trying FileSystem:', manipErr.message);
+  }
+
+  try {
+    const b64 = await FileSystem.readAsStringAsync(localUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (b64) {
+      return `data:image/jpeg;base64,${b64}`;
+    }
+  } catch (fsErr) {
+    console.warn('FileSystem readAsStringAsync failed:', fsErr.message);
+  }
+
+  return localUri;
 }
 
 /**
@@ -115,19 +148,25 @@ export async function syncBookings(options = {}) {
 
         // Upload proof photos
         const uploadedUrls = [];
-        const photosToUpload = booking.photoUris || [];
         for (let pIdx = 0; pIdx < photosToUpload.length; pIdx++) {
           const photoUri = photosToUpload[pIdx];
+          if (typeof photoUri === 'string' && (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))) {
+            uploadedUrls.push(photoUri);
+            continue;
+          }
           const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx);
           if (cloudUrl) {
             uploadedUrls.push(cloudUrl);
+          } else if (photoUri) {
+            uploadedUrls.push(photoUri);
           }
         }
 
         const now = new Date().toISOString();
         const finalBookingData = {
           ...booking,
-          photoUrls: uploadedUrls,
+          photoUrls: uploadedUrls.length > 0 ? uploadedUrls : (booking.photoUrls || []),
+          photoUris: photosToUpload,
           status: 'synced',
           syncedAt: now,
           updatedAt: now,
@@ -188,7 +227,7 @@ export async function syncBookings(options = {}) {
         const now = new Date().toISOString();
         try {
           const roomRef = doc(db, 'projects', projectId, 'rooms', room.id);
-          await setDoc(roomRef, {
+          const roomPayload = {
             pct: room.pct || 100,
             isCompleted: true,
             status: 'completed',
@@ -196,7 +235,11 @@ export async function syncBookings(options = {}) {
             completedBy: room.completedBy || 'Monteur',
             completionDelta: room.completionDelta || [],
             updatedAt: now,
-          }, { merge: true });
+          };
+          if (Array.isArray(room.photos) && room.photos.length > 0) {
+            roomPayload.photos = room.photos;
+          }
+          await setDoc(roomRef, roomPayload, { merge: true });
 
           // Update local room record
           const allRooms = await getRooms(projectId);

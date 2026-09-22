@@ -574,7 +574,10 @@ export default function BookingScreen({
     }
 
     setShowNachtragModal(false);
-    Alert.alert('Erfasst', 'Nachtrag wurde zur Synchronisation hinterlegt.');
+    Alert.alert(
+      t('doneTitle', currentLang) || 'Erfasst',
+      t('mehrbedarfSaved', currentLang) || 'Mehrbedarf wurde zur Synchronisation hinterlegt.'
+    );
   };
 
   const getForeignGloss = (mat) => {
@@ -957,8 +960,8 @@ export default function BookingScreen({
           {/* Fullscreen Modal Header with Close '✕' Button */}
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
-              <Text style={styles.modalMainTitle}>{t('nachtragTitle', currentLang)}</Text>
-              <Text style={styles.modalSubTitle}>{room.name} · {t('kw', currentLang)} 27</Text>
+              <Text style={styles.modalMainTitle}>📋 {t('nachtragTitle', currentLang)}</Text>
+              <Text style={styles.modalSubTitle}>{room.name} · {t('nachtragSub', currentLang)}</Text>
             </View>
             <TouchableOpacity
               style={styles.modalCloseBtn}
