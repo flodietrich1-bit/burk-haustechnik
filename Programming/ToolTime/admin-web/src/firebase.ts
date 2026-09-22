@@ -4,7 +4,7 @@ import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAuth, type Auth } from "firebase/auth";
 
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAXf_veu3fsfYhyaRJI8531_ObU4zMY040",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "burk-haustechnik.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "burk-haustechnik",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "burk-haustechnik.firebasestorage.app",
