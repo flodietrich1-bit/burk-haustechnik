@@ -71,9 +71,12 @@ export interface Room {
   source?: 'dwg' | 'manual';
   status?: 'planned' | 'in_progress' | 'completed';
   progressPercent?: number; // 0 bis 100%
+  pct?: number;
+  isCompleted?: boolean;
   completedAt?: string;
   completedBy?: string;
   materials?: RoomMaterialRequirement[];
+  photos?: string[];
 }
 
 export interface Alert {
@@ -103,17 +106,23 @@ export interface Booking {
   id: string;
   projectId: string;
   roomId: string;
-  positionId: string;
+  positionId?: string;
+  itemId?: string;
   positionNr?: string;
+  itemOz?: string;
   positionName?: string;
+  itemText?: string;
   quantity: number;
   qu?: string;
   note?: string;
   photoUrls?: string[];
+  photoUris?: string[];
   signatureUrl?: string;
   createdBy: string; // installer name or ID
-  createdAt: string;
+  createdAt?: string;
+  timestamp?: string;
   calendarWeek?: number;
+  type?: string;
 }
 
 export interface Addendum {

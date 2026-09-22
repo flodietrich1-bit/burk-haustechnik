@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Room, Position, RoomMaterialRequirement } from '../types';
+import type { Room, Position, Booking } from '../types';
 import { Plus, Globe, Trash2, Package, ChevronDown, ChevronUp, Compass, X, CheckCircle2, BarChart2 } from 'lucide-react';
 import { saveRoom, deleteRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
@@ -11,9 +11,10 @@ interface RoomManagerProps {
   projectName?: string;
   rooms: Room[];
   positions: Position[];
+  bookings?: Booking[];
 }
 
-export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName, rooms, positions }) => {
+export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName, rooms, positions, bookings = [] }) => {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<string | null>(null);
@@ -114,14 +115,22 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     await saveRoom(projectId, updatedRoom);
   };
 
+  const getRoomInfo = (r: Room) => {
+    const roomBookings = bookings.filter(b => b.roomId === r.id);
+    const hasCompletionBooking = roomBookings.some(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion');
+    const isCompleted = r.status === 'completed' || r.isCompleted || (r.pct === 100) || hasCompletionBooking;
+    const roomPercent = isCompleted ? 100 : (r.pct ?? r.progressPercent ?? 0);
+    return { isCompleted, roomPercent, roomBookings };
+  };
+
   // Calculate Progress Metrics for the Status Pie Chart
   const totalRooms = rooms.length;
-  const completedRooms = rooms.filter(r => r.status === 'completed').length;
-  const inProgressRooms = rooms.filter(r => r.status !== 'completed' && (r.progressPercent || 0) > 0).length;
-  const plannedRooms = rooms.filter(r => r.status !== 'completed' && (!r.progressPercent || r.progressPercent === 0)).length;
+  const completedRooms = rooms.filter(r => getRoomInfo(r).isCompleted).length;
+  const inProgressRooms = rooms.filter(r => !getRoomInfo(r).isCompleted && getRoomInfo(r).roomPercent > 0).length;
+  const plannedRooms = rooms.filter(r => !getRoomInfo(r).isCompleted && getRoomInfo(r).roomPercent === 0).length;
 
   const totalProgressPercent = totalRooms > 0 
-    ? Math.round(rooms.reduce((sum, r) => sum + (r.status === 'completed' ? 100 : (r.progressPercent || 0)), 0) / totalRooms)
+    ? Math.round(rooms.reduce((sum, r) => sum + getRoomInfo(r).roomPercent, 0) / totalRooms)
     : 0;
 
   return (
@@ -218,7 +227,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const isExpanded = expandedRoomId === room.id;
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
-          const roomPercent = room.status === 'completed' ? 100 : (room.progressPercent || 0);
+          const { isCompleted, roomPercent } = getRoomInfo(room);
           const roomTrans = (room.translations?.ro && room.translations.ro !== room.name)
             ? room.translations
             : generateTranslations(room.name);
@@ -238,7 +247,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                     <div className="truncate">
                       <div className="flex items-center space-x-2">
                         <h3 className="font-bold text-slate-900 text-sm leading-tight truncate">{room.name}</h3>
-                        {room.status === 'completed' && (
+                        {isCompleted && (
                           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1 shrink-0">
                             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                             <span>100% Fertig</span>

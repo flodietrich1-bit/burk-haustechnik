@@ -20,11 +20,13 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
     if (bookings && bookings.length > 0) {
       bookings.forEach(b => {
         const qty = Number(b.quantity) || 0;
-        if (b.positionId) {
-          fromBookings.set(b.positionId, (fromBookings.get(b.positionId) || 0) + qty);
+        const posId = b.positionId || (b as any).itemId;
+        const posNr = b.positionNr || (b as any).itemOz;
+        if (posId && posId !== 'room_completion' && posId !== 'photo_doc') {
+          fromBookings.set(posId, (fromBookings.get(posId) || 0) + qty);
         }
-        if (b.positionNr && b.positionNr !== b.positionId) {
-          fromBookings.set(b.positionNr, (fromBookings.get(b.positionNr) || 0) + qty);
+        if (posNr && posNr !== posId && posNr !== 'FERTIG' && posNr !== 'DOKU') {
+          fromBookings.set(posNr, (fromBookings.get(posNr) || 0) + qty);
         }
       });
     }
@@ -33,11 +35,12 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
     const fromRooms = new Map<string, number>();
     if (rooms && rooms.length > 0) {
       rooms.forEach(r => {
+        const isCompleted = r.status === 'completed' || r.isCompleted || r.pct === 100;
         if (Array.isArray(r.materials)) {
           r.materials.forEach(m => {
             const qty = m.actualQty !== undefined 
               ? (Number(m.actualQty) || 0) 
-              : (r.status === 'completed' ? (Number(m.plannedQty) || 0) : 0);
+              : (isCompleted ? (Number(m.plannedQty) || 0) : 0);
 
             if (qty > 0) {
               if (m.positionId) {
