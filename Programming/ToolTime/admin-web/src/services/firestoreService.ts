@@ -371,20 +371,61 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
     callback([]);
     return () => {};
   }
-  const colRef = collection(db, 'addendums');
-  return onSnapshot(colRef, (snap) => {
+
+  let globalList: Addendum[] = [];
+  let projectList: Addendum[] = [];
+
+  const emitMerged = () => {
+    const map = new Map<string, Addendum>();
+    globalList.forEach(a => {
+      if (a.projectId === projectId || !a.projectId) {
+        map.set(a.id, a);
+      }
+    });
+    projectList.forEach(a => {
+      const existing = map.get(a.id);
+      map.set(a.id, existing ? { ...existing, ...a } : a);
+    });
+
+    const normalized: Addendum[] = Array.from(map.values()).map(item => ({
+      ...item,
+      // Normalize 'synced' status from mobile to 'pending'
+      status: (item.status && (item.status as string) !== 'synced') ? item.status : 'pending',
+    }));
+
+    callback(normalized);
+  };
+
+  const globalRef = collection(db, 'addendums');
+  const unsubGlobal = onSnapshot(globalRef, (snap) => {
     if (!snap.empty) {
-      const list = snap.docs
+      globalList = snap.docs
         .map(d => ({ id: d.id, ...d.data() }) as Addendum)
-        .filter(a => a.projectId === projectId);
-      callback(list);
+        .filter(a => !a.projectId || a.projectId === projectId);
     } else {
-      callback([]);
+      globalList = [];
     }
+    emitMerged();
   }, (err) => {
-    console.warn('Firestore fallback mode for addendums:', err.message);
-    callback([]);
+    console.warn('Firestore global addendums fallback:', err.message);
   });
+
+  const projectRef = collection(db, 'projects', projectId, 'addendums');
+  const unsubProject = onSnapshot(projectRef, (snap) => {
+    if (!snap.empty) {
+      projectList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Addendum);
+    } else {
+      projectList = [];
+    }
+    emitMerged();
+  }, (err) => {
+    console.warn('Firestore project addendums fallback:', err.message);
+  });
+
+  return () => {
+    unsubGlobal();
+    unsubProject();
+  };
 }
 
 // Delete a single project and clean all associated local data & collections
@@ -520,12 +561,59 @@ export async function deleteRoom(projectId: string, roomId: string) {
   }
 }
 
-export async function updateAddendumStatus(addendumId: string, status: 'approved' | 'rejected') {
+export async function createAddendum(projectId: string, addendumData: Partial<Addendum>): Promise<void> {
+  const addId = addendumData.id || `add_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = new Date().toISOString();
+  const payload: Addendum = {
+    id: addId,
+    projectId,
+    roomId: addendumData.roomId || 'allgemein',
+    roomName: addendumData.roomName || 'Baustelle',
+    type: addendumData.type || 'material',
+    title: addendumData.title || 'Mehrbedarf',
+    description: addendumData.description || '',
+    quantity: addendumData.quantity || '1',
+    qu: addendumData.qu || 'Stk',
+    requestedBy: addendumData.requestedBy || 'Bauleiter',
+    status: (addendumData.status as any) || 'pending',
+    note: addendumData.note || '',
+    signature: addendumData.signature || null,
+    signatureUrl: addendumData.signatureUrl || undefined,
+    photoUrls: addendumData.photoUrls || [],
+    createdAt: addendumData.createdAt || now,
+    itemOz: addendumData.itemOz,
+    materialId: addendumData.materialId,
+    isOrdered: addendumData.isOrdered,
+    isUnclear: addendumData.isUnclear,
+  };
+
+  try {
+    await setDoc(doc(db, 'projects', projectId, 'addendums', addId), payload, { merge: true });
+    await setDoc(doc(db, 'addendums', addId), payload, { merge: true });
+  } catch (err: any) {
+    console.warn('Firestore createAddendum error:', err.message);
+  }
+}
+
+export async function updateAddendumStatus(
+  addendumId: string, 
+  status: 'approved' | 'rejected' | 'pending',
+  projectId?: string
+): Promise<void> {
   try {
     const ref = doc(db, 'addendums', addendumId);
     await updateDoc(ref, { status });
   } catch (err: any) {
-    console.warn('Firestore updateAddendumStatus error:', err.message);
+    console.warn('Firestore updateAddendumStatus global error:', err.message);
+  }
+
+  if (projectId) {
+    try {
+      const projRef = doc(db, 'projects', projectId, 'addendums', addendumId);
+      await updateDoc(projRef, { status });
+    } catch (err: any) {
+      console.warn('Firestore updateAddendumStatus project error:', err.message);
+    }
   }
 }
 

@@ -692,6 +692,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         projectName={projectName || 'Hallenbad Weingarten'}
         room={selectedRoomForDetail}
         positions={positions}
+        bookings={bookings}
         photos={selectedRoomForDetail ? getRoomPhotos(selectedRoomForDetail) : []}
         isOpen={!!selectedRoomForDetail}
         onClose={() => setSelectedRoomIdForDetail(null)}

@@ -56,25 +56,52 @@ export function exportMaterialReportToExcel(
 export function exportRoomVobAufmassToExcel(
   room: Room,
   positions: Position[],
-  projectName: string
+  projectName: string,
+  bookings: Booking[] = []
 ) {
   const posMap = new Map(positions.map(p => [p.id, p]));
+  const isCompleted = room.status === 'completed';
 
   // Build sheet rows from room materials
   const rows = (room.materials || []).map(mat => {
     const pos = posMap.get(mat.positionId);
     const unitPrice = mat.unitPrice || pos?.unitPrice || 0;
     const planned = mat.plannedQty || 0;
-    const actual = mat.actualQty ?? planned;
-    const qtyDelta = planned - actual; // >0 Minderverbrauch (Ersparnis), <0 Mehrverbrauch
+    
+    // Direct bookings for this room
+    const bookedQty = bookings
+      .filter(b => b.roomId === room.id && (
+        (b.positionId && b.positionId === mat.positionId) ||
+        (b.positionNr && mat.posNr && b.positionNr === mat.posNr) ||
+        (b.itemOz && mat.posNr && b.itemOz === mat.posNr) ||
+        (b.itemId && b.itemId === mat.positionId)
+      ))
+      .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+
+    const actual = mat.actualQty !== undefined ? mat.actualQty : bookedQty;
+    const isOver = actual > planned;
+    const isUnder = actual < planned;
+    const excessQty = isOver ? (actual - planned) : 0;
+    const underQty = isUnder ? (planned - actual) : 0;
+
     const actualTotal = actual * unitPrice;
-    const costDelta = -qtyDelta * unitPrice; // positive if actual > planned (extra cost)
+    const costDelta = isOver 
+      ? (excessQty * unitPrice) 
+      : (isUnder && isCompleted ? -(underQty * unitPrice) : 0);
 
     let vobStatus = 'Punktgenau';
-    if (qtyDelta > 0) {
-      vobStatus = `Minderverbrauch (+${qtyDelta} ${mat.qu} Ersparnis)`;
-    } else if (qtyDelta < 0) {
-      vobStatus = `Mehrverbrauch (${qtyDelta} ${mat.qu} Mehraufwand / Sonderposten)`;
+    let deltaDisplay = '0 ' + (mat.qu || 'Stk');
+    if (isOver) {
+      vobStatus = `Mehrverbrauch (+${excessQty} ${mat.qu} Sonderposten/Mehraufwand)`;
+      deltaDisplay = `+${excessQty} ${mat.qu}`;
+    } else if (isUnder) {
+      if (isCompleted) {
+        vobStatus = `Minderverbrauch (-${underQty} ${mat.qu} Ersparnis/Retoure)`;
+        deltaDisplay = `-${underQty} ${mat.qu}`;
+      } else {
+        vobStatus = `In Montage (Offen: ${underQty} ${mat.qu})`;
+        deltaDisplay = `Offen: ${underQty} ${mat.qu}`;
+      }
     }
 
     return {
@@ -84,7 +111,7 @@ export function exportRoomVobAufmassToExcel(
       'Soll-Menge (Plan)': planned,
       'Ist-Menge (Verbaut)': actual,
       'Einheit': mat.qu || pos?.qu || 'Stk',
-      'Mengen-Delta': qtyDelta > 0 ? `+${qtyDelta} ${mat.qu}` : `${qtyDelta} ${mat.qu}`,
+      'Mengen-Delta': deltaDisplay,
       'Einheitspreis (€)': unitPrice ? unitPrice.toFixed(2) : '0.00',
       'Abrechnungswert (€)': actualTotal ? actualTotal.toFixed(2) : '0.00',
       'Kosten-Delta (€)': costDelta !== 0 ? (costDelta > 0 ? `+${costDelta.toFixed(2)}` : costDelta.toFixed(2)) : '0.00',

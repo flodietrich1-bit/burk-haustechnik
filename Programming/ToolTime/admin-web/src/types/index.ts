@@ -130,15 +130,46 @@ export interface Addendum {
   projectId: string;
   roomId: string;
   roomName?: string;
+  type?: 'material' | 'stunden' | 'unklar' | string;
   title: string;
-  description: string;
-  quantity: number;
-  qu: string;
+  description?: string;
+  quantity: number | string;
+  qu?: string;
   requestedBy: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'synced';
+  note?: string;
+  signature?: string | null;
   signatureUrl?: string;
   photoUrls?: string[];
+  photoUris?: string[];
+  itemOz?: string;
+  materialId?: string;
+  isOrdered?: boolean;
+  isUnclear?: boolean;
   createdAt: string;
+  syncedAt?: string;
+  updatedAt?: string;
+}
+
+export interface PlanDeviationItem {
+  id: string;
+  roomId: string;
+  roomName: string;
+  roomCode?: string;
+  floor?: string;
+  positionId?: string;
+  posNr: string;
+  materialName: string;
+  qu: string;
+  unitPrice: number;
+  plannedQty: number;
+  actualQty: number;
+  deltaQty: number; // >0 Mehrverbrauch, <0 Minderverbrauch
+  deviationType: 'overconsumption' | 'underconsumption';
+  isRoomCompleted: boolean;
+  status: 'open' | 'reordered' | 'acknowledged' | 'billed';
+  reorderedAt?: string;
+  actionNote?: string;
 }
 
 export type UserRole = 'admin' | 'bauleiter' | 'kaufmaennisch' | 'monteur';

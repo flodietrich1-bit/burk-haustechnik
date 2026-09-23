@@ -148,7 +148,27 @@ export function App() {
   };
 
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
-  const reordersCount = alerts.filter(a => a.status === 'reordered' || a.actionNote?.includes('Großhändler')).length;
+  
+  // Overconsumption count (rooms where actual > planned)
+  const overconsumptionCount = useMemo(() => {
+    let count = 0;
+    rooms.forEach(room => {
+      const roomBookings = bookings.filter(b => b.roomId === room.id);
+      (room.materials || []).forEach(m => {
+        const directSum = roomBookings
+          .filter(b => (b.positionId && b.positionId === m.positionId) || (b.positionNr && m.posNr && b.positionNr === m.posNr) || (b.itemOz && m.posNr && b.itemOz === m.posNr) || (b.itemId && b.itemId === m.positionId))
+          .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+        const actual = Math.max(m.actualQty || 0, directSum);
+        const planned = m.plannedQty || 0;
+        if (actual > planned) {
+          count++;
+        }
+      });
+    });
+    return count;
+  }, [rooms, bookings]);
+
+  const reordersCount = overconsumptionCount + alerts.filter(a => a.status === 'open' || a.status === 'reordered').length;
 
   if (!currentUser) {
     return (
@@ -266,6 +286,9 @@ export function App() {
                 {activeTab === 'addendums' && (
                   <AddendumsView
                     addendums={addendums}
+                    projectId={selectedProjectId}
+                    rooms={rooms}
+                    positions={positions}
                   />
                 )}
 
@@ -274,6 +297,9 @@ export function App() {
                   <ReordersView
                     projectId={selectedProjectId}
                     projectName={activeProject?.name || 'Neues Projekt'}
+                    rooms={rooms}
+                    positions={positions}
+                    bookings={bookings}
                     alerts={alerts}
                     project={activeProject}
                   />

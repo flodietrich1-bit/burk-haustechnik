@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Room, Position } from '../types';
+import type { Room, Position, Booking } from '../types';
 import { 
   X, 
   CheckCircle2, 
@@ -23,6 +23,7 @@ interface RoomDetailModalProps {
   projectName: string;
   room: Room | null;
   positions: Position[];
+  bookings?: Booking[];
   photos?: string[];
   isOpen: boolean;
   onClose: () => void;
@@ -33,6 +34,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   projectName,
   room,
   positions,
+  bookings = [],
   photos = [],
   isOpen,
   onClose
@@ -64,15 +66,34 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   // Calculate totals
   let totalPlannedValue = 0;
   let totalActualValue = 0;
-  let totalSavingsValue = 0; // Minderverbrauch (Ersparnis)
-  let totalSurchargeValue = 0; // Mehrverbrauch (Sonderposten)
+  let totalSavingsValue = 0; // Minderverbrauch (Ersparnis) - only when isCompleted === true
+  let totalSurchargeValue = 0; // Mehrverbrauch (Sonderposten) - active immediately
 
   const materialsWithDelta = (room.materials || []).map(mat => {
     const pos = posMap.get(mat.positionId);
     const unitPrice = mat.unitPrice || pos?.unitPrice || 0;
     const planned = mat.plannedQty || 0;
-    const actual = mat.actualQty ?? planned;
-    const qtyDelta = planned - actual; // >0 Minderverbrauch (Ersparnis), <0 Mehrverbrauch
+
+    // Direct bookings by monteur in this room
+    const bookedQty = bookings
+      .filter(b => b.roomId === room.id && (
+        (b.positionId && b.positionId === mat.positionId) ||
+        (b.positionNr && mat.posNr && b.positionNr === mat.posNr) ||
+        (b.itemOz && mat.posNr && b.itemOz === mat.posNr) ||
+        (b.itemId && b.itemId === mat.positionId)
+      ))
+      .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+
+    // Actual installed quantity: explicit actualQty from Firestore or bookedQty (default to 0 if untouched)
+    const actual = mat.actualQty !== undefined ? mat.actualQty : bookedQty;
+    
+    // VOB Aufmaß Mengen-Delta logic:
+    // isOver: Mehrverbrauch (actual > planned) -> ROT, Sofort aktiv
+    // isUnder: Minderverbrauch (actual < planned) -> GRÜN nur wenn Raum fertiggestellt, sonst Status "In Ausführung / Offen"
+    const isOver = actual > planned;
+    const isUnder = actual < planned;
+    const excessQty = isOver ? (actual - planned) : 0;
+    const underQty = isUnder ? (planned - actual) : 0;
     
     const plannedTotal = planned * unitPrice;
     const actualTotal = actual * unitPrice;
@@ -80,17 +101,23 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     totalPlannedValue += plannedTotal;
     totalActualValue += actualTotal;
 
-    if (qtyDelta > 0) {
-      totalSavingsValue += qtyDelta * unitPrice;
-    } else if (qtyDelta < 0) {
-      totalSurchargeValue += Math.abs(qtyDelta) * unitPrice;
+    if (isOver) {
+      totalSurchargeValue += excessQty * unitPrice;
+    }
+    // Only count towards totalSavingsValue when room is completed!
+    if (isUnder && isCompleted) {
+      totalSavingsValue += underQty * unitPrice;
     }
 
     return {
       ...mat,
       unitPrice,
+      planned,
       actual,
-      qtyDelta,
+      isOver,
+      isUnder,
+      excessQty,
+      underQty,
       plannedTotal,
       actualTotal
     };
@@ -116,7 +143,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   };
 
   const handleExportVob = () => {
-    exportRoomVobAufmassToExcel(room, positions, projectName);
+    exportRoomVobAufmassToExcel(room, positions, projectName, bookings);
   };
 
   return (
@@ -225,33 +252,55 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
               </span>
             </div>
 
-            <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200 shadow-sm">
-              <div className="flex items-center space-x-1 text-emerald-700">
+            {/* Minderverbrauch (Ersparnis) Card */}
+            <div className={`p-3.5 rounded-xl border shadow-sm ${
+              isCompleted && totalSavingsValue > 0 
+                ? 'bg-emerald-50 border-emerald-200' 
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className={`flex items-center space-x-1 ${
+                isCompleted && totalSavingsValue > 0 ? 'text-emerald-700' : 'text-slate-500'
+              }`}>
                 <ArrowDownRight className="w-3.5 h-3.5" />
                 <span className="text-[11px] font-bold uppercase tracking-wider">
                   Minderverbrauch (Ersparnis)
                 </span>
               </div>
-              <span className="text-lg font-black text-emerald-800">
-                +{totalSavingsValue.toFixed(2)} €
+              <span className={`text-lg font-black ${
+                isCompleted && totalSavingsValue > 0 ? 'text-emerald-800' : 'text-slate-500'
+              }`}>
+                {isCompleted ? `+${totalSavingsValue.toFixed(2)} €` : '0.00 €'}
               </span>
-              <span className="text-[10px] text-emerald-600 block mt-0.5">
-                Freies Material / Lager-Retoure
+              <span className={`text-[10px] block mt-0.5 ${
+                isCompleted && totalSavingsValue > 0 ? 'text-emerald-600' : 'text-slate-400'
+              }`}>
+                {isCompleted ? 'Freies Material / Lager-Retoure' : 'Wird erst bei 100% Fertigstellung wirksam'}
               </span>
             </div>
 
-            <div className="bg-amber-50 p-3.5 rounded-xl border border-amber-200 shadow-sm">
-              <div className="flex items-center space-x-1 text-amber-700">
+            {/* Mehrverbrauch (Sonderposten) Card */}
+            <div className={`p-3.5 rounded-xl border shadow-sm ${
+              totalSurchargeValue > 0 
+                ? 'bg-red-50 border-red-200' 
+                : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className={`flex items-center space-x-1 ${
+                totalSurchargeValue > 0 ? 'text-red-700' : 'text-slate-500'
+              }`}>
                 <ArrowUpRight className="w-3.5 h-3.5" />
                 <span className="text-[11px] font-bold uppercase tracking-wider">
                   Mehrverbrauch (Sonderposten)
                 </span>
               </div>
-              <span className="text-lg font-black text-amber-800">
+              <span className={`text-lg font-black ${
+                totalSurchargeValue > 0 ? 'text-red-800' : 'text-slate-500'
+              }`}>
                 {totalSurchargeValue > 0 ? `+${totalSurchargeValue.toFixed(2)} €` : '0.00 €'}
               </span>
-              <span className="text-[10px] text-amber-600 block mt-0.5">
-                VOB-Aufmaß Nachforderung
+              <span className={`text-[10px] block mt-0.5 ${
+                totalSurchargeValue > 0 ? 'text-red-600 font-semibold' : 'text-slate-400'
+              }`}>
+                {totalSurchargeValue > 0 ? 'VOB-Aufmaß Nachforderung (Sofort aktiv)' : 'Keine Überschreitung'}
               </span>
             </div>
           </div>
@@ -341,11 +390,15 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                   <tbody className="divide-y divide-slate-100">
                     {materialsWithDelta.map(mat => {
                       const isEditing = editingPosId === mat.positionId;
-                      const hasMinder = mat.qtyDelta > 0;
-                      const hasMehr = mat.qtyDelta < 0;
+                      const { isOver, isUnder, excessQty, underQty } = mat;
 
                       return (
-                        <tr key={mat.positionId} className="hover:bg-slate-50/80 transition-colors">
+                        <tr 
+                          key={mat.positionId} 
+                          className={`hover:bg-slate-50/80 transition-colors ${
+                            isOver ? 'bg-red-50/30' : (isUnder && isCompleted ? 'bg-emerald-50/20' : '')
+                          }`}
+                        >
                           <td className="py-3 px-3 font-mono font-bold text-[#3B82C4] whitespace-nowrap">
                             {mat.posNr}
                           </td>
@@ -360,10 +413,10 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                             )}
                           </td>
                           <td className="py-3 px-3 text-right font-medium text-slate-600 whitespace-nowrap">
-                            {mat.plannedQty} {mat.qu}
+                            {mat.planned} {mat.qu}
                           </td>
                           
-                          {/* Editable Actual Quantity */}
+                          {/* Editable Actual Quantity (Verbaut) */}
                           <td className="py-3 px-3 text-right whitespace-nowrap">
                             {isEditing ? (
                               <div className="flex items-center justify-end space-x-1">
@@ -393,7 +446,13 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                             ) : (
                               <button
                                 onClick={() => handleStartEditActual(mat.positionId, mat.actual)}
-                                className="font-bold text-slate-900 hover:text-[#3B82C4] hover:underline cursor-pointer px-1 py-0.5 rounded"
+                                className={`px-2 py-0.5 rounded cursor-pointer transition-colors inline-block ${
+                                  isOver 
+                                    ? 'text-red-700 font-bold bg-red-100 border border-red-300 hover:bg-red-200' 
+                                    : (isUnder && isCompleted 
+                                      ? 'text-emerald-700 font-bold bg-emerald-100 border border-emerald-300 hover:bg-emerald-200' 
+                                      : 'text-slate-900 font-semibold hover:text-[#3B82C4] hover:underline')
+                                }`}
                                 title="Klicken zum Anpassen der Ist-Menge"
                               >
                                 {mat.actual} {mat.qu}
@@ -403,19 +462,25 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
                           {/* Mengen-Delta Badge */}
                           <td className="py-3 px-3 whitespace-nowrap">
-                            {hasMinder && (
-                              <span className="inline-flex items-center space-x-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded">
-                                <span>+{mat.qtyDelta} {mat.qu}</span>
-                                <span className="font-normal text-[10px] hidden sm:inline">(Ersparnis)</span>
+                            {isOver && (
+                              <span className="inline-flex items-center space-x-1 text-[11px] font-bold bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded shadow-xs">
+                                <span>+{excessQty} {mat.qu}</span>
+                                <span className="font-normal text-[10px] hidden sm:inline">(Mehrverbrauch)</span>
                               </span>
                             )}
-                            {hasMehr && (
-                              <span className="inline-flex items-center space-x-1 text-[11px] font-bold bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded">
-                                <span>{mat.qtyDelta} {mat.qu}</span>
-                                <span className="font-normal text-[10px] hidden sm:inline">(Mehraufwand)</span>
+                            {isUnder && isCompleted && (
+                              <span className="inline-flex items-center space-x-1 text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded shadow-xs">
+                                <span>-{underQty} {mat.qu}</span>
+                                <span className="font-normal text-[10px] hidden sm:inline">(Minderverbrauch)</span>
                               </span>
                             )}
-                            {!hasMinder && !hasMehr && (
+                            {isUnder && !isCompleted && (
+                              <span className="inline-flex items-center space-x-1 text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded">
+                                <span>Offen: {underQty} {mat.qu}</span>
+                                <span className="text-[10px] text-slate-400 hidden sm:inline">(In Montage)</span>
+                              </span>
+                            )}
+                            {!isOver && !isUnder && (
                               <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
                                 Punktgenau
                               </span>
@@ -433,13 +498,17 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                           {/* Cost Delta */}
                           <td className="py-3 px-3 text-right font-bold whitespace-nowrap">
                             {mat.unitPrice > 0 ? (
-                              hasMinder ? (
-                                <span className="text-emerald-600">
-                                  -{(mat.qtyDelta * mat.unitPrice).toFixed(2)} €
-                                </span>
-                              ) : hasMehr ? (
+                              isOver ? (
                                 <span className="text-red-600">
-                                  +{(Math.abs(mat.qtyDelta) * mat.unitPrice).toFixed(2)} €
+                                  +{(excessQty * mat.unitPrice).toFixed(2)} €
+                                </span>
+                              ) : (isUnder && isCompleted) ? (
+                                <span className="text-emerald-600">
+                                  -{(underQty * mat.unitPrice).toFixed(2)} €
+                                </span>
+                              ) : (isUnder && !isCompleted) ? (
+                                <span className="text-slate-400 font-normal">
+                                  (offen: -{(underQty * mat.unitPrice).toFixed(2)} €)
                                 </span>
                               ) : (
                                 <span className="text-slate-400">0.00 €</span>
