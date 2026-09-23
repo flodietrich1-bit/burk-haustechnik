@@ -42,8 +42,21 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
         className="transform -rotate-90"
       >
         <defs>
-          {/* Gradient verlaufend von Rot (1%) bis zur aktuellen Zielfarbe (Grün bei 100%) */}
-          <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+          {/* 
+            Der Bogen beginnt bei 12 Uhr und läuft im Uhrzeigersinn (durch -rotate-90):
+            12 Uhr (Start) entspricht lokal x=0.5, y=0.
+            Mit gradientTransform="rotate(90 0.5 0.5)" verläuft der Gradient exakt:
+            Start (12 Uhr): ROT (#EF4444)
+            Verlauf im Uhrzeigersinn nach rechts/unten: GELB -> GRÜN (#10B981)
+          */}
+          <linearGradient 
+            id={gradientId} 
+            x1="0%" 
+            y1="0%" 
+            x2="100%" 
+            y2="100%"
+            gradientTransform="rotate(90, 0.5, 0.5)"
+          >
             <stop offset="0%" stopColor={is100 ? "#10B981" : "#EF4444"} />
             <stop offset="100%" stopColor={currentColor} />
           </linearGradient>
