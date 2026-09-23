@@ -30,7 +30,8 @@ import {
   getCurrentAuthUser,
   setCurrentAuthUser,
   getLocalUsers,
-  getLocalProjects
+  getLocalProjects,
+  getMaterialActualQty
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 
@@ -153,12 +154,8 @@ export function App() {
   const overconsumptionCount = useMemo(() => {
     let count = 0;
     rooms.forEach(room => {
-      const roomBookings = bookings.filter(b => b.roomId === room.id);
       (room.materials || []).forEach(m => {
-        const directSum = roomBookings
-          .filter(b => (b.positionId && b.positionId === m.positionId) || (b.positionNr && m.posNr && b.positionNr === m.posNr) || (b.itemOz && m.posNr && b.itemOz === m.posNr) || (b.itemId && b.itemId === m.positionId))
-          .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
-        const actual = Math.max(m.actualQty || 0, directSum);
+        const actual = getMaterialActualQty(m, room, bookings);
         const planned = m.plannedQty || 0;
         if (actual > planned) {
           count++;

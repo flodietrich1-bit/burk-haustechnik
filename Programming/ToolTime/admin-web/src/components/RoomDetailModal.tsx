@@ -15,7 +15,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { completeRoom, updateRoomMaterialActual } from '../services/firestoreService';
+import { completeRoom, updateRoomMaterialActual, getMaterialActualQty } from '../services/firestoreService';
 import { exportRoomVobAufmassToExcel } from '../services/excelExporter';
 
 interface RoomDetailModalProps {
@@ -61,7 +61,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
   if (!isOpen || !room) return null;
 
   const posMap = new Map(positions.map(p => [p.id, p]));
-  const isCompleted = room.status === 'completed';
+  const isExplicitlyUnlocked = room.isCompleted === false || room.status === 'in_progress';
+  const isCompleted = !isExplicitlyUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
 
   // Calculate totals
   let totalPlannedValue = 0;
@@ -74,18 +75,8 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
     const unitPrice = mat.unitPrice || pos?.unitPrice || 0;
     const planned = mat.plannedQty || 0;
 
-    // Direct bookings by monteur in this room
-    const bookedQty = bookings
-      .filter(b => b.roomId === room.id && (
-        (b.positionId && b.positionId === mat.positionId) ||
-        (b.positionNr && mat.posNr && b.positionNr === mat.posNr) ||
-        (b.itemOz && mat.posNr && b.itemOz === mat.posNr) ||
-        (b.itemId && b.itemId === mat.positionId)
-      ))
-      .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
-
-    // Actual installed quantity: explicit actualQty from Firestore or bookedQty (default to 0 if untouched)
-    const actual = mat.actualQty !== undefined ? mat.actualQty : bookedQty;
+    // Actual installed quantity resolved accurately from completion delta, direct bookings, or manual edit
+    const actual = getMaterialActualQty(mat, room, bookings);
     
     // VOB Aufmaß Mengen-Delta logic:
     // isOver: Mehrverbrauch (actual > planned) -> ROT, Sofort aktiv

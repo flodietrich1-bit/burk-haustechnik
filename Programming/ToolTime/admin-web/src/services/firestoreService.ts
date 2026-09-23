@@ -713,16 +713,23 @@ export async function completeRoom(
   isCompleted: boolean = true,
   completedBy: string = 'Florian Buck (Bauleiter)'
 ) {
+  const now = new Date().toISOString();
   const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   const currentList: Room[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(r => {
     if (r.id === roomId) {
+      const newPct = isCompleted ? 100 : Math.min(90, Math.max(25, ((r as any).pct || r.progressPercent || 50) - 10));
       return {
         ...r,
         status: (isCompleted ? 'completed' : 'in_progress') as 'completed' | 'in_progress',
-        progressPercent: isCompleted ? 100 : Math.max(25, (r.progressPercent || 50) - 20),
-        completedAt: isCompleted ? new Date().toISOString() : undefined,
-        completedBy: isCompleted ? completedBy : undefined
+        isCompleted: isCompleted,
+        pct: newPct,
+        progressPercent: newPct,
+        completedAt: isCompleted ? now : undefined,
+        completedBy: isCompleted ? completedBy : undefined,
+        unlockedAt: !isCompleted ? now : undefined,
+        unlockedBy: !isCompleted ? completedBy : undefined,
+        updatedAt: now,
       };
     }
     return r;
@@ -733,13 +740,86 @@ export async function completeRoom(
     const ref = doc(db, 'projects', projectId, 'rooms', roomId);
     await updateDoc(ref, {
       status: isCompleted ? 'completed' : 'in_progress',
+      isCompleted: isCompleted,
       progressPercent: isCompleted ? 100 : 50,
-      completedAt: isCompleted ? new Date().toISOString() : null,
-      completedBy: isCompleted ? completedBy : null
+      pct: isCompleted ? 100 : 50,
+      completedAt: isCompleted ? now : null,
+      completedBy: isCompleted ? completedBy : null,
+      unlockedAt: !isCompleted ? now : null,
+      unlockedBy: !isCompleted ? completedBy : null,
+      updatedAt: now,
     });
   } catch (err: any) {
     console.warn('Firestore completeRoom error:', err.message);
   }
+}
+
+/**
+ * Resolves the true actual installed quantity for a material in a room:
+ * 1. Checks if explicitly set or overridden on the material (mat.actualQty)
+ * 2. Checks room.completionDelta or the latest room_completion booking's deltaSummary
+ * 3. Falls back to direct in-progress bookings (excluding completion bookings)
+ */
+export function getMaterialActualQty(
+  mat: { positionId?: string; posNr?: string; plannedQty?: number; actualQty?: number; id?: string },
+  room: { id?: string; code?: string; name?: string; status?: string; isCompleted?: boolean; completionDelta?: any[] } | null,
+  bookings: Booking[] = []
+): number {
+  if (!room || !mat) return 0;
+
+  // 1. If explicitly edited/saved on the material
+  if (mat.actualQty !== undefined && mat.actualQty !== null) {
+    return Number(mat.actualQty);
+  }
+
+  // 2. Check room's completionDelta or the latest room_completion booking
+  const completionBookings = bookings
+    .filter(b => 
+      (b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name) && 
+      (b.type === 'room_completion' || b.itemId === 'room_completion')
+    )
+    .sort((a, b) => {
+      const timeA = new Date(a.createdAt || a.timestamp || 0).getTime() || parseInt(a.id.split('_')[1] || '0', 10);
+      const timeB = new Date(b.createdAt || b.timestamp || 0).getTime() || parseInt(b.id.split('_')[1] || '0', 10);
+      return timeB - timeA;
+    });
+
+  const latestCompletion = completionBookings[0];
+  const deltaList = (room as any).completionDelta?.length 
+    ? (room as any).completionDelta 
+    : ((latestCompletion as any)?.deltaSummary || []);
+
+  if (Array.isArray(deltaList) && deltaList.length > 0) {
+    const found = deltaList.find((d: any) => 
+      (d.pos && mat.posNr && d.pos === mat.posNr) ||
+      (d.posNr && mat.posNr && d.posNr === mat.posNr) ||
+      (d.materialId && mat.positionId && d.materialId === mat.positionId) ||
+      (d.positionId && mat.positionId && d.positionId === mat.positionId) ||
+      (d.materialId && (mat as any).id && d.materialId === (mat as any).id)
+    );
+    if (found && found.installedQty !== undefined) {
+      return Number(found.installedQty);
+    }
+  }
+
+  // 3. For rooms without completion (in progress), sum direct non-completion bookings
+  const directBookings = bookings.filter(b => 
+    (b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name) &&
+    b.type !== 'room_completion' &&
+    b.itemId !== 'room_completion' &&
+    (
+      (b.positionId && mat.positionId && b.positionId === mat.positionId) ||
+      (b.positionNr && mat.posNr && b.positionNr === mat.posNr) ||
+      (b.itemOz && mat.posNr && b.itemOz === mat.posNr) ||
+      (b.itemId && mat.positionId && b.itemId === mat.positionId)
+    )
+  );
+
+  if (directBookings.length > 0) {
+    return directBookings.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+  }
+
+  return 0;
 }
 
 export async function updateRoomMaterialActual(

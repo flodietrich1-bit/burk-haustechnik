@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { Position, Booking, Room } from '../types';
+import { getMaterialActualQty } from './firestoreService';
 
 export function exportMaterialReportToExcel(
   projectName: string,
@@ -60,7 +61,8 @@ export function exportRoomVobAufmassToExcel(
   bookings: Booking[] = []
 ) {
   const posMap = new Map(positions.map(p => [p.id, p]));
-  const isCompleted = room.status === 'completed';
+  const isExplicitlyUnlocked = room.isCompleted === false || room.status === 'in_progress';
+  const isCompleted = !isExplicitlyUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
 
   // Build sheet rows from room materials
   const rows = (room.materials || []).map(mat => {
@@ -68,17 +70,7 @@ export function exportRoomVobAufmassToExcel(
     const unitPrice = mat.unitPrice || pos?.unitPrice || 0;
     const planned = mat.plannedQty || 0;
     
-    // Direct bookings for this room
-    const bookedQty = bookings
-      .filter(b => b.roomId === room.id && (
-        (b.positionId && b.positionId === mat.positionId) ||
-        (b.positionNr && mat.posNr && b.positionNr === mat.posNr) ||
-        (b.itemOz && mat.posNr && b.itemOz === mat.posNr) ||
-        (b.itemId && b.itemId === mat.positionId)
-      ))
-      .reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
-
-    const actual = mat.actualQty !== undefined ? mat.actualQty : bookedQty;
+    const actual = getMaterialActualQty(mat, room, bookings);
     const isOver = actual > planned;
     const isUnder = actual < planned;
     const excessQty = isOver ? (actual - planned) : 0;

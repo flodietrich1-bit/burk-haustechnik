@@ -11,10 +11,10 @@ import {
   ArrowDownRight, 
   MapPin, 
   Send, 
-  X, 
-  PackageCheck
+  X,
+  PackageCheck 
 } from 'lucide-react';
-import { createAlert } from '../services/firestoreService';
+import { createAlert, getMaterialActualQty } from '../services/firestoreService';
 
 interface ReordersViewProps {
   projectId: string;
@@ -69,32 +69,12 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
   const allDeviations: PlanDeviationItem[] = [];
 
   (rooms || []).forEach(room => {
-    const roomBookings = roomBookingsMap.get(room.id) || new Map<string, number>();
-    const hasCompletionBooking = (bookings || []).some(b => b.roomId === room.id && (b.type === 'room_completion' || (b as any).itemId === 'room_completion'));
-    const isCompleted = room.status === 'completed' || room.isCompleted || (room.pct === 100) || hasCompletionBooking;
+    const isExplicitlyUnlocked = room.isCompleted === false || room.status === 'in_progress';
+    const isCompleted = !isExplicitlyUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
 
     (room.materials || []).forEach(m => {
       const planned = Number(m.plannedQty) || 0;
-
-      // Direct bookings for this material in this room
-      const fromBookings = Math.max(
-        roomBookings.get(m.positionId) || 0,
-        roomBookings.get(m.posNr) || 0
-      );
-
-      let actual = 0;
-      if (m.actualQty !== undefined && m.actualQty !== null) {
-        actual = Number(m.actualQty);
-      } else if (fromBookings > 0) {
-        actual = fromBookings;
-      } else if (isCompleted) {
-        actual = planned;
-      }
-
-      if (fromBookings > actual) {
-        actual = fromBookings;
-      }
-
+      const actual = getMaterialActualQty(m, room, bookings);
       const diff = actual - planned;
 
       // Check if an alert already exists in Firestore for this item

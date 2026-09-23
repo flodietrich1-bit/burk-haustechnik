@@ -15,9 +15,10 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
-  Download
+  Download,
+  Unlock
 } from 'lucide-react';
-import { saveRoom, deleteRoom } from '../services/firestoreService';
+import { saveRoom, deleteRoom, completeRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { CircularProgress } from './CircularProgress';
 import { generateTranslations } from '../services/dwgParser';
@@ -202,10 +203,19 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   const getRoomInfo = (r: Room) => {
     const roomBookings = bookings.filter(b => b.roomId === r.id || b.roomId === r.code || (b as any).roomName === r.name);
     const hasCompletionBooking = roomBookings.some(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion');
-    const isCompleted = r.status === 'completed' || r.isCompleted || (r.pct === 100) || hasCompletionBooking;
+    const isExplicitlyUnlocked = r.isCompleted === false || r.status === 'in_progress';
+    const isCompleted = !isExplicitlyUnlocked && (r.status === 'completed' || r.isCompleted === true || (r.pct === 100) || hasCompletionBooking);
     const roomPercent = isCompleted ? 100 : (r.pct ?? r.progressPercent ?? 0);
     const photos = getRoomPhotos(r);
     return { isCompleted, roomPercent, roomBookings, photos };
+  };
+
+  const handleToggleRoomCompletion = async (room: Room, isCompleted: boolean) => {
+    try {
+      await completeRoom(projectId, room.id, isCompleted);
+    } catch (err) {
+      console.error('Error toggling room completion:', err);
+    }
   };
 
   // Calculate Progress Metrics for the Status Pie Chart
@@ -492,6 +502,18 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
 
               {/* Actions: Room Detail / Delta & Add Material */}
               <div className="pt-3 border-t border-slate-100 space-y-2">
+                {isCompleted && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleRoomCompletion(room, false)}
+                    className="w-full flex items-center justify-center space-x-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 py-2 rounded-xl text-xs font-bold transition-all shadow-xs"
+                    title="Raum für Monteure wieder freischalten (auf nicht fertig / in Arbeit setzen)"
+                  >
+                    <Unlock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Raum freischalten (auf „nicht fertig“ setzen)</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setSelectedRoomIdForDetail(room.id)}
                   className="w-full flex items-center justify-center space-x-2 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99]"
