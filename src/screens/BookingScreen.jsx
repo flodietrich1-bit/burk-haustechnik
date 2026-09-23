@@ -280,10 +280,12 @@ export default function BookingScreen({
 
   // Unclear Product Autosuggester (inside Unclear modal)
   const uq = unclearText.trim().toLowerCase();
-  const unclearSuggestions = (showUnclearSuggestions && uq.length >= 1)
-    ? materials.filter((m) =>
-        (m.pos + ' ' + (m.shortText || '') + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
-      ).slice(0, 6)
+  const unclearSuggestions = showUnclearSuggestions
+    ? (uq.length >= 1
+        ? materials.filter((m) =>
+            (m.pos + ' ' + (m.shortText || '') + ' ' + m.name + ' ' + m.cleanName + ' ' + (m.group || '')).toLowerCase().includes(uq)
+          ).slice(0, 10)
+        : materials.slice(0, 10))
     : [];
 
   const handleSelectMatSuggestion = (item) => {
@@ -297,13 +299,11 @@ export default function BookingScreen({
   };
 
   const handleSelectUnclearSuggestion = (item) => {
-    setUnclearText(getMaterialDisplayName(item));
+    const dispName = getMaterialDisplayName(item);
+    setUnclearText(dispName);
     setSelectedUnclearMat(item);
-    if (item.qu === 'm') {
-      setUnclearUnit('m');
-    } else {
-      setUnclearUnit('Stk');
-    }
+    const isMeter = item.qu === 'm' || (dispName && dispName.toLowerCase().includes('rohr') && !dispName.toLowerCase().includes('schelle'));
+    setUnclearUnit(isMeter ? 'm' : 'Stk');
     setShowUnclearSuggestions(false);
   };
 
@@ -376,35 +376,41 @@ export default function BookingScreen({
         return;
       }
 
-      // 2. Mehrverbrauch is only possible if delivered > planned
-      if (delivered <= planned) {
-        Alert.alert(
-          t('noOverPossible', currentLang),
-          t('noOverPossibleMsg', currentLang, { delivered, planned, qu: mat.qu })
-        );
-        return;
-      }
+      // 2. Mehrverbrauch check:
+      // For unplanned items, they are physically available and verbaut within delivered stock,
+      // so do not trigger Mehrverbrauch alert/modal unless exceeding delivered stock!
+      const isUnplannedMat = Boolean(mat.isUnplanned || roomPlan?.isUnplanned);
 
-      // 3. Trigger Mehrverbrauch explanation if not yet explained
-      if (!overExplanations[matId]) {
-        const exceeded = Math.max(1, nextTotalVerb - planned);
-        const maxPossibleExtra = Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore));
-        const initialExtra = Math.min(exceeded, maxPossibleExtra);
+      if (!isUnplannedMat) {
+        if (delivered <= planned) {
+          Alert.alert(
+            t('noOverPossible', currentLang),
+            t('noOverPossibleMsg', currentLang, { delivered, planned, qu: mat.qu })
+          );
+          return;
+        }
 
-        setPendingOverMat({
-          mat,
-          nextDelta,
-          exceededBy: initialExtra,
-          planned,
-          installedBefore,
-          delivered,
-          maxPossibleExtra,
-          qu: mat.qu,
-        });
-        setOverExtraQty(String(initialExtra % 1 === 0 ? initialExtra : initialExtra.toFixed(1)));
-        setOverReason('');
-        setShowOverModal(true);
-        return;
+        // Trigger Mehrverbrauch explanation if not yet explained
+        if (!overExplanations[matId]) {
+          const exceeded = Math.max(1, nextTotalVerb - planned);
+          const maxPossibleExtra = Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore));
+          const initialExtra = Math.min(exceeded, maxPossibleExtra);
+
+          setPendingOverMat({
+            mat,
+            nextDelta,
+            exceededBy: initialExtra,
+            planned,
+            installedBefore,
+            delivered,
+            maxPossibleExtra,
+            qu: mat.qu,
+          });
+          setOverExtraQty(String(initialExtra % 1 === 0 ? initialExtra : initialExtra.toFixed(1)));
+          setOverReason('');
+          setShowOverModal(true);
+          return;
+        }
       }
     }
 
@@ -750,27 +756,7 @@ export default function BookingScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Unclear items list */}
-        {unclearItems.length > 0 && (
-          <View style={styles.unclearSectionWrapper}>
-            <Text style={styles.unclearSectTitle}>{t('unclearSection', currentLang)}</Text>
-            {unclearItems.map((u, i) => (
-              <View key={i} style={styles.unclearRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.uName}>{u.txt}</Text>
-                  <Text style={styles.uSub}>
-                    {u.pos ? `Pos ${u.pos} · ` : ''}{u.qty} · {room.name}
-                  </Text>
-                </View>
-                <View style={styles.uBadge}>
-                  <Text style={styles.uBadgeText}>
-                    {t('unclearOpenBadge', currentLang)}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
+
 
         {/* Suchfunktion DIREKT OBERHALB der Materialkacheln */}
         <View style={styles.searchSectionDirect}>
@@ -855,16 +841,22 @@ export default function BookingScreen({
               ? (projectDelivered > 0 ? projectDelivered : currentRoomVerb)
               : (hasRoomPlan ? roomPlanned : projectDelivered);
 
-            // Verfügbar: Geht mit jedem verbaut nach unten :)
+            // Verfügbar: For unplanned items, it reflects remaining project stock
             const availableQty = Math.max(0, baseTarget - currentRoomVerb);
 
-            const isOver = currentRoomVerb > baseTarget;
-            const exceededBy = Math.max(0, currentRoomVerb - baseTarget);
+            // isOver: For unplanned items, ONLY over if currentRoomVerb exceeds total projectDelivered!
+            const isOver = isUnplanned
+              ? (projectDelivered > 0 ? currentRoomVerb > projectDelivered : false)
+              : (currentRoomVerb > baseTarget);
 
-            // Progress percentage: strictly capped at 100%
-            const progressPct = baseTarget > 0
-              ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100))
+            const exceededBy = isOver
+              ? Math.max(0, currentRoomVerb - (isUnplanned ? projectDelivered : baseTarget))
               : 0;
+
+            // Progress percentage: unplanned items are completed (100%), not 0% or red over-limit
+            const progressPct = isUnplanned
+              ? 100
+              : (baseTarget > 0 ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100)) : 0);
 
             const gloss = getForeignGloss(mat);
             const userReason = overExplanations[mat.id];
@@ -961,7 +953,9 @@ export default function BookingScreen({
                       <Text style={styles.metricUnit}>{displayQu}</Text>
                     </Text>
                     <Text style={styles.metricSub}>
-                      {isOver ? t('matrixOver', currentLang) : t('matrixOpen', currentLang)}
+                      {isOver
+                        ? t('matrixOver', currentLang)
+                        : (isUnplanned ? (t('matrixRemaining', currentLang) || 'Rest') : t('matrixOpen', currentLang))}
                     </Text>
                   </View>
 
@@ -1720,37 +1714,39 @@ export default function BookingScreen({
                   onChangeText={(text) => {
                     setUnclearText(text);
                     setSelectedUnclearMat(null);
-                    setShowUnclearSuggestions(text.trim().length >= 1);
+                    setShowUnclearSuggestions(true);
                   }}
                   onFocus={() => {
-                    if (unclearText.trim().length >= 1) setShowUnclearSuggestions(true);
+                    setShowUnclearSuggestions(true);
                   }}
                 />
 
                 {unclearSuggestions.length > 0 && (
                   <View style={styles.unclearSuggestionsBox}>
-                    <Text style={styles.unclearSugHeader}>{t('unclearOrderedSuggestions', currentLang)}</Text>
-                    {unclearSuggestions.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={styles.unclearSugItem}
-                        onPress={() => handleSelectUnclearSuggestion(item)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.unclearSugName} numberOfLines={1}>
-                            {getMaterialDisplayName(item)}
-                          </Text>
-                          <Text style={styles.unclearSugMeta}>
-                            Pos {item.pos} · {item.group}
-                            {item.deliveredQty ? ` · ${t('matrixDelivered', currentLang)}: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
-                          </Text>
-                        </View>
-                        <View style={styles.unclearSugBadge}>
-                          <Text style={styles.unclearSugBadgeText}>{t('unclearOrderedBadge', currentLang)}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                    <Text style={styles.unclearSugHeader}>{t('unclearOrderedSuggestions', currentLang)} ({unclearSuggestions.length})</Text>
+                    <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled">
+                      {unclearSuggestions.map((item) => (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={styles.unclearSugItem}
+                          onPress={() => handleSelectUnclearSuggestion(item)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.unclearSugName} numberOfLines={1}>
+                              {getMaterialDisplayName(item)}
+                            </Text>
+                            <Text style={styles.unclearSugMeta}>
+                              Pos {item.pos} · {item.group}
+                              {item.deliveredQty ? ` · ${t('matrixDelivered', currentLang)}: ${item.deliveredQty} ${item.qu}` : ` · ${item.qu}`}
+                            </Text>
+                          </View>
+                          <View style={styles.unclearSugBadge}>
+                            <Text style={styles.unclearSugBadgeText}>{t('unclearOrderedBadge', currentLang)}</Text>
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
                   </View>
                 )}
               </View>
