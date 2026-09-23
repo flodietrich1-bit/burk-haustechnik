@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import type { Addendum, Room, Position } from '../types';
+import type { Addendum, Room, Position, Project } from '../types';
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -14,13 +14,19 @@ import {
   Check,
   X,
   Eye,
-  CheckCircle2
+  CheckCircle2,
+  Minus,
+  ShoppingCart,
+  Send,
+  PackageCheck,
+  AlertTriangle
 } from 'lucide-react';
-import { updateAddendumStatus, createAddendum } from '../services/firestoreService';
+import { updateAddendumStatus, createAddendum, addPositionDeliveredQty } from '../services/firestoreService';
 
 interface AddendumsViewProps {
   addendums: Addendum[];
   projectId?: string;
+  project?: Project | null;
   rooms?: Room[];
   positions?: Position[];
 }
@@ -127,6 +133,7 @@ function renderSignatureContent(details: ReturnType<typeof getSignatureDetails>,
 export const AddendumsView: React.FC<AddendumsViewProps> = ({ 
   addendums, 
   projectId = '', 
+  project,
   rooms = [], 
   positions: _positions = [] 
 }) => {
@@ -145,12 +152,130 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [newNote, setNewNote] = useState('');
   const [newRequestedBy, setNewRequestedBy] = useState('Bauleiter');
 
-  const handleApprove = async (id: string) => {
-    await updateAddendumStatus(id, 'approved', projectId);
+  // Reorder Modal State ("Material Nachbestellen")
+  const [reorderItem, setReorderItem] = useState<Addendum | null>(null);
+  const [reorderQty, setReorderQty] = useState<number>(1);
+  const [mailSubject, setMailSubject] = useState<string>('');
+  const [mailBody, setMailBody] = useState<string>('');
+  const [isProcessingReorder, setIsProcessingReorder] = useState<boolean>(false);
+
+  // Rejection Modal State ("Ablehnen" mit Begründung)
+  const [rejectItem, setRejectItem] = useState<Addendum | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>('');
+  const [rejectError, setRejectError] = useState<string>('');
+  const [isProcessingReject, setIsProcessingReject] = useState<boolean>(false);
+
+  const managerFirstName = (project?.commercialManager || 'Sabine').trim().split(/\s+/)[0];
+
+  const generateMailContent = (item: Addendum, qty: number, unit: string) => {
+    const pName = project?.name || 'Bauvorhaben';
+    const subj = `Nachbestellung erforderlich: ${qty} ${unit} ${item.title} (Projekt ${pName})`;
+    const body = `Hallo ${managerFirstName},
+
+für das Bauvorhaben "${pName}" muss folgendes Material dringend nachbestellt werden:
+
+• Material: ${item.title}
+• Menge: ${qty} ${unit}
+• Raum: ${item.roomName || item.roomId || 'Baustelle'}
+• Anforderer: ${item.requestedBy || 'Monteur'}
+• Begründung / Notiz: ${item.note || 'Mehrbedarf auf der Baustelle'}
+
+Bitte veranlasse die Nachbestellung zeitnah, damit die Montage vor Ort zügig fortgesetzt werden kann.
+
+Viele Grüße,
+Bauleitung`;
+    return { subj, body };
   };
 
-  const handleReject = async (id: string) => {
-    await updateAddendumStatus(id, 'rejected', projectId);
+  // 1. Direct In-Stock Approval: "Material verfügbar - Freigeben"
+  const handleApproveInStock = async (item: Addendum) => {
+    const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
+    const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
+    const targetKey = item.materialId || item.itemOz || item.title;
+
+    // Verfügbare Menge erhöht sich entsprechend
+    await addPositionDeliveredQty(projectId, targetKey, rawQty, unit);
+    await updateAddendumStatus(item.id, 'approved', projectId, {
+      approvalType: 'in_stock'
+    });
+  };
+
+  // For Regiestunden / Arbeitszeit
+  const handleApproveHours = async (item: Addendum) => {
+    await updateAddendumStatus(item.id, 'approved', projectId, {
+      approvalType: 'in_stock'
+    });
+  };
+
+  // 2. Open Reorder Modal: "Material Nachbestellen"
+  const handleOpenReorderModal = (item: Addendum) => {
+    const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
+    const initQty = Math.max(1, rawQty);
+    const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
+    const { subj, body } = generateMailContent(item, initQty, unit);
+
+    setReorderItem(item);
+    setReorderQty(initQty);
+    setMailSubject(subj);
+    setMailBody(body);
+  };
+
+  const handleChangeReorderQty = (newQty: number) => {
+    const unit = reorderItem?.qu || (typeof reorderItem?.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
+    const clean = Math.max(1, Math.round(newQty * 10) / 10);
+    setReorderQty(clean);
+
+    if (reorderItem) {
+      const { subj, body } = generateMailContent(reorderItem, clean, unit);
+      setMailSubject(subj);
+      setMailBody(body);
+    }
+  };
+
+  const handleConfirmReorder = async () => {
+    if (!reorderItem) return;
+    setIsProcessingReorder(true);
+    try {
+      const unit = reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
+      const targetKey = reorderItem.materialId || reorderItem.itemOz || reorderItem.title;
+
+      // Verfügbare Menge erhöht sich entsprechend
+      await addPositionDeliveredQty(projectId, targetKey, reorderQty, unit);
+      await updateAddendumStatus(reorderItem.id, 'approved', projectId, {
+        approvalType: 'reordered',
+        reorderedQty: reorderQty,
+      });
+
+      setReorderItem(null);
+    } catch (err: any) {
+      console.warn('Error confirming reorder:', err.message);
+    } finally {
+      setIsProcessingReorder(false);
+    }
+  };
+
+  // 3. Confirm Rejection: "Ablehnen" mit Begründung
+  const handleConfirmReject = async () => {
+    if (!rejectItem) return;
+    if (!rejectReason.trim()) {
+      setRejectError('Bitte geben Sie einen Grund für die Ablehnung an.');
+      return;
+    }
+
+    setIsProcessingReject(true);
+    try {
+      // Nach Klick "abgelehnt", verfügbare Menge ändert sich nicht
+      await updateAddendumStatus(rejectItem.id, 'rejected', projectId, {
+        rejectionReason: rejectReason.trim(),
+      });
+      setRejectItem(null);
+      setRejectReason('');
+      setRejectError('');
+    } catch (err: any) {
+      console.warn('Error rejecting addendum:', err.message);
+    } finally {
+      setIsProcessingReject(false);
+    }
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -435,7 +560,11 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
                       isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
                       'bg-amber-100 text-amber-800 border border-amber-200'
                     }`}>
-                      {isApproved ? 'Freigegeben' : isRejected ? 'Abgelehnt' : 'Ausstehend'}
+                      {isApproved 
+                        ? (item.approvalType === 'reordered' 
+                            ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
+                            : 'Freigegeben (Lagerbestand)') 
+                        : isRejected ? 'Abgelehnt' : 'Ausstehend'}
                     </span>
                   </div>
 
@@ -494,6 +623,17 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
                           ? `Teil ist bereits im Materialstamm vorhanden (Pos. ${item.itemOz || '–'}), war aber nicht diesem Raum zugeordnet.`
                           : 'Neues/Alternatives Fabrikat verbaut, das zuvor nicht in der Planung hinterlegt war.'}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Rejection reason notice if rejected */}
+                  {isRejected && item.rejectionReason && (
+                    <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 space-y-1">
+                      <span className="font-bold text-[10.5px] text-red-600 uppercase tracking-wider flex items-center space-x-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
+                        <span>Begründung der Ablehnung:</span>
+                      </span>
+                      <p className="leading-relaxed font-medium italic">„{item.rejectionReason}“</p>
                     </div>
                   )}
 
@@ -575,28 +715,62 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
 
                 {/* Bottom Actions for Bauleiter / Admin */}
                 {isPending ? (
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
                     <button
-                      onClick={() => handleReject(item.id)}
-                      className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
-                      title="Diesen Mehrbedarf ablehnen"
+                      type="button"
+                      onClick={() => {
+                        setRejectItem(item);
+                        setRejectReason('');
+                        setRejectError('');
+                      }}
+                      className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
+                      title="Diesen Mehrbedarf ablehnen (Begründung erforderlich)"
                     >
                       <X className="w-3.5 h-3.5" />
                       <span>Ablehnen</span>
                     </button>
 
-                    <button
-                      onClick={() => handleApprove(item.id)}
-                      className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.02]"
-                      title="Diesen Mehrbedarf für die VOB-Abrechnung freigeben"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Freigeben</span>
-                    </button>
+                    {cat === 'time' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleApproveHours(item)}
+                        className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
+                        title="Regiestunden freigeben"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Regiestunden freigeben</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveInStock(item)}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
+                          title="Material ist im Lager vorhanden und wird zum Verbauen freigegeben (verfügbare Menge erhöht sich)"
+                        >
+                          <PackageCheck className="w-3.5 h-3.5" />
+                          <span>Material verfügbar – Freigeben</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReorderModal(item)}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
+                          title="Material ist nicht mehr im Lager vorhanden – Modal zur Nachbestellung öffnen"
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          <span>Material Nachbestellen</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                    <span>Bearbeitet durch Bauleiter</span>
+                    <span className="font-medium text-slate-600">
+                      {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & freigegeben'}
+                      {isApproved && item.approvalType !== 'reordered' && '✓ Aus Lagerbestand freigegeben'}
+                      {isRejected && '✕ Durch Bauleitung abgelehnt'}
+                    </span>
                     <button
                       onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
                       className="text-[#3B82C4] hover:underline text-[11px]"
@@ -859,6 +1033,228 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Modal: Material Nachbestellen mit Stepper & E-Mail-Entwurf */}
+      {reorderItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2">
+                <Send className="w-5 h-5 text-[#3B82C4]" />
+                <h3 className="font-bold text-base text-slate-900">
+                  Material-Nachbestellung an Kfm. Leitung
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReorderItem(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Top Box: Stepper [-] QTY [+] and Product Details */}
+              <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-bold text-blue-950 text-sm">
+                      {reorderItem.title}
+                    </h4>
+                    <span className="text-blue-700 text-xs">
+                      Raum: <strong>{reorderItem.roomName || reorderItem.roomId || 'Baustelle'}</strong>
+                    </span>
+                  </div>
+
+                  {/* Stepper: [-]  QTY  [+] */}
+                  <div className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-blue-300 shadow-xs shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleChangeReorderQty(reorderQty - 1)}
+                      className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold flex items-center justify-center transition-colors"
+                      title="Menge verringern"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <input
+                      type="number"
+                      min={1}
+                      value={reorderQty}
+                      onChange={e => handleChangeReorderQty(parseFloat(e.target.value) || 1)}
+                      className="w-16 px-1.5 py-1 text-center font-black text-sm bg-white rounded-lg text-blue-950 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleChangeReorderQty(reorderQty + 1)}
+                      className="w-8 h-8 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold flex items-center justify-center transition-colors"
+                      title="Menge erhöhen"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <span className="font-bold text-blue-800 px-2 text-xs">
+                      {reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk')}
+                    </span>
+                  </div>
+                </div>
+
+                {reorderItem.note && (
+                  <div className="pt-2 border-t border-blue-200/70 text-[11px] text-blue-900 italic">
+                    Notiz vom Monteur: „{reorderItem.note}“
+                  </div>
+                )}
+              </div>
+
+              {/* Recipient */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Empfänger (Kaufmännische Leitung / Einkauf) *
+                </label>
+                <input
+                  type="text"
+                  value={project?.commercialManagerEmail ? `${project.commercialManager || 'Kfm. Leitung'} <${project.commercialManagerEmail}>` : 'Einkauf Burk Haustechnik <einkauf@burk-haustechnik.de>'}
+                  disabled
+                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-600"
+                />
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Betreffzeile *</label>
+                <input
+                  type="text"
+                  value={mailSubject}
+                  onChange={e => setMailSubject(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
+                />
+              </div>
+
+              {/* Body */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Nachrichtentext (Anrede mit Vorname: {managerFirstName}) *
+                </label>
+                <textarea
+                  rows={8}
+                  value={mailBody}
+                  onChange={e => setMailBody(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setReorderItem(null)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+                >
+                  Abbrechen
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isProcessingReorder}
+                  onClick={handleConfirmReorder}
+                  className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50"
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Bestellung absenden &amp; freigeben ({reorderQty} {reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk')})</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Mehrbedarf Ablehnen mit Pflicht-Begründung */}
+      {rejectItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    Mehrbedarf ablehnen
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Begründung für Monteur &amp; Bauakte erfassen
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectItem(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Target Item Summary */}
+            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-1 text-xs">
+              <span className="text-[10px] font-bold uppercase text-slate-400">Betroffener Mehrbedarf:</span>
+              <p className="font-bold text-sm text-slate-900">{rejectItem.title}</p>
+              <div className="flex items-center justify-between text-slate-600 pt-0.5">
+                <span>Menge: <strong>{rejectItem.quantity} {rejectItem.qu || ''}</strong></span>
+                <span>Raum: <strong>{rejectItem.roomName || rejectItem.roomId || 'Baustelle'}</strong></span>
+              </div>
+            </div>
+
+            {/* Rejection Reason Form */}
+            <div className="space-y-1.5">
+              <label className="font-bold text-slate-800 text-xs block">
+                Grund für die Ablehnung *
+              </label>
+              <textarea
+                rows={4}
+                placeholder="z. B. Material nicht erforderlich / VOB-Planungsfehler / bereits im Vorfeld geliefert..."
+                value={rejectReason}
+                onChange={e => {
+                  setRejectReason(e.target.value);
+                  if (rejectError) setRejectError('');
+                }}
+                className={`w-full px-3 py-2 text-xs bg-slate-50 border rounded-xl focus:bg-white focus:outline-none focus:ring-2 transition-all ${
+                  rejectError 
+                    ? 'border-red-400 ring-2 ring-red-300/40 bg-red-50/20' 
+                    : 'border-slate-200 focus:ring-[#3B82C4]/30'
+                }`}
+              />
+              {rejectError && (
+                <p className="text-[11px] font-semibold text-red-600 flex items-center space-x-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>{rejectError}</span>
+                </p>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex items-center justify-end space-x-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setRejectItem(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingReject}
+                onClick={handleConfirmReject}
+                className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-md shadow-red-600/20 transition-all hover:scale-[1.01] disabled:opacity-50"
+              >
+                Endgültig ablehnen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

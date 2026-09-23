@@ -275,6 +275,7 @@ export function App() {
                   <AddendumsView
                     addendums={addendums}
                     projectId={selectedProjectId}
+                    project={activeProject}
                     rooms={rooms}
                     positions={positions}
                   />

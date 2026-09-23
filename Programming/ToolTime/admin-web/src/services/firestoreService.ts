@@ -532,14 +532,22 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
   }
 }
 
-export async function addPositionDeliveredQty(projectId: string, positionIdOrPosNr: string, additionalQty: number) {
+export async function addPositionDeliveredQty(projectId: string, positionIdOrPosNr: string, additionalQty: number, qu?: string) {
   const currentSaved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
   const currentList: Position[] = currentSaved ? JSON.parse(currentSaved) : [];
   let matchedId = positionIdOrPosNr;
+  let found = false;
+
+  const targetKey = positionIdOrPosNr.toLowerCase().trim();
 
   const updated = currentList.map(p => {
-    if (p.id === positionIdOrPosNr || p.posNr === positionIdOrPosNr) {
+    if (
+      p.id === positionIdOrPosNr || 
+      p.posNr === positionIdOrPosNr || 
+      (p.shortText && p.shortText.toLowerCase().trim() === targetKey)
+    ) {
       matchedId = p.id;
+      found = true;
       return {
         ...p,
         deliveredQty: (Number(p.deliveredQty) || Number(p.qty) || 0) + additionalQty,
@@ -547,13 +555,30 @@ export async function addPositionDeliveredQty(projectId: string, positionIdOrPos
     }
     return p;
   });
+
+  if (!found && positionIdOrPosNr) {
+    matchedId = `pos_extra_${Date.now()}`;
+    const newPos: Position = {
+      id: matchedId,
+      projectId,
+      posNr: 'Sonder-Mat',
+      group: 'Sonderbedarf',
+      shortText: positionIdOrPosNr,
+      qty: 0,
+      deliveredQty: additionalQty,
+      qu: qu || 'Stk',
+      unitPrice: 0,
+    };
+    updated.push(newPos);
+  }
+
   localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(updated));
 
   try {
     const target = updated.find(p => p.id === matchedId);
     if (target) {
       const ref = doc(db, 'projects', projectId, 'positions', target.id);
-      await setDoc(ref, { deliveredQty: target.deliveredQty }, { merge: true });
+      await setDoc(ref, target, { merge: true });
     }
   } catch (err: any) {
     console.warn('Firestore addPositionDeliveredQty error:', err.message);
@@ -626,11 +651,18 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
 export async function updateAddendumStatus(
   addendumId: string, 
   status: 'approved' | 'rejected' | 'pending',
-  projectId?: string
+  projectId?: string,
+  extraData?: Partial<Addendum>
 ): Promise<void> {
+  const payload = {
+    status,
+    updatedAt: new Date().toISOString(),
+    ...(extraData || {}),
+  };
+
   try {
     const ref = doc(db, 'addendums', addendumId);
-    await updateDoc(ref, { status });
+    await setDoc(ref, payload, { merge: true });
   } catch (err: any) {
     console.warn('Firestore updateAddendumStatus global error:', err.message);
   }
@@ -638,7 +670,7 @@ export async function updateAddendumStatus(
   if (projectId) {
     try {
       const projRef = doc(db, 'projects', projectId, 'addendums', addendumId);
-      await updateDoc(projRef, { status });
+      await setDoc(projRef, payload, { merge: true });
     } catch (err: any) {
       console.warn('Firestore updateAddendumStatus project error:', err.message);
     }

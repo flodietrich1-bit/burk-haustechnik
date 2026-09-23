@@ -39,6 +39,7 @@ export interface Position {
   isCutMaterial?: boolean;
   status?: 'open' | 'partial' | 'completed' | 'overdelivered';
   assignedRoomNames?: string[];
+  projectId?: string;
   updatedAt?: string;
 }
 
@@ -149,6 +150,9 @@ export interface Addendum {
   createdAt: string;
   syncedAt?: string;
   updatedAt?: string;
+  rejectionReason?: string;
+  approvalType?: 'in_stock' | 'reordered';
+  reorderedQty?: number;
 }
 
 export interface PlanDeviationItem {

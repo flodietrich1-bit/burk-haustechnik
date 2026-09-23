@@ -18,19 +18,17 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
   className = ''
 }) => {
   const clamped = Math.min(100, Math.max(0, Math.round(percentage)));
+  const is100 = clamped === 100;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (clamped / 100) * circumference;
+  const strokeDashoffset = is100 ? 0 : circumference - (clamped / 100) * circumference;
 
   // Unique ID for the SVG gradient
   const gradientId = React.useId().replace(/:/g, '_');
 
-  // Dynamic text color matching the current stage
-  const getTextColor = (val: number) => {
-    if (val >= 80) return 'text-emerald-600';
-    if (val >= 40) return 'text-amber-600';
-    return 'text-red-500';
-  };
+  // Interpolate Hue: 0° (Red #EF4444) -> 35° (Orange) -> 48° (Amber) -> 85° (Lime) -> 142° (Green #10B981)
+  const currentHue = Math.min(142, Math.max(0, Math.round((clamped / 100) * 142)));
+  const currentColor = is100 ? '#10B981' : `hsl(${currentHue}, 85%, 44%)`;
 
   return (
     <div 
@@ -44,31 +42,29 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
         className="transform -rotate-90"
       >
         <defs>
-          {/* Gradient: 0% Rot -> 50% Gelb/Orange -> 100% Grün */}
+          {/* Gradient verlaufend von Rot (1%) bis zur aktuellen Zielfarbe (Grün bei 100%) */}
           <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#EF4444" />
-            <stop offset="45%" stopColor="#F59E0B" />
-            <stop offset="75%" stopColor="#3B82C4" />
-            <stop offset="100%" stopColor="#10B981" />
+            <stop offset="0%" stopColor={is100 ? "#10B981" : "#EF4444"} />
+            <stop offset="100%" stopColor={currentColor} />
           </linearGradient>
         </defs>
 
-        {/* Background Track Circle */}
+        {/* Background Track Circle: Bei 100% wird der gesamte Ring grün */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#E2E8F0"
+          stroke={is100 ? "#10B981" : "#E2E8F0"}
           strokeWidth={strokeWidth}
           fill="transparent"
         />
 
-        {/* Animated Progress Circle with 0% Rot -> 100% Grün Gradient */}
+        {/* Animated Progress Circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={`url(#${gradientId})`}
+          stroke={is100 ? "#10B981" : `url(#${gradientId})`}
           strokeWidth={strokeWidth}
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
@@ -78,10 +74,10 @@ export const CircularProgress: React.FC<CircularProgressProps> = ({
         />
       </svg>
 
-      {/* Centered Percentage Label */}
+      {/* Centered Percentage Label: schwarze Prozentzahl */}
       {showText && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center select-none pointer-events-none">
-          <span className={`font-black tracking-tight leading-none ${size < 60 ? 'text-xs' : 'text-xl sm:text-2xl'} ${getTextColor(clamped)}`}>
+          <span className={`font-black text-slate-900 tracking-tight leading-none ${size < 60 ? 'text-xs' : 'text-xl sm:text-2xl'}`}>
             {clamped}%
           </span>
           {size >= 80 && sublabel && (
