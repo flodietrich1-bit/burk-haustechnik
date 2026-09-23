@@ -13,7 +13,8 @@ import {
   Camera,
   Eye,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Unlock
 } from 'lucide-react';
 import { completeRoom, updateRoomMaterialActual, getMaterialActualQty } from '../services/firestoreService';
 import { exportRoomVobAufmassToExcel } from '../services/excelExporter';
@@ -187,11 +188,11 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
                 <button
                   disabled={isUpdatingStatus}
                   onClick={handleToggleCompletion}
-                  className="flex items-center space-x-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
-                  title="Fertigstellung aufheben und wieder in Ausführung versetzen"
+                  className="flex items-center space-x-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 px-3.5 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                  title="Raum für Monteure wieder freischalten (auf nicht fertig / in Arbeit setzen)"
                 >
-                  <RotateCcw className="w-4 h-4 text-slate-500" />
-                  <span>Abschluss zurücknehmen</span>
+                  <Unlock className="w-4 h-4 text-amber-600" />
+                  <span>Raum freischalten (auf „nicht fertig“ setzen)</span>
                 </button>
               ) : (
                 <button

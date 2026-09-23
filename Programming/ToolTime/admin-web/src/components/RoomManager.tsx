@@ -162,11 +162,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
 
   const getRoomPhotos = (r: Room): string[] => {
     const list: string[] = [];
+    const isValidWebPhoto = (url: unknown): url is string =>
+      typeof url === 'string' &&
+      url.trim().length > 0 &&
+      !url.startsWith('file://') &&
+      (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:image/'));
 
     // 1. From r.photos
     if (Array.isArray(r.photos)) {
       r.photos.forEach(p => {
-        if (typeof p === 'string' && p.trim() && !list.includes(p)) {
+        if (isValidWebPhoto(p) && !list.includes(p)) {
           list.push(p);
         }
       });
@@ -182,17 +187,12 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     matching.forEach(b => {
       if (Array.isArray(b.photoUrls)) {
         b.photoUrls.forEach(url => {
-          if (typeof url === 'string' && url.trim() && !list.includes(url)) list.push(url);
-        });
-      }
-      if (Array.isArray(b.photoUris)) {
-        b.photoUris.forEach(uri => {
-          if (typeof uri === 'string' && uri.trim() && !list.includes(uri)) list.push(uri);
+          if (isValidWebPhoto(url) && !list.includes(url)) list.push(url);
         });
       }
       if (Array.isArray((b as any).photos)) {
         (b as any).photos.forEach((p: any) => {
-          if (typeof p === 'string' && p.trim() && !list.includes(p)) list.push(p);
+          if (isValidWebPhoto(p) && !list.includes(p)) list.push(p);
         });
       }
     });
@@ -205,7 +205,25 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     const hasCompletionBooking = roomBookings.some(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion');
     const isExplicitlyUnlocked = r.isCompleted === false || r.status === 'in_progress';
     const isCompleted = !isExplicitlyUnlocked && (r.status === 'completed' || r.isCompleted === true || (r.pct === 100) || hasCompletionBooking);
-    const roomPercent = isCompleted ? 100 : (r.pct ?? r.progressPercent ?? 0);
+    
+    let calculatedPercent = (r as any).pct ?? (r as any).progressPercent ?? 0;
+    if (calculatedPercent === 0 && Array.isArray(r.materials) && r.materials.length > 0) {
+      let totPlanned = 0;
+      let totInstalled = 0;
+      r.materials.forEach(m => {
+        const p = Number(m.plannedQty || 0);
+        const inst = Number(m.actualQty ?? m.installedQty ?? 0);
+        if (p > 0) {
+          totPlanned += p;
+          totInstalled += Math.min(p, inst);
+        }
+      });
+      if (totPlanned > 0 && totInstalled > 0) {
+        calculatedPercent = Math.min(100, Math.round((totInstalled / totPlanned) * 100));
+      }
+    }
+
+    const roomPercent = isCompleted ? 100 : calculatedPercent;
     const photos = getRoomPhotos(r);
     return { isCompleted, roomPercent, roomBookings, photos };
   };
@@ -327,71 +345,90 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
             ? room.translations
             : generateTranslations(room.name);
 
+          // Resolve Monteur Name and Language
+          const matchingBookings = bookings.filter(b => b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name);
+          const latestBooking = matchingBookings[matchingBookings.length - 1];
+          const monteurName = room.completedBy || room.lastUpdatedBy || (latestBooking && latestBooking.createdBy) || 'Stefan Maier';
+          const rawLang = (room as any).lastMonteurLanguage || (room as any).monteurLanguage || (latestBooking as any)?.language || 'de';
+          const languageDisplay = rawLang.toLowerCase() === 'ro' ? '🇷🇴 RO' : rawLang.toLowerCase() === 'pl' ? '🇵🇱 PL' : rawLang.toLowerCase() === 'hr' ? '🇭🇷 HR' : '🇩🇪 DE';
+
           return (
             <div 
               key={room.id} 
               className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4 hover:border-[#3B82C4]/40 transition-colors flex flex-col justify-between"
             >
               <div className="space-y-3">
-                {/* Top Badge, Circular Progress & Delete */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center space-x-3 truncate">
-                    <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-mono font-bold text-xs shrink-0">
-                      {room.code}
+                {/* Top Badge, Circular Progress (Delete-Icon entfernt) */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start space-x-3 min-w-0 flex-1">
+                    {/* Icon Box: Größer, damit EG-101, EG-102 etc. nicht abgeschnitten werden */}
+                    <div className="min-w-[64px] h-12 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-mono font-black text-xs shrink-0 border border-slate-200 shadow-xs px-2.5">
+                      {room.code || 'RAUM'}
                     </div>
-                    <div className="truncate">
-                      <div className="flex items-center space-x-2">
-                        <h3 className="font-bold text-slate-900 text-sm leading-tight truncate">{room.name}</h3>
-                        {isCompleted && (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1 shrink-0">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                            <span>100% Fertig</span>
-                          </span>
-                        )}
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      {/* Zeile 1: Titel, Fertig/In-Arbeit Badge und Monteur-Name in Grau */}
+                      <div className="flex items-center flex-wrap gap-2">
+                        <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-tight">
+                          {room.name}
+                        </h3>
+                        {isCompleted ? (
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              <span>100% Fertig</span>
+                            </span>
+                            <span className="text-xs text-slate-400 font-medium">
+                              · {monteurName}
+                            </span>
+                          </div>
+                        ) : roomPercent > 0 ? (
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                              {roomPercent}% in Montage
+                            </span>
+                            <span className="text-xs text-slate-400 font-medium">
+                              · {monteurName}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.2 rounded">
-                          Etage: {room.floor}
+
+                      {/* Zeile 2 (Darunter): Etage, Name des Monteurs, Sprache des Monteurs, Plan-Typ */}
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] text-slate-500 pt-0.5">
+                        <span className="font-semibold bg-slate-100 px-2 py-0.5 rounded border border-slate-200/60">
+                          Etage: {room.floor || 'EG'}
+                        </span>
+                        <span className="bg-slate-50 border border-slate-200 px-2 py-0.5 rounded flex items-center space-x-1">
+                          <span className="text-slate-400">Monteur:</span>
+                          <span className="font-semibold text-slate-700">{monteurName}</span>
+                        </span>
+                        <span className="bg-slate-50 border border-slate-200 px-2 py-0.5 rounded flex items-center space-x-1">
+                          <span className="text-slate-400">Sprache:</span>
+                          <span className="font-semibold text-slate-700">{languageDisplay}</span>
                         </span>
                         {isDwg ? (
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded flex items-center space-x-1">
+                          <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center space-x-1">
                             <Compass className="w-2.5 h-2.5" />
                             <span>DWG / DXF</span>
                           </span>
                         ) : (
-                          <span className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
+                          <span className="font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                             Manuell
                           </span>
                         )}
-                        <span 
-                          className="text-[10px] text-slate-400 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded cursor-help transition-colors flex items-center space-x-1"
-                          title={`Monteur-App Übersetzungen:\n🇷🇴 RO: ${roomTrans.ro}\n🇵🇱 PL: ${roomTrans.pl}\n🇭🇷 HR: ${roomTrans.hr}`}
-                        >
-                          <span className="text-[9px] font-medium text-slate-500">App:</span>
-                          <span>🇷🇴</span>
-                          <span>🇵🇱</span>
-                          <span>🇭🇷</span>
-                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Circular Progress & Delete */}
-                  <div className="flex items-center space-x-2 shrink-0">
+                  {/* Circular Progress (Kein Delete-Icon mehr) */}
+                  <div className="shrink-0 pt-0.5">
                     <CircularProgress
                       percentage={roomPercent}
                       size={44}
                       strokeWidth={4.5}
                       showText={true}
                     />
-
-                    <button
-                      onClick={() => handleDelete(room.id)}
-                      className="text-slate-300 hover:text-red-500 transition-colors p-1"
-                      title="Raum löschen"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
 
@@ -462,39 +499,29 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                     </div>
 
                     <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
-                      {photos.map((photoUrl, pIdx) => {
-                        const isDeviceFile = typeof photoUrl === 'string' && photoUrl.startsWith('file://');
-                        return (
-                          <button
-                            key={pIdx}
-                            type="button"
-                            onClick={() => setSelectedGallery({
-                              roomTitle: `${room.name} (${room.code || 'Raum'})`,
-                              photos,
-                              currentIndex: pIdx,
-                            })}
-                            className="group relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 hover:border-[#3B82C4] shadow-xs shrink-0 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/40 transition-all hover:scale-105 bg-slate-100"
-                            title={`Foto ${pIdx + 1} vergrößern`}
-                          >
-                            {!isDeviceFile ? (
-                              <img
-                                src={photoUrl}
-                                alt={`Beweisfoto ${pIdx + 1} - ${room.name}`}
-                                className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center p-1 text-center">
-                                <Camera className="w-4 h-4 text-[#3B82C4]" />
-                                <span className="text-[8px] font-bold text-slate-600 mt-0.5 leading-none">Foto {pIdx + 1}</span>
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Eye className="w-4 h-4 text-white drop-shadow" />
-                            </div>
-                          </button>
-                        );
-                      })}
+                      {photos.map((photoUrl, pIdx) => (
+                        <button
+                          key={pIdx}
+                          type="button"
+                          onClick={() => setSelectedGallery({
+                            roomTitle: `${room.name} (${room.code || 'Raum'})`,
+                            photos,
+                            currentIndex: pIdx,
+                          })}
+                          className="group relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 hover:border-[#3B82C4] shadow-xs shrink-0 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/40 transition-all hover:scale-105 bg-slate-100"
+                          title={`Foto ${pIdx + 1} vergrößern`}
+                        >
+                          <img
+                            src={photoUrl}
+                            alt={`Beweisfoto ${pIdx + 1} - ${room.name}`}
+                            className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Eye className="w-4 h-4 text-white drop-shadow" />
+                          </div>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}

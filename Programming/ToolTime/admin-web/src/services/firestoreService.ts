@@ -532,6 +532,34 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
   }
 }
 
+export async function addPositionDeliveredQty(projectId: string, positionIdOrPosNr: string, additionalQty: number) {
+  const currentSaved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  const currentList: Position[] = currentSaved ? JSON.parse(currentSaved) : [];
+  let matchedId = positionIdOrPosNr;
+
+  const updated = currentList.map(p => {
+    if (p.id === positionIdOrPosNr || p.posNr === positionIdOrPosNr) {
+      matchedId = p.id;
+      return {
+        ...p,
+        deliveredQty: (Number(p.deliveredQty) || Number(p.qty) || 0) + additionalQty,
+      };
+    }
+    return p;
+  });
+  localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(updated));
+
+  try {
+    const target = updated.find(p => p.id === matchedId);
+    if (target) {
+      const ref = doc(db, 'projects', projectId, 'positions', target.id);
+      await setDoc(ref, { deliveredQty: target.deliveredQty }, { merge: true });
+    }
+  } catch (err: any) {
+    console.warn('Firestore addPositionDeliveredQty error:', err.message);
+  }
+}
+
 export async function saveRoom(projectId: string, room: Room) {
   const currentSaved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   const currentList: Room[] = currentSaved ? JSON.parse(currentSaved) : [];
