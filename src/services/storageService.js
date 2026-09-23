@@ -457,9 +457,19 @@ export async function getLocalUnsyncedDelta(projectId) {
   const pendingAddendums = allAddendums.filter((a) => !a.projectId || a.projectId === pId);
   const rooms = await getRooms(pId);
   const lastSyncedAt = await getLastSyncedAt(pId);
-  const pendingRooms = rooms.filter(
-    (r) => r.isCompleted && (!r.syncedAt || (lastSyncedAt && r.completedAt && r.completedAt > lastSyncedAt))
-  );
+  const pendingRooms = rooms.filter((r) => {
+    if (!r) return false;
+    // 1. Completed room that hasn't been synced or was completed after lastSyncedAt
+    if (r.isCompleted && (!r.syncedAt || (lastSyncedAt && r.completedAt && r.completedAt > lastSyncedAt))) {
+      return true;
+    }
+    // 2. Room in progress whose local changes (pct, draftQuantities, photos) haven't been synced
+    const hasUnsyncedChanges = Boolean(
+      (r.updatedAt && (!r.syncedAt || r.updatedAt > r.syncedAt)) ||
+      (!r.syncedAt && (Number(r.pct) > 0 || (r.draftQuantities && Object.keys(r.draftQuantities).length > 0) || (Array.isArray(r.photos) && r.photos.length > 0)))
+    );
+    return hasUnsyncedChanges;
+  });
 
   return {
     pendingBookings,

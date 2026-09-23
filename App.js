@@ -299,6 +299,7 @@ export default function App() {
     if (selectedRoom) {
       const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
       const currentRooms = Array.isArray(rooms) ? rooms : [];
+      const now = new Date().toISOString();
       const updatedRooms = currentRooms.map((r) => {
         if (r && r.id === selectedRoom.id) {
           const draft = {
@@ -306,10 +307,15 @@ export default function App() {
             draftQuantities: { ...sessionQuantities },
             photos: [...sessionPhotos],
             draftUnclear: [...unclearItems],
+            lastUpdatedBy: monteur?.name || 'Monteur',
+            lastMonteurLanguage: currentLang || 'de',
+            updatedAt: now,
           };
+          const pct = computeRoomPercentage(draft, materials);
           return {
             ...draft,
-            pct: computeRoomPercentage(draft, materials),
+            pct,
+            status: r.isCompleted ? 'completed' : (pct > 0 ? 'in_progress' : 'planned'),
           };
         }
         return r;
@@ -338,13 +344,19 @@ export default function App() {
     const photosToSave = Array.isArray(newPhotos) ? newPhotos : sessionPhotos;
     setSessionPhotos(photosToSave);
     if (selectedRoom) {
+      const now = new Date().toISOString();
       const updatedRoom = {
         ...selectedRoom,
         photos: [...photosToSave],
         draftQuantities: { ...sessionQuantities },
         draftUnclear: [...unclearItems],
+        lastUpdatedBy: monteur?.name || 'Monteur',
+        lastMonteurLanguage: currentLang || 'de',
+        updatedAt: now,
       };
-      updatedRoom.pct = computeRoomPercentage(updatedRoom, materials);
+      const pct = computeRoomPercentage(updatedRoom, materials);
+      updatedRoom.pct = pct;
+      updatedRoom.status = selectedRoom.isCompleted ? 'completed' : (pct > 0 ? 'in_progress' : 'planned');
       setSelectedRoom(updatedRoom);
       const currentRooms = Array.isArray(rooms) ? rooms : [];
       const updatedRooms = currentRooms.map((r) => (r && r.id === selectedRoom.id ? updatedRoom : r));

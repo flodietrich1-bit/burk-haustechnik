@@ -222,34 +222,75 @@ export async function syncBookings(options = {}) {
         }
       }
 
-      // 1c. Upload completed room status updates
+      // 1c. Upload room status updates (completed and in-progress rooms)
       for (const room of localDelta.pendingRooms) {
         processed++;
         const now = new Date().toISOString();
         try {
+          // Upload any photos in room.photos that are local file:// URIs
+          const rawPhotos = Array.isArray(room.photos) ? room.photos : [];
+          const uploadedPhotoUrls = [];
+          for (let pIdx = 0; pIdx < rawPhotos.length; pIdx++) {
+            const photoUri = rawPhotos[pIdx];
+            if (typeof photoUri === 'string' && (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))) {
+              uploadedPhotoUrls.push(photoUri);
+              continue;
+            }
+            if (typeof photoUri === 'string' && photoUri.startsWith('file://')) {
+              const cloudUrl = await uploadPhotoToFirebase(photoUri, projectId, `room_${room.id}`, pIdx);
+              if (cloudUrl) {
+                uploadedPhotoUrls.push(cloudUrl);
+              }
+            }
+          }
+
           const roomRef = doc(db, 'projects', projectId, 'rooms', room.id);
+          const isDone = Boolean(room.isCompleted || room.status === 'completed');
+          const finalPct = isDone ? 100 : Number(room.pct || 0);
+
           const roomPayload = {
-            pct: room.pct || 100,
-            isCompleted: true,
-            status: 'completed',
-            completedAt: room.completedAt || now,
-            completedBy: room.completedBy || 'Monteur',
-            completionDelta: room.completionDelta || [],
+            pct: finalPct,
+            progressPercent: finalPct,
+            isCompleted: isDone,
+            status: isDone ? 'completed' : (finalPct > 0 ? 'in_progress' : 'planned'),
             updatedAt: now,
           };
-          if (Array.isArray(room.photos) && room.photos.length > 0) {
-            roomPayload.photos = room.photos;
+
+          if (isDone) {
+            roomPayload.completedAt = room.completedAt || now;
+            roomPayload.completedBy = room.completedBy || 'Monteur';
+            roomPayload.completionDelta = room.completionDelta || [];
           }
+
+          if (room.lastUpdatedBy) {
+            roomPayload.lastUpdatedBy = room.lastUpdatedBy;
+          }
+          if (room.lastMonteurLanguage) {
+            roomPayload.lastMonteurLanguage = room.lastMonteurLanguage;
+          }
+          if (room.draftQuantities) {
+            roomPayload.draftQuantities = room.draftQuantities;
+          }
+
+          if (uploadedPhotoUrls.length > 0) {
+            roomPayload.photos = uploadedPhotoUrls;
+          }
+
           await setDoc(roomRef, roomPayload, { merge: true });
 
           // Update local room record
           const allRooms = await getRooms(projectId);
-          const updatedRooms = allRooms.map((r) => (r.id === room.id ? { ...r, syncedAt: now } : r));
+          const updatedRooms = allRooms.map((r) => (r.id === room.id ? { 
+            ...r, 
+            pct: finalPct,
+            photos: uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : (r.photos || []),
+            syncedAt: now 
+          } : r));
           await saveRooms(updatedRooms, projectId);
 
           pushedCount++;
         } catch (err) {
-          console.error(`Failed to push room completion for ${room.id}:`, err);
+          console.error(`Failed to push room status update for ${room.id}:`, err);
         }
       }
     } else {
@@ -422,11 +463,18 @@ export async function syncBookings(options = {}) {
             });
           }
 
+          const isRemoteCompleted = Boolean(rr.isCompleted || rr.status === 'completed');
+          const isExplicitlyUnlocked = rr.isCompleted === false || rr.status === 'in_progress';
+          const finalIsCompleted = isExplicitlyUnlocked ? false : isRemoteCompleted;
+          const finalStatus = isExplicitlyUnlocked ? 'in_progress' : (rr.status || (finalIsCompleted ? 'completed' : 'in_progress'));
+
           return {
             ...existingRoom,
             ...rr,
             defaultMaterialIds,
             plannedItems,
+            isCompleted: finalIsCompleted,
+            status: finalStatus,
             pct: Number(rr.pct !== undefined ? rr.pct : (existingRoom?.pct || 0)),
           };
         };

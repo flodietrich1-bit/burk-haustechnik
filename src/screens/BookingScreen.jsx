@@ -113,6 +113,16 @@ export default function BookingScreen({
     return 'Material';
   };
 
+  // Locked State (Monteur has completed the room - read only until unlocked by Bauleiter)
+  const isLocked = Boolean(room.isCompleted || room.status === 'completed');
+
+  const handleLockedAction = () => {
+    Alert.alert(
+      t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
+      t('roomLockedAlertMsg', currentLang) || 'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+    );
+  };
+
   // Unclear item Fullscreen Modal
   const [showUnclearModal, setShowUnclearModal] = useState(false);
   const [unclearText, setUnclearText] = useState('');
@@ -161,6 +171,10 @@ export default function BookingScreen({
 
   // Pre-fill monteur name as default when opening modal
   const openNachtragModal = () => {
+    if (isLocked) {
+      handleLockedAction();
+      return;
+    }
     if (!matBesteller) setMatBesteller(monteur?.name || '');
     if (!hoursMonteur) setHoursMonteur(monteur?.name || '');
     setShowMatSuggestions(false);
@@ -240,6 +254,10 @@ export default function BookingScreen({
 
   // Stepper with Over-Quantity / Mehrverbrauch check capped at delivered quantity
   const handleStep = (matId, stepDelta) => {
+    if (isLocked) {
+      handleLockedAction();
+      return;
+    }
     let mat = materials.find((m) => m.id === matId || m.pos === matId || m.posNr === matId);
     const roomPlan = getRoomPlannedItem(matId);
     if (!mat && roomPlan) {
@@ -426,6 +444,10 @@ export default function BookingScreen({
   };
 
   const handleMonteurFertigPress = () => {
+    if (isLocked) {
+      handleLockedAction();
+      return;
+    }
     if (effectivePhotoCount === 0 && !isRoomCompleted) {
       Alert.alert(
         t('photosRequiredTitle', currentLang) || 'Fotos erforderlich',
@@ -612,6 +634,17 @@ export default function BookingScreen({
           </Text>
         </View>
 
+        {/* Locked Room Status Banner */}
+        {isLocked && (
+          <View style={styles.roomLockedBanner}>
+            <Text style={styles.roomLockedIcon}>🔒</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.roomLockedTitle}>{t('roomLockedBanner', currentLang)}</Text>
+              <Text style={styles.roomLockedSub}>{t('roomLockedBannerSub', currentLang)}</Text>
+            </View>
+          </View>
+        )}
+
         {/* Action Buttons direkt unter dem Titel */}
         <View style={styles.topActionsRow}>
           {/* Button 1: Nachtrag */}
@@ -626,7 +659,7 @@ export default function BookingScreen({
           {/* Button 2: Position unklar (Öffnet Fullscreen Overlay) */}
           <TouchableOpacity
             style={styles.actionBtnUnclear}
-            onPress={() => setShowUnclearModal(true)}
+            onPress={isLocked ? handleLockedAction : () => setShowUnclearModal(true)}
             activeOpacity={0.7}
           >
             <Text style={styles.actionBtnUnclearText}>
@@ -862,6 +895,10 @@ export default function BookingScreen({
                       <TouchableOpacity
                         style={styles.reasonBadge}
                         onPress={() => {
+                          if (isLocked) {
+                            handleLockedAction();
+                            return;
+                          }
                           setPendingOverMat({
                             mat,
                             nextDelta: delta,
@@ -934,7 +971,9 @@ export default function BookingScreen({
         <TouchableOpacity
           style={[
             styles.monteurFertigBtn,
-            (effectivePhotoCount === 0 && !isRoomCompleted)
+            isLocked
+              ? styles.monteurFertigBtnDone
+              : (effectivePhotoCount === 0 && !isRoomCompleted)
               ? styles.monteurFertigBtnGrey
               : styles.monteurFertigBtnGreen,
             isRoomCompleted && styles.monteurFertigBtnDone,
@@ -943,7 +982,9 @@ export default function BookingScreen({
           activeOpacity={0.8}
         >
           <Text style={styles.monteurFertigBtnText}>
-            {isRoomCompleted
+            {isLocked
+              ? (t('roomLockedCompletedBtn', currentLang) || '✓ Raum fertiggestellt (Gesperrt)')
+              : isRoomCompleted
               ? '✓ Raum fertiggestellt'
               : (effectivePhotoCount === 0
                 ? 'Monteur fertig (Fotos erforderlich)'
@@ -1789,6 +1830,31 @@ const styles = StyleSheet.create({
   },
   headerRowClean: {
     marginBottom: 10,
+  },
+  roomLockedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  roomLockedIcon: {
+    fontSize: 22,
+  },
+  roomLockedTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  roomLockedSub: {
+    fontSize: 11.5,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 16,
   },
   headerRow: {
     flexDirection: 'row',

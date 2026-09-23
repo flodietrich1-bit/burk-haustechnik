@@ -64,9 +64,12 @@ export default function PhotoCaptureScreen({
   onBackToBook,
   currentLang = 'de',
   isSaving = false,
+  isLocked = false,
 }) {
   const [previewUri, setPreviewUri] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const effectiveIsLocked = isLocked || Boolean(room?.isCompleted || room?.status === 'completed');
 
   const requestCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -74,6 +77,13 @@ export default function PhotoCaptureScreen({
   };
 
   const handleLaunchCamera = async () => {
+    if (effectiveIsLocked) {
+      Alert.alert(
+        t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
+        t('roomLockedAlertMsg', currentLang) || 'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+      );
+      return;
+    }
     try {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
@@ -102,6 +112,13 @@ export default function PhotoCaptureScreen({
   };
 
   const handleLaunchLibrary = async () => {
+    if (effectiveIsLocked) {
+      Alert.alert(
+        t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
+        t('roomLockedAlertMsg', currentLang) || 'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+      );
+      return;
+    }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -156,10 +173,21 @@ export default function PhotoCaptureScreen({
         </View>
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+          {/* Locked Room Status Banner */}
+          {effectiveIsLocked && (
+            <View style={styles.roomLockedBanner}>
+              <Text style={styles.roomLockedIcon}>🔒</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.roomLockedTitle}>{t('roomLockedBanner', currentLang)}</Text>
+                <Text style={styles.roomLockedSub}>{t('roomLockedBannerSub', currentLang)}</Text>
+              </View>
+            </View>
+          )}
+
           {/* Quick Action Cards: Camera & Gallery */}
           <View style={styles.actionCardsRow}>
             <TouchableOpacity
-              style={[styles.actionCard, styles.actionCardPrimary]}
+              style={[styles.actionCard, styles.actionCardPrimary, effectiveIsLocked && styles.actionCardDisabled]}
               onPress={handleLaunchCamera}
               activeOpacity={0.8}
             >
@@ -171,7 +199,7 @@ export default function PhotoCaptureScreen({
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionCard, styles.actionCardSecondary]}
+              style={[styles.actionCard, styles.actionCardSecondary, effectiveIsLocked && styles.actionCardDisabled]}
               onPress={handleLaunchLibrary}
               activeOpacity={0.8}
             >
@@ -232,14 +260,16 @@ export default function PhotoCaptureScreen({
                       <View style={styles.photoBadge}>
                         <Text style={styles.photoBadgeText}>Foto {index + 1}</Text>
                       </View>
-                      <TouchableOpacity
-                        style={styles.deleteCircle}
-                        onPress={() => onRemovePhoto(index)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.deleteCircleText}>✕</Text>
-                      </TouchableOpacity>
+                      {!effectiveIsLocked && (
+                        <TouchableOpacity
+                          style={styles.deleteCircle}
+                          onPress={() => onRemovePhoto(index)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.deleteCircleText}>✕</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -248,18 +278,30 @@ export default function PhotoCaptureScreen({
           )}
         </ScrollView>
 
-        {/* Single Prominent Action Button: Fotos speichern */}
+        {/* Footer Action Button */}
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.saveBtn, isSaving && styles.btnDisabled]}
-            onPress={handleSave}
-            disabled={isSaving}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.saveBtnText}>
-              {isSaving ? 'Speichere...' : '💾 Fotos speichern'}
-            </Text>
-          </TouchableOpacity>
+          {effectiveIsLocked ? (
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={onBackToBook}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.saveBtnText}>
+                ‹ {t('backShort', currentLang) || 'Zurück zum Raum'}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.saveBtn, isSaving && styles.btnDisabled]}
+              onPress={handleSave}
+              disabled={isSaving}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.saveBtnText}>
+                {isSaving ? 'Speichere...' : '💾 Fotos speichern'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Fullscreen Photo Preview Modal */}
