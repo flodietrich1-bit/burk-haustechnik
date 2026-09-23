@@ -13,7 +13,6 @@ import { ProjectSettingsView } from './components/ProjectSettingsView';
 import { UserManagementView } from './components/UserManagementView';
 import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
-import { AlertsBanner } from './components/AlertsBanner';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { exportMaterialReportToExcel } from './services/excelExporter';
@@ -241,14 +240,6 @@ export function App() {
               </div>
             ) : (
               <>
-                {/* Live Material Alerts Banner (default collapsed, with 5 decision metrics & mail modal) */}
-                <AlertsBanner
-                  projectId={selectedProjectId}
-                  alerts={alerts}
-                  project={activeProject}
-                  positions={positions}
-                  rooms={rooms}
-                />
 
                 {/* TAB: Positions */}
                 {activeTab === 'positions' && (

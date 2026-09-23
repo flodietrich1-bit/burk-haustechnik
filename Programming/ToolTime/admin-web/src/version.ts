@@ -1,1 +1,1 @@
-export const ADMIN_PANEL_VERSION = 'v25';
+export const ADMIN_PANEL_VERSION = 'v26';
