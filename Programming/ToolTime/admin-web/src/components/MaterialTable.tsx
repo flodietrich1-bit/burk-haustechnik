@@ -21,6 +21,15 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       let remainingNeeded = 0;
       let hasRoomMatches = false;
 
+      // Real confirmed deviations across rooms:
+      // - Overconsumption (act > pl) counts immediately (+ diff)
+      // - Underconsumption (act < pl) counts ONLY if room is completed (- diff)
+      // - Unfinished room with act < pl is NOT an underconsumption, it's just remaining work (remainingNeeded)
+      let confirmedOverconsumption = 0;
+      let confirmedUnderconsumption = 0;
+      let allRoomsCompleted = true;
+      let matchedRoomsCount = 0;
+
       rooms.forEach(r => {
         const isUnlocked = r.isCompleted === false || r.status === 'in_progress';
         const isDone = !isUnlocked && (r.status === 'completed' || r.isCompleted === true || ((r as any).pct === 100));
@@ -33,13 +42,28 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
 
           if (isMatch) {
             hasRoomMatches = true;
+            matchedRoomsCount++;
+            if (!isDone) {
+              allRoomsCompleted = false;
+            }
+
             const pl = Number(m.plannedQty) || 0;
             const act = getMaterialActualQty(m, r, bookings);
             roomInstalled += act;
             totalPlannedInRooms += pl;
 
-            if (!isDone) {
-              remainingNeeded += Math.max(0, pl - act);
+            const roomDiff = act - pl;
+            if (roomDiff > 0) {
+              // Mehrverbrauch zählt SOFORT, egal ob Raum fertig oder in Arbeit
+              confirmedOverconsumption += roomDiff;
+            } else if (roomDiff < 0) {
+              if (isDone) {
+                // Minderverbrauch zählt NUR wenn der Raum abgeschlossen ist!
+                confirmedUnderconsumption += Math.abs(roomDiff);
+              } else {
+                // Raum noch offen -> restlicher Bedarf
+                remainingNeeded += Math.abs(roomDiff);
+              }
             }
           }
         });
@@ -61,16 +85,46 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       const planned = Number(pos.qty) || totalPlannedInRooms;
       const rest = hasRoomMatches ? remainingNeeded : Math.max(0, planned - installed);
       
-      // Delta: Verbaut - Geplant (positiv = Mehrverbrauch, negativ = Minderverbrauch)
-      const delta = installed - planned;
-      const deviationType: 'over' | 'under' | 'exact' = delta > 0 ? 'over' : (delta < 0 ? 'under' : 'exact');
+      // Echte netto Abweichung:
+      // Nur Mehrverbrauch (sofort) und Minderverbrauch (nur bei fertigen Räumen)
+      const netConfirmedDelta = confirmedOverconsumption - confirmedUnderconsumption;
+
+      let delta = 0;
+      let deviationType: 'over' | 'under' | 'exact' = 'exact';
+
+      if (hasRoomMatches) {
+        if (confirmedOverconsumption > 0) {
+          delta = netConfirmedDelta;
+          deviationType = netConfirmedDelta > 0 ? 'over' : (netConfirmedDelta < 0 ? 'under' : 'exact');
+        } else if (confirmedUnderconsumption > 0) {
+          delta = -confirmedUnderconsumption;
+          deviationType = 'under';
+        } else {
+          delta = 0;
+          deviationType = 'exact';
+        }
+      } else {
+        // Fallback für Positionen ohne Raumzuordnung
+        const rawDiff = installed - planned;
+        if (rawDiff > 0) {
+          delta = rawDiff;
+          deviationType = 'over';
+        } else if (rawDiff < 0 && (pos as any).isCompleted) {
+          delta = rawDiff;
+          deviationType = 'under';
+        } else {
+          delta = 0;
+          deviationType = 'exact';
+        }
+      }
 
       // Fortschritt in % (0 - 100)
       const percent = planned > 0 
         ? Math.min(100, Math.max(0, Math.round((installed / planned) * 100))) 
         : (installed > 0 ? 100 : 0);
 
-      const isCompleted = (planned > 0 && installed >= planned) || (rest === 0 && installed > 0);
+      const isCompleted = (hasRoomMatches && matchedRoomsCount > 0 && allRoomsCompleted && rest === 0) ||
+        (!hasRoomMatches && planned > 0 && installed >= planned);
       const isPartial = installed > 0 && !isCompleted;
       const isOpen = installed === 0;
 
@@ -122,9 +176,12 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
 
   // Totals & KPI Metrics
   const totalItems = positions.length;
-  const exactItems = positions.filter(p => getPositionMetrics(p).deviationType === 'exact' && getPositionMetrics(p).installed > 0).length;
+  const exactItems = positions.filter(p => {
+    const m = getPositionMetrics(p);
+    return m.isCompleted && m.delta === 0 && m.installed > 0;
+  }).length;
   const overItems = positions.filter(p => getPositionMetrics(p).deviationType === 'over').length;
-  const underItems = positions.filter(p => getPositionMetrics(p).deviationType === 'under' && getPositionMetrics(p).isCompleted).length;
+  const underItems = positions.filter(p => getPositionMetrics(p).deviationType === 'under').length;
   const totalValue = positions.reduce((acc, p) => acc + (getPositionMetrics(p).installed * (p.unitPrice || 0)), 0);
 
   return (
@@ -319,7 +376,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
                             <TrendingUp className="w-3 h-3" />
                             <span>Mehrverbrauch</span>
                           </span>
-                        ) : m.delta < 0 && m.isCompleted ? (
+                        ) : m.deviationType === 'under' ? (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                             <TrendingDown className="w-3 h-3" />
                             <span>Ersparnis</span>
