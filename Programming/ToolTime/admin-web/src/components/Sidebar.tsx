@@ -69,7 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'addendums' as TabType,
-      label: 'Mehrbedarf / Unklar',
+      label: 'Mehrbedarf / anders verbaut',
       icon: AlertCircle,
       badge: openAddendumsCount > 0 ? String(openAddendumsCount) : undefined,
       badgeColor: 'bg-amber-500 text-white'

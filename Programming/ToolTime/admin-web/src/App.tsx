@@ -279,6 +279,7 @@ export function App() {
                     project={activeProject}
                     rooms={rooms}
                     positions={positions}
+                    bookings={bookings}
                   />
                 )}
 

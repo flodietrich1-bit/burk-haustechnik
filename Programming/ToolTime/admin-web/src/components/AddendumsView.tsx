@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Addendum, Room, Position, Project } from '../types';
 import { 
   AlertCircle, 
@@ -21,7 +21,8 @@ import {
   PackageCheck,
   AlertTriangle
 } from 'lucide-react';
-import { updateAddendumStatus, createAddendum, addPositionDeliveredQty } from '../services/firestoreService';
+import { updateAddendumStatus, createAddendum, addPositionDeliveredQty, getMaterialActualQty } from '../services/firestoreService';
+import type { Booking } from '../types';
 
 interface AddendumsViewProps {
   addendums: Addendum[];
@@ -29,6 +30,7 @@ interface AddendumsViewProps {
   project?: Project | null;
   rooms?: Room[];
   positions?: Position[];
+  bookings?: Booking[];
 }
 
 function getSignatureDetails(sig: any, sigUrl?: string) {
@@ -135,7 +137,8 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   projectId = '', 
   project,
   rooms = [], 
-  positions: _positions = [] 
+  positions = [],
+  bookings = []
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -165,6 +168,74 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [rejectError, setRejectError] = useState<string>('');
   const [isProcessingReject, setIsProcessingReject] = useState<boolean>(false);
 
+  // Fast lookups for positions
+  const posMap = useMemo(() => new Map(positions.map(p => [p.posNr, p])), [positions]);
+  const posIdMap = useMemo(() => new Map(positions.map(p => [p.id, p])), [positions]);
+
+  // Helper to compute project stock info for any item:
+  // "noch verfügbar" vs "laut Projektplanung benötigt"
+  const getItemStockInfo = (item: Addendum) => {
+    const p = (item.materialId ? posIdMap.get(item.materialId) : undefined) ||
+      (item.itemOz ? posMap.get(item.itemOz) : undefined) ||
+      positions.find(pos => pos.shortText.trim().toLowerCase() === item.title.trim().toLowerCase());
+
+    const qu = item.qu || p?.qu || 'Stk';
+
+    // 1. Initial stock / delivered
+    const initialDelivered = p && p.deliveredQty !== undefined
+      ? Number(p.deliveredQty)
+      : (Number(p?.qty) || 0);
+
+    // 2. Already installed in all rooms
+    let projectInstalledTotal = 0;
+    rooms.forEach(r => {
+      (r.materials || []).forEach(m => {
+        if (
+          (p && (m.positionId === p.id || m.posNr === p.posNr)) ||
+          m.shortText.trim().toLowerCase() === item.title.trim().toLowerCase() ||
+          (item.itemOz && m.posNr === item.itemOz)
+        ) {
+          projectInstalledTotal += getMaterialActualQty(m, r, bookings);
+        }
+      });
+    });
+
+    // 3. Still needed in unfinished rooms
+    let projectNeeded = 0;
+    rooms.forEach(r => {
+      const isUnlocked = r.isCompleted === false || r.status === 'in_progress';
+      const isDone = !isUnlocked && (r.status === 'completed' || r.isCompleted === true || ((r as any).pct === 100));
+
+      if (!isDone) {
+        (r.materials || []).forEach(m => {
+          if (
+            (p && (m.positionId === p.id || m.posNr === p.posNr)) ||
+            m.shortText.trim().toLowerCase() === item.title.trim().toLowerCase() ||
+            (item.itemOz && m.posNr === item.itemOz)
+          ) {
+            const pl = Number(m.plannedQty) || 0;
+            const act = getMaterialActualQty(m, r, bookings);
+            const remaining = Math.max(0, pl - act);
+            projectNeeded += remaining;
+          }
+        });
+      }
+    });
+
+    const projectAvailable = Math.max(0, initialDelivered - projectInstalledTotal);
+    const isSufficient = projectAvailable >= projectNeeded;
+    const deficit = Math.max(0, projectNeeded - projectAvailable);
+
+    return {
+      projectAvailable,
+      projectNeeded,
+      isSufficient,
+      deficit,
+      qu,
+      hasPositionMatch: !!p
+    };
+  };
+
   const managerFirstName = (project?.commercialManager || 'Sabine').trim().split(/\s+/)[0];
 
   const generateMailContent = (item: Addendum, qty: number, unit: string) => {
@@ -178,7 +249,7 @@ für das Bauvorhaben "${pName}" muss folgendes Material dringend nachbestellt we
 • Menge: ${qty} ${unit}
 • Raum: ${item.roomName || item.roomId || 'Baustelle'}
 • Anforderer: ${item.requestedBy || 'Monteur'}
-• Begründung / Notiz: ${item.note || 'Mehrbedarf auf der Baustelle'}
+• Begründung / Notiz: ${item.note || 'Mehrbedarf / ungeplant verbautes Material auf der Baustelle'}
 
 Bitte veranlasse die Nachbestellung zeitnah, damit die Montage vor Ort zügig fortgesetzt werden kann.
 
@@ -195,6 +266,13 @@ Bauleitung`;
 
     // Verfügbare Menge erhöht sich entsprechend
     await addPositionDeliveredQty(projectId, targetKey, rawQty, unit);
+    await updateAddendumStatus(item.id, 'approved', projectId, {
+      approvalType: 'in_stock'
+    });
+  };
+
+  // 2. Acknowledge Notice: "Hinweis schließen" (für ungeplant verbautes Material)
+  const handleAcknowledgeUnclear = async (item: Addendum) => {
     await updateAddendumStatus(item.id, 'approved', projectId, {
       approvalType: 'in_stock'
     });
@@ -345,10 +423,10 @@ Bauleitung`;
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                Mehrbedarf & Unklare Positionen
+                Mehrbedarf / anders verbaut
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Baustellen-Mehraufwände: Mehrstunden/Regie, zusätzliches Material und unklare Bauteile
+                Baustellen-Mehraufwände: Mehrstunden/Regie, zusätzliches Material und ungeplant verbaute Bauteile
               </p>
             </div>
           </div>
@@ -407,7 +485,7 @@ Bauleitung`;
                 <Package className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-bold text-slate-800 block">Anderes Material benötigt</span>
+                <span className="text-xs font-bold text-slate-800 block">Mehr Material angefragt</span>
                 <span className="text-[10px] text-slate-400">Zusatzmaterial, Mehrbedarf</span>
               </div>
             </div>
@@ -423,7 +501,7 @@ Bauleitung`;
           </div>
         </div>
 
-        {/* Category 3: Unclear Part Installed */}
+        {/* Category 3: Unplanned Material Installed */}
         <div 
           onClick={() => setCategoryFilter(categoryFilter === 'unclear' ? 'all' : 'unclear')}
           className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-purple-400 ${
@@ -436,7 +514,7 @@ Bauleitung`;
                 <HelpCircle className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-bold text-slate-800 block">Anderes Teil verbaut (Unklar)</span>
+                <span className="text-xs font-bold text-slate-800 block">Ungeplantes Material verbaut</span>
                 <span className="text-[10px] text-slate-400">Nicht im ursprünglichen Plan</span>
               </div>
             </div>
@@ -460,8 +538,8 @@ Bauleitung`;
           {[
             { id: 'all' as const, label: `Alle Meldungen (${totalCount})` },
             { id: 'time' as const, label: `⏱ Mehr Zeit (${timeItems.length})` },
-            { id: 'material' as const, label: `📦 Anderes Material (${materialItems.length})` },
-            { id: 'unclear' as const, label: `❓ Unklares Teil (${unclearItems.length})` },
+            { id: 'material' as const, label: `📦 Mehr Material (${materialItems.length})` },
+            { id: 'unclear' as const, label: `❓ Ungeplantes Material (${unclearItems.length})` },
           ].map(tab => (
             <button
               key={tab.id}
@@ -518,6 +596,7 @@ Bauleitung`;
             const isPending = item.status === 'pending';
             const isApproved = item.status === 'approved';
             const isRejected = item.status === 'rejected';
+            const stockInfo = (cat === 'material' || cat === 'unclear') ? getItemStockInfo(item) : null;
 
             // Styling based on category
             const theme = cat === 'time' ? {
@@ -530,13 +609,13 @@ Bauleitung`;
               badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
               icon: HelpCircle,
               iconColor: 'text-purple-600',
-              label: '❓ Anderes Teil verbaut (Unklar)',
+              label: '❓ Ungeplantes Material verbaut',
               tagBg: 'bg-purple-50 text-purple-700',
             } : {
               badgeBg: 'bg-blue-50 text-blue-800 border-blue-200',
               icon: Package,
               iconColor: 'text-[#3B82C4]',
-              label: '📦 Anderes Material benötigt',
+              label: '📦 Mehr Material angefragt',
               tagBg: 'bg-blue-50 text-[#3B82C4]',
             };
 
@@ -563,7 +642,7 @@ Bauleitung`;
                       {isApproved 
                         ? (item.approvalType === 'reordered' 
                             ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
-                            : 'Freigegeben (Lagerbestand)') 
+                            : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
                         : isRejected ? 'Abgelehnt' : 'Ausstehend'}
                     </span>
                   </div>
@@ -623,6 +702,52 @@ Bauleitung`;
                           ? `Teil ist bereits im Materialstamm vorhanden (Pos. ${item.itemOz || '–'}), war aber nicht diesem Raum zugeordnet.`
                           : 'Neues/Alternatives Fabrikat verbaut, das zuvor nicht in der Planung hinterlegt war.'}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Projektweiter Materialbestand & Bedarfsampel (Entscheidungshilfe für Bauleitung) */}
+                  {stockInfo && (
+                    <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                        <span className="flex items-center space-x-1">
+                          <Package className="w-3.5 h-3.5 text-[#3B82C4]" />
+                          <span>Projektweiter Materialbestand</span>
+                        </span>
+                        {stockInfo.isSufficient ? (
+                          <span className="inline-flex items-center space-x-1 text-[10.5px] font-bold text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-full">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Bestand reicht für Restprojekt aus</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 text-[10.5px] font-bold text-red-800 bg-red-100/90 px-2 py-0.5 rounded-full border border-red-200">
+                            <AlertTriangle className="w-3 h-3 text-red-600" />
+                            <span>Fehlmenge: {stockInfo.deficit} {stockInfo.qu}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-center">
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Noch verfügbar</span>
+                          <span className={`text-sm font-black block mt-0.5 ${stockInfo.isSufficient ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {stockInfo.projectAvailable} {stockInfo.qu}
+                          </span>
+                          <span className="text-[9px] text-slate-400 block">Lager / Projektbestand</span>
+                        </div>
+                        <div className="bg-white p-2 rounded-lg border border-slate-200/80 shadow-2xs">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Laut Planung benötigt</span>
+                          <span className="text-sm font-black text-slate-800 block mt-0.5">
+                            {stockInfo.projectNeeded} {stockInfo.qu}
+                          </span>
+                          <span className="text-[9px] text-slate-400 block">in weiteren Räumen</span>
+                        </div>
+                      </div>
+
+                      {!stockInfo.isSufficient && (
+                        <p className="text-[10.5px] text-red-700 font-medium bg-red-50/80 p-1.5 rounded-md text-center">
+                          Achtung: Der verbleibende Bestand reicht nicht für alle weiteren Räume aus! Bitte nachbestellen.
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -716,51 +841,77 @@ Bauleitung`;
                 {/* Bottom Actions for Bauleiter / Admin */}
                 {isPending ? (
                   <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRejectItem(item);
-                        setRejectReason('');
-                        setRejectError('');
-                      }}
-                      className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
-                      title="Diesen Mehrbedarf ablehnen (Begründung erforderlich)"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Ablehnen</span>
-                    </button>
-
-                    {cat === 'time' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleApproveHours(item)}
-                        className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
-                        title="Regiestunden freigeben"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Regiestunden freigeben</span>
-                      </button>
-                    ) : (
+                    {cat === 'unclear' ? (
                       <>
                         <button
                           type="button"
-                          onClick={() => handleApproveInStock(item)}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
-                          title="Material ist im Lager vorhanden und wird zum Verbauen freigegeben (verfügbare Menge erhöht sich)"
+                          onClick={() => handleAcknowledgeUnclear(item)}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors"
+                          title="Hinweis zur Kenntnis nehmen und schließen (Material war bereits vorhanden)"
                         >
-                          <PackageCheck className="w-3.5 h-3.5" />
-                          <span>Material verfügbar – Freigeben</span>
+                          <Check className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Hinweis schließen</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleOpenReorderModal(item)}
                           className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
-                          title="Material ist nicht mehr im Lager vorhanden – Modal zur Nachbestellung öffnen"
+                          title="Material reicht nicht für Restprojekt – Modal zur Nachbestellung öffnen"
                         >
                           <ShoppingCart className="w-3.5 h-3.5" />
                           <span>Material Nachbestellen</span>
                         </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRejectItem(item);
+                            setRejectReason('');
+                            setRejectError('');
+                          }}
+                          className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
+                          title="Diesen Mehrbedarf ablehnen (Begründung erforderlich)"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Ablehnen</span>
+                        </button>
+
+                        {cat === 'time' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleApproveHours(item)}
+                            className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
+                            title="Regiestunden freigeben"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Regiestunden freigeben</span>
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveInStock(item)}
+                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
+                              title="Material ist im Lager vorhanden und wird zum Verbauen freigegeben (verfügbare Menge erhöht sich)"
+                            >
+                              <PackageCheck className="w-3.5 h-3.5" />
+                              <span>Material verfügbar – Freigeben</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenReorderModal(item)}
+                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
+                              title="Material ist nicht mehr im Lager vorhanden – Modal zur Nachbestellung öffnen"
+                            >
+                              <ShoppingCart className="w-3.5 h-3.5" />
+                              <span>Material Nachbestellen</span>
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -768,7 +919,7 @@ Bauleitung`;
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
                     <span className="font-medium text-slate-600">
                       {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & freigegeben'}
-                      {isApproved && item.approvalType !== 'reordered' && '✓ Aus Lagerbestand freigegeben'}
+                      {isApproved && item.approvalType !== 'reordered' && (cat === 'unclear' ? '✓ Geprüft & Hinweis geschlossen' : '✓ Aus Lagerbestand freigegeben')}
                       {isRejected && '✕ Durch Bauleitung abgelehnt'}
                     </span>
                     <button
