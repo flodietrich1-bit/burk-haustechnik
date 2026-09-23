@@ -402,23 +402,99 @@ export default function App() {
     setUnclearItems((prev) => [...prev, item]);
     try {
       const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+      const matId = item.materialId || `extra_${Date.now()}`;
+      const qtyNum = parseFloat(item.qty) || 1;
+      const unit = item.qu || (String(item.qty).includes('m') ? 'm' : 'Stk');
+
+      // 1. Ensure material exists in global materials catalog
+      let updatedMaterialsList = [...materials];
+      const matExists = updatedMaterialsList.some((m) => m.id === matId || (item.pos && m.pos === item.pos));
+      if (!matExists) {
+        const newCatMat = {
+          id: matId,
+          pos: item.pos || 'ZUSATZ',
+          posNr: item.pos || 'ZUSATZ',
+          name: item.txt,
+          cleanName: item.txt,
+          shortText: item.txt,
+          group: item.group || 'Zusatz / Außerplanmäßig',
+          qu: unit,
+          deliveredQty: qtyNum,
+          installedQty: qtyNum,
+          isUnplanned: true,
+        };
+        updatedMaterialsList = [newCatMat, ...updatedMaterialsList];
+        setMaterials(updatedMaterialsList);
+        await saveMaterials(updatedMaterialsList, pId);
+      }
+
+      // 2. Add or update material inside selectedRoom and rooms state
+      if (selectedRoom) {
+        const extraRoomMat = {
+          id: matId,
+          positionId: matId,
+          posNr: item.pos || 'ZUSATZ',
+          pos: item.pos || 'ZUSATZ',
+          name: item.txt,
+          shortText: item.txt,
+          cleanName: item.txt,
+          group: item.group || 'Zusatz / Außerplanmäßig',
+          qu: unit,
+          plannedQty: 0,
+          installedQty: qtyNum,
+          isUnplanned: true,
+        };
+
+        const existingRoomMats = Array.isArray(selectedRoom.materials) ? [...selectedRoom.materials] : [];
+        const existingIdx = existingRoomMats.findIndex((m) => (m.positionId || m.id) === matId);
+        if (existingIdx >= 0) {
+          existingRoomMats[existingIdx] = {
+            ...existingRoomMats[existingIdx],
+            installedQty: (Number(existingRoomMats[existingIdx].installedQty) || 0) + qtyNum,
+            isUnplanned: true,
+          };
+        } else {
+          existingRoomMats.unshift(extraRoomMat);
+        }
+
+        const now = new Date().toISOString();
+        const updatedSelectedRoom = {
+          ...selectedRoom,
+          materials: existingRoomMats,
+          draftUnclear: [...(selectedRoom.draftUnclear || []), item],
+          lastUpdatedBy: monteur?.name || 'Monteur',
+          lastMonteurLanguage: currentLang || 'de',
+          updatedAt: now,
+        };
+        setSelectedRoom(updatedSelectedRoom);
+
+        const currentRooms = Array.isArray(rooms) ? rooms : [];
+        const updatedRooms = currentRooms.map((r) => (r.id === selectedRoom.id ? updatedSelectedRoom : r));
+        setRooms(updatedRooms);
+        await saveRooms(updatedRooms, pId, updatedMaterialsList);
+      }
+
+      // 3. Enqueue addendum for cloud sync
       await enqueueAddendum({
         projectId: pId,
         roomId: selectedRoom?.id || 'allgemein',
         roomName: selectedRoom?.name || 'Baustelle',
-        type: 'unklar',
-        title: item.txt || 'Unklares Teil verbaut',
-        quantity: item.qty || '1 Stk',
-        qu: item.qu || (String(item.qty).includes('m') ? 'm' : 'Stk'),
-        requestedBy: monteur?.name || 'Monteur',
-        note: item.isOrdered 
+        type: 'ausserplanmaessig',
+        title: item.txt || 'Außerplanmäßig verbautes Material',
+        quantity: `${item.qty} ${unit}`,
+        qu: unit,
+        requestedBy: item.requestedBy || monteur?.name || 'Monteur',
+        reason: item.reason || '',
+        note: item.reason || (item.isOrdered
           ? `Bereits bestelltes Material (Pos: ${item.pos || item.itemOz || '–'}) verbaut, aber nicht im Raumplan hinterlegt.`
-          : 'Anderes / unklares Teil verbaut als im Plan vorgesehen (Erstmalig auf der Baustelle).',
-        itemOz: item.itemOz || item.pos || 'UNKLAR',
-        materialId: item.materialId || null,
+          : 'Außerplanmäßig im Raum verbaut.'),
+        signature: item.signature || null,
+        itemOz: item.itemOz || item.pos || 'ZUSATZ',
+        materialId: matId,
         isOrdered: !!item.isOrdered,
         status: 'pending',
       });
+
       const delta = await getLocalUnsyncedDelta(pId);
       setPendingCount(delta.totalPendingCount);
 
@@ -431,7 +507,7 @@ export default function App() {
         }
       });
     } catch (e) {
-      console.warn('Error saving unclear item as addendum:', e);
+      console.warn('Error saving unplanned item as addendum:', e);
     }
   };
 

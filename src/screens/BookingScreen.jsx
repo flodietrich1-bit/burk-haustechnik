@@ -123,13 +123,17 @@ export default function BookingScreen({
     );
   };
 
-  // Unclear item Fullscreen Modal
+  // Unclear / Außerplanmäßig item Fullscreen Modal
   const [showUnclearModal, setShowUnclearModal] = useState(false);
   const [unclearText, setUnclearText] = useState('');
   const [unclearQty, setUnclearQty] = useState('');
   const [unclearUnit, setUnclearUnit] = useState('Stk'); // 'Stk' | 'm'
   const [selectedUnclearMat, setSelectedUnclearMat] = useState(null);
   const [showUnclearSuggestions, setShowUnclearSuggestions] = useState(false);
+  const [unclearReason, setUnclearReason] = useState('');
+  const [unclearSignature, setUnclearSignature] = useState(null);
+  const [unclearScrollEnabled, setUnclearScrollEnabled] = useState(true);
+  const [hasAttemptedUnclearSubmit, setHasAttemptedUnclearSubmit] = useState(false);
 
   // -------------------------------------------------------------
   // Mehrverbrauch (Over-Consumption) Overlay & Reasons
@@ -146,7 +150,7 @@ export default function BookingScreen({
   const [showCompleteModal, setShowCompleteModal] = useState(false);
 
   // -------------------------------------------------------------
-  // Nachtrag Modal & Independent Form States
+  // Nachtrag Modal & Independent Form States (+ Material/Zeit benötigt)
   // -------------------------------------------------------------
   const [showNachtragModal, setShowNachtragModal] = useState(false);
   const [activeTab, setActiveTab] = useState('material'); // 'material' | 'hours'
@@ -158,6 +162,8 @@ export default function BookingScreen({
   const [matBesteller, setMatBesteller] = useState('');
   const [matNote, setMatNote] = useState('');
   const [showMatSuggestions, setShowMatSuggestions] = useState(false);
+  const [selectedRoomMat, setSelectedRoomMat] = useState(null);
+  const [showRoomMatPicker, setShowRoomMatPicker] = useState(false);
 
   // Form 2: Arbeitszeit Nachtrag (Completely independent state)
   const [hoursActivity, setHoursActivity] = useState('');
@@ -168,6 +174,53 @@ export default function BookingScreen({
   // Form 3: Unterschrift & Validation
   const [nachtragSignature, setNachtragSignature] = useState(null);
   const [modalScrollEnabled, setModalScrollEnabled] = useState(true);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
+
+  // Dropdown list of materials present in this room
+  const roomMaterialsList = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    if (Array.isArray(room.materials)) {
+      room.materials.forEach((rm) => {
+        const mId = rm.positionId || rm.id;
+        if (!mId || seen.has(mId)) return;
+        seen.add(mId);
+        const full = materials.find((m) => m.id === mId || (rm.posNr && m.pos === rm.posNr));
+        list.push({
+          id: mId,
+          pos: rm.posNr || full?.pos || '',
+          name: rm.shortText || rm.cleanName || rm.name || full?.cleanName || full?.name || 'Material',
+          qu: rm.qu || full?.qu || 'Stk',
+          group: rm.group || full?.group || '',
+        });
+      });
+    }
+    if (list.length === 0 && Array.isArray(activeMaterialIds)) {
+      activeMaterialIds.forEach((id) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        const m = materials.find((x) => x.id === id);
+        if (m) {
+          list.push({
+            id: m.id,
+            pos: m.pos || '',
+            name: getMaterialDisplayName(m),
+            qu: m.qu || 'Stk',
+            group: m.group || '',
+          });
+        }
+      });
+    }
+    return list;
+  }, [room.materials, activeMaterialIds, materials]);
+
+  const handleSelectRoomMat = (item) => {
+    setSelectedRoomMat(item);
+    setMatTitle(item.name);
+    const isMeter = item.qu === 'm' || (item.name && item.name.toLowerCase().includes('rohr') && !item.name.toLowerCase().includes('schelle'));
+    setMatUnit(isMeter ? 'm' : 'Stk');
+    setShowRoomMatPicker(false);
+  };
 
   // Pre-fill monteur name as default when opening modal
   const openNachtragModal = () => {
@@ -180,21 +233,23 @@ export default function BookingScreen({
     setShowMatSuggestions(false);
     setNachtragSignature(null);
     setModalScrollEnabled(true);
+    setHasAttemptedSubmit(false);
+    setShowRoomMatPicker(false);
     setShowNachtragModal(true);
   };
 
   // Validation: List of remaining required fields
   const missingList = activeTab === 'material' ? [
     !matTitle.trim() ? t('reMat', currentLang) : null,
-    !matQty.trim() ? t('reQty', currentLang) : null,
-    !matBesteller.trim() ? t('reBest', currentLang) : null,
+    !matQty.trim() || !(parseFloat(matQty) > 0) ? t('reQty', currentLang) : null,
     !matNote.trim() ? t('reNote', currentLang) : null,
+    !matBesteller.trim() ? t('reBest', currentLang) : null,
     !nachtragSignature ? t('signatureLabel', currentLang) : null,
   ].filter(Boolean) : [
     !hoursActivity.trim() ? t('fldTaetigkeit', currentLang) : null,
-    !hoursDuration.trim() ? t('fldStunden', currentLang) : null,
-    !hoursMonteur.trim() ? t('monteur', currentLang) : null,
+    !hoursDuration.trim() || !(parseFloat(hoursDuration) > 0) ? t('fldStunden', currentLang) : null,
     !hoursNote.trim() ? t('reNote', currentLang) : null,
+    !hoursMonteur.trim() ? t('monteur', currentLang) : null,
     !nachtragSignature ? t('signatureLabel', currentLang) : null,
   ].filter(Boolean);
 
@@ -529,31 +584,52 @@ export default function BookingScreen({
   };
 
   const handleSaveUnclear = () => {
-    if (!unclearText.trim()) return;
-    const cleanQty = unclearQty.trim() || '1';
+    const qtyVal = parseFloat(unclearQty) || 0;
+    const isMissing = !unclearText.trim() || qtyVal <= 0 || !unclearReason.trim() || !unclearSignature;
+    if (isMissing) {
+      setHasAttemptedUnclearSubmit(true);
+      return;
+    }
+
+    const matId = selectedUnclearMat ? selectedUnclearMat.id : `extra_${Date.now()}`;
+    const cleanQty = String(qtyVal);
+
+    // Immediately add to active list so card is visible right away
+    setActiveMaterialIds((prev) => (prev.includes(matId) ? prev : [matId, ...prev]));
+
     onAddUnclearItem({
       txt: unclearText.trim(),
-      qty: `${cleanQty} ${unclearUnit}`,
+      qty: cleanQty,
       qu: unclearUnit,
-      itemOz: selectedUnclearMat ? selectedUnclearMat.pos : 'UNKLAR',
-      pos: selectedUnclearMat ? selectedUnclearMat.pos : null,
-      materialId: selectedUnclearMat ? selectedUnclearMat.id : null,
+      itemOz: selectedUnclearMat ? selectedUnclearMat.pos : 'ZUSATZ',
+      pos: selectedUnclearMat ? selectedUnclearMat.pos : 'ZUSATZ',
+      materialId: matId,
+      group: selectedUnclearMat?.group || 'Zusatz / Außerplanmäßig',
       isOrdered: !!selectedUnclearMat,
+      reason: unclearReason.trim(),
+      signature: unclearSignature,
+      requestedBy: monteur?.name || 'Monteur',
       roomId: room.id,
       roomName: room.name,
     });
+
     setUnclearText('');
     setUnclearQty('');
+    setUnclearReason('');
+    setUnclearSignature(null);
     setSelectedUnclearMat(null);
     setShowUnclearModal(false);
     setShowUnclearSuggestions(false);
+    setHasAttemptedUnclearSubmit(false);
   };
 
   // Save Nachtrag (dispatches according to active tab with separate payloads)
   const handleSubmitNachtrag = () => {
-    if (!isFormValid) {
+    if (missingList.length > 0) {
+      setHasAttemptedSubmit(true);
       return;
     }
+
     if (activeTab === 'material') {
       const cleanQty = matQty.trim() || '1';
       onAddNachtrag({
@@ -572,7 +648,10 @@ export default function BookingScreen({
       setMatTitle('');
       setMatQty('');
       setMatNote('');
+      setSelectedRoomMat(null);
       setNachtragSignature(null);
+      setHasAttemptedSubmit(false);
+      setShowRoomMatPicker(false);
     } else {
       // Arbeitszeit / Stundenlohn
       const cleanHours = hoursDuration.trim() || '1';
@@ -593,6 +672,7 @@ export default function BookingScreen({
       setHoursDuration('');
       setHoursNote('');
       setNachtragSignature(null);
+      setHasAttemptedSubmit(false);
     }
 
     setShowNachtragModal(false);
@@ -647,23 +727,25 @@ export default function BookingScreen({
 
         {/* Action Buttons direkt unter dem Titel */}
         <View style={styles.topActionsRow}>
-          {/* Button 1: Nachtrag */}
+          {/* Button 1: + Material/Zeit benötigt */}
           <TouchableOpacity
             style={styles.actionBtnNachtrag}
             onPress={openNachtragModal}
             activeOpacity={0.7}
           >
-            <Text style={styles.actionBtnNachtragText}>＋ {t('nachtrag', currentLang)}</Text>
+            <Text style={styles.actionBtnNachtragText}>
+              + Material/Zeit{'\n'}benötigt
+            </Text>
           </TouchableOpacity>
 
-          {/* Button 2: Position unklar (Öffnet Fullscreen Overlay) */}
+          {/* Button 2: außerplanmäßig verbaut */}
           <TouchableOpacity
             style={styles.actionBtnUnclear}
             onPress={isLocked ? handleLockedAction : () => setShowUnclearModal(true)}
             activeOpacity={0.7}
           >
             <Text style={styles.actionBtnUnclearText}>
-              ❓ {t('unclearBtnShort', currentLang)}
+              außerplanmäßig{'\n'}verbaut
             </Text>
           </TouchableOpacity>
         </View>
@@ -742,10 +824,12 @@ export default function BookingScreen({
                 qu: roomPlan.qu || 'Stk',
                 deliveredQty: Number(roomPlan.plannedQty || 0),
                 installedQty: Number(roomPlan.installedQty || 0),
+                isUnplanned: roomPlan.isUnplanned,
               };
             }
             if (!mat) return null;
 
+            const isUnplanned = Boolean(mat.isUnplanned || roomPlan?.isUnplanned);
             const displayName = getMaterialDisplayName(mat, roomPlan);
             const displayGroup = (mat?.group && mat.group !== 'Allgemein')
               ? mat.group
@@ -754,7 +838,7 @@ export default function BookingScreen({
 
             const delta = Number(sessionQuantities[matId]) || 0;
             const hasRoomPlan = Boolean(roomPlan);
-            const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
+            const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty || 0) : null;
             const roomInstalledBefore = hasRoomPlan
               ? Number(roomPlan.installedQty || 0)
               : Number(mat.installedQty || 0);
@@ -766,8 +850,10 @@ export default function BookingScreen({
                 : (mat.qty || (roomPlan && roomPlan.plannedQty) || 0)
             );
 
-            // Target for planning
-            const baseTarget = hasRoomPlan ? roomPlanned : projectDelivered;
+            // Target for planning: For unplanned items, the available pool is the project delivered amount!
+            const baseTarget = isUnplanned
+              ? (projectDelivered > 0 ? projectDelivered : currentRoomVerb)
+              : (hasRoomPlan ? roomPlanned : projectDelivered);
 
             // Verfügbar: Geht mit jedem verbaut nach unten :)
             const availableQty = Math.max(0, baseTarget - currentRoomVerb);
@@ -805,6 +891,13 @@ export default function BookingScreen({
                       <View style={styles.posChip}>
                         <Text style={styles.posChipText}>Pos {mat.pos}</Text>
                       </View>
+                      {isUnplanned ? (
+                        <View style={styles.unplannedBadgeChip}>
+                          <Text style={styles.unplannedBadgeChipText}>
+                            🏷️ {t('unplannedBadge', currentLang)}
+                          </Text>
+                        </View>
+                      ) : null}
                       {mat.containsHint ? (
                         <View style={styles.hintChip}>
                           <Text style={styles.hintChipText} numberOfLines={1}>
@@ -835,11 +928,17 @@ export default function BookingScreen({
                   <View style={styles.metricCell}>
                     <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
                     <Text style={styles.metricValue}>
-                      {hasRoomPlan ? `${formatQty(roomPlanned)} ` : '–'}
-                      {hasRoomPlan ? <Text style={styles.metricUnit}>{displayQu}</Text> : ''}
+                      {isUnplanned ? (
+                        <>0 <Text style={styles.metricUnit}>{displayQu}</Text></>
+                      ) : (
+                        <>
+                          {hasRoomPlan ? `${formatQty(roomPlanned)} ` : '–'}
+                          {hasRoomPlan ? <Text style={styles.metricUnit}>{displayQu}</Text> : ''}
+                        </>
+                      )}
                     </Text>
                     <Text style={styles.metricSub}>
-                      {hasRoomPlan ? t('matrixRoom', currentLang) : t('matrixOnlyGaeb', currentLang)}
+                      {isUnplanned ? t('unplannedBadge', currentLang) : (hasRoomPlan ? t('matrixRoom', currentLang) : t('matrixOnlyGaeb', currentLang))}
                     </Text>
                   </View>
 
@@ -1001,7 +1100,7 @@ export default function BookingScreen({
           {/* Fullscreen Modal Header with Close '✕' Button */}
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
-              <Text style={styles.modalMainTitle}>📋 {t('nachtragTitle', currentLang)}</Text>
+              <Text style={styles.modalMainTitle}>📋 {t('btnNeedMaterialTime', currentLang) || '+ Material/Zeit benötigt'}</Text>
               <Text style={styles.modalSubTitle}>{room.name} · {t('nachtragSub', currentLang)}</Text>
             </View>
             <TouchableOpacity
@@ -1051,75 +1150,124 @@ export default function BookingScreen({
               {/* ========================================================= */}
               {activeTab === 'material' && (
                 <View>
-                  {/* Material / Artikel mit GAEB Autosuggester */}
+                  {/* Material aus Raum Dropdown */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reMat', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
-                    <TextInput
-                      style={[styles.modalInput, !matTitle.trim() && styles.inputInvalid]}
-                      placeholder="z. B. DIN 100, Bogen, Schelle, Kugelhahn..."
-                      placeholderTextColor={COLORS.muted}
-                      value={matTitle}
-                      onChangeText={(val) => {
-                        setMatTitle(val);
-                        setShowMatSuggestions(true);
-                      }}
-                      onFocus={() => setShowMatSuggestions(true)}
-                    />
+                    <Text style={styles.modalFieldLabel}>
+                      {t('dropdownRoomMaterials', currentLang)} <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.dropdownTrigger,
+                        hasAttemptedSubmit && !matTitle.trim() && styles.inputInvalid,
+                      ]}
+                      onPress={() => setShowRoomMatPicker(!showRoomMatPicker)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        {selectedRoomMat ? (
+                          <View style={styles.dropdownSelectedRow}>
+                            <Text style={styles.dropdownPosBadge}>Pos {selectedRoomMat.pos}</Text>
+                            <Text style={styles.dropdownSelectedTitle} numberOfLines={1}>
+                              {selectedRoomMat.name}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.dropdownPlaceholder}>
+                            {t('selectRoomMaterial', currentLang)}
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={styles.dropdownArrow}>{showRoomMatPicker ? '▲' : '▼'}</Text>
+                    </TouchableOpacity>
 
-                    {/* GAEB Suggestions Dropdown */}
-                    {matSuggestions.length > 0 && (
-                      <View style={styles.suggestionsContainer}>
-                        <Text style={styles.suggestionsHeader}>{t('unclearOrderedSuggestions', currentLang)}</Text>
-                        {matSuggestions.map((item) => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={styles.suggestionItem}
-                            onPress={() => handleSelectMatSuggestion(item)}
-                          >
-                            <View style={styles.sugTopRow}>
-                              <View style={styles.sugPosChip}>
-                                <Text style={styles.sugPosText}>Pos {item.pos}</Text>
-                              </View>
-                              <Text style={styles.sugUnitBadge}>{item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}</Text>
-                            </View>
-                            <Text style={styles.sugTitle}>{getMaterialDisplayName(item)}</Text>
-                            <Text style={styles.sugGroup}>{item.group}</Text>
-                          </TouchableOpacity>
-                        ))}
+                    {/* Dropdown List Items */}
+                    {showRoomMatPicker && (
+                      <View style={styles.dropdownListContainer}>
+                        <Text style={styles.dropdownListHeader}>
+                          {t('dropdownRoomMaterials', currentLang)} ({roomMaterialsList.length}):
+                        </Text>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }} keyboardShouldPersistTaps="handled">
+                          {roomMaterialsList.map((item) => {
+                            const isSelected = (selectedRoomMat?.id === item.id) || (matTitle === item.name);
+                            return (
+                              <TouchableOpacity
+                                key={item.id}
+                                style={[styles.dropdownItem, isSelected && styles.dropdownItemActive]}
+                                onPress={() => handleSelectRoomMat(item)}
+                                activeOpacity={0.7}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <View style={styles.sugTopRow}>
+                                    <View style={styles.sugPosChip}>
+                                      <Text style={styles.sugPosText}>Pos {item.pos}</Text>
+                                    </View>
+                                    <Text style={styles.sugUnitBadge}>
+                                      {item.qu === 'm' ? t('unitMeters', currentLang) : t('unitPieces', currentLang)}
+                                    </Text>
+                                  </View>
+                                  <Text style={styles.dropdownItemText}>{item.name}</Text>
+                                </View>
+                                {isSelected && <Text style={styles.dropdownCheckmark}>✓</Text>}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
                       </View>
                     )}
                   </View>
 
-                  {/* Einheit & Mengeneingabe */}
+                  {/* Benötigte Menge & Einheit */}
                   <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
-                    <View style={styles.unitSelectorRow}>
-                      <TouchableOpacity
-                        style={[styles.unitToggle, matUnit === 'Stk' && styles.unitToggleActive]}
-                        onPress={() => setMatUnit('Stk')}
-                      >
-                        <Text style={[styles.unitToggleText, matUnit === 'Stk' && styles.unitToggleTextActive]}>
-                          {t('unitPieces', currentLang)}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={[styles.unitToggle, matUnit === 'm' && styles.unitToggleActive]}
-                        onPress={() => setMatUnit('m')}
-                      >
-                        <Text style={[styles.unitToggleText, matUnit === 'm' && styles.unitToggleTextActive]}>
-                          {t('unitMeters', currentLang)}
-                        </Text>
-                      </TouchableOpacity>
+                    <Text style={styles.modalFieldLabel}>
+                      {matUnit === 'm' ? t('unclearQtyMeterPlaceholder', currentLang) : t('reQty', currentLang)} <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <View style={styles.qtyWithUnitRow}>
+                      <TextInput
+                        style={[
+                          styles.modalInput,
+                          { flex: 1 },
+                          hasAttemptedSubmit && (!matQty.trim() || !(parseFloat(matQty) > 0)) && styles.inputInvalid,
+                        ]}
+                        placeholder={matUnit === 'm' ? 'z. B. 12.5' : 'z. B. 4'}
+                        placeholderTextColor={COLORS.muted}
+                        keyboardType="decimal-pad"
+                        value={matQty}
+                        onChangeText={setMatQty}
+                      />
+                      <View style={styles.qtyUnitBadgeBox}>
+                        <Text style={styles.qtyUnitBadgeText}>{matUnit === 'm' ? 'Meter (m)' : 'Stück (Stk)'}</Text>
+                      </View>
                     </View>
+                  </View>
 
+                  {/* Begründung (Pflichtfeld) */}
+                  <View style={styles.modalField}>
+                    <Text style={styles.modalFieldLabel}>
+                      {t('unplannedReason', currentLang) || 'Begründung'} <Text style={styles.requiredStar}>*</Text>
+                    </Text>
+                    <View style={styles.quickPillsRow}>
+                      {['Mehrverbrauch', 'Bruch / Beschädigung', 'Planänderung', 'Verschnitt', 'Fehlmenge'].map((r) => (
+                        <TouchableOpacity
+                          key={r}
+                          style={[styles.pill, matNote === r && styles.pillActive]}
+                          onPress={() => setMatNote(r)}
+                        >
+                          <Text style={[styles.pillText, matNote === r && styles.pillTextActive]}>{r}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                     <TextInput
-                      style={[styles.modalInput, !matQty.trim() && styles.inputInvalid]}
-                      placeholder={matUnit === 'm' ? t('unclearQtyMeterPlaceholder', currentLang) : t('unclearQtyPiecePlaceholder', currentLang)}
+                      style={[
+                        styles.modalInput,
+                        styles.multilineInput,
+                        hasAttemptedSubmit && !matNote.trim() && styles.inputInvalid,
+                      ]}
+                      placeholder={t('overCommentPlaceholder', currentLang) || 'Grund für den Mehrbedarf angeben...'}
                       placeholderTextColor={COLORS.muted}
-                      keyboardType="decimal-pad"
-                      value={matQty}
-                      onChangeText={setMatQty}
+                      multiline={true}
+                      numberOfLines={3}
+                      value={matNote}
+                      onChangeText={setMatNote}
                     />
                   </View>
 
@@ -1127,25 +1275,14 @@ export default function BookingScreen({
                   <View style={styles.modalField}>
                     <Text style={styles.modalFieldLabel}>{t('reBest', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, !matBesteller.trim() && styles.inputInvalid]}
+                      style={[
+                        styles.modalInput,
+                        hasAttemptedSubmit && !matBesteller.trim() && styles.inputInvalid,
+                      ]}
                       placeholder={t('reBest', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       value={matBesteller}
                       onChangeText={setMatBesteller}
-                    />
-                  </View>
-
-                  {/* Kommentar / Begründung (3 Zeilen) */}
-                  <View style={styles.modalField}>
-                    <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
-                    <TextInput
-                      style={[styles.modalInput, styles.multilineInput, !matNote.trim() && styles.inputInvalid]}
-                      placeholder={t('overCommentPlaceholder', currentLang)}
-                      placeholderTextColor={COLORS.muted}
-                      multiline={true}
-                      numberOfLines={3}
-                      value={matNote}
-                      onChangeText={setMatNote}
                     />
                   </View>
                 </View>
@@ -1160,7 +1297,10 @@ export default function BookingScreen({
                   <View style={styles.modalField}>
                     <Text style={styles.modalFieldLabel}>{t('fldTaetigkeit', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, !hoursActivity.trim() && styles.inputInvalid]}
+                      style={[
+                        styles.modalInput,
+                        hasAttemptedSubmit && !hoursActivity.trim() && styles.inputInvalid,
+                      ]}
                       placeholder="z. B. Kernbohrung DN 150 + Mauerdurchbruch..."
                       placeholderTextColor={COLORS.muted}
                       value={hoursActivity}
@@ -1172,7 +1312,10 @@ export default function BookingScreen({
                   <View style={styles.modalField}>
                     <Text style={styles.modalFieldLabel}>{t('fldStunden', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, !hoursDuration.trim() && styles.inputInvalid]}
+                      style={[
+                        styles.modalInput,
+                        hasAttemptedSubmit && (!hoursDuration.trim() || !(parseFloat(hoursDuration) > 0)) && styles.inputInvalid,
+                      ]}
                       placeholder="z. B. 2.5"
                       placeholderTextColor={COLORS.muted}
                       keyboardType="decimal-pad"
@@ -1200,7 +1343,10 @@ export default function BookingScreen({
                   <View style={styles.modalField}>
                     <Text style={styles.modalFieldLabel}>{t('monteur', currentLang)} / {t('reBest', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, !hoursMonteur.trim() && styles.inputInvalid]}
+                      style={[
+                        styles.modalInput,
+                        hasAttemptedSubmit && !hoursMonteur.trim() && styles.inputInvalid,
+                      ]}
                       placeholder={t('monteur', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       value={hoursMonteur}
@@ -1212,7 +1358,11 @@ export default function BookingScreen({
                   <View style={styles.modalField}>
                     <Text style={styles.modalFieldLabel}>{t('reNote', currentLang)} <Text style={styles.requiredStar}>*</Text></Text>
                     <TextInput
-                      style={[styles.modalInput, styles.multilineInput, !hoursNote.trim() && styles.inputInvalid]}
+                      style={[
+                        styles.modalInput,
+                        styles.multilineInput,
+                        hasAttemptedSubmit && !hoursNote.trim() && styles.inputInvalid,
+                      ]}
                       placeholder={t('overCommentPlaceholder', currentLang)}
                       placeholderTextColor={COLORS.muted}
                       multiline={true}
@@ -1229,53 +1379,38 @@ export default function BookingScreen({
               {/* ========================================================= */}
               <SignaturePad
                 key={`sig-${activeTab}`}
-                isInvalid={!nachtragSignature}
+                isInvalid={hasAttemptedSubmit && !nachtragSignature}
                 currentLang={currentLang}
                 onSignatureChange={(hasSig, paths) => setNachtragSignature(hasSig ? paths : null)}
                 onDrawStart={() => setModalScrollEnabled(false)}
                 onDrawEnd={() => setModalScrollEnabled(true)}
               />
+            </ScrollView>
 
-              {/* ========================================================= */}
-              {/* GRAUER BALKEN: NOCH AUSZUFÜLLENDE FELDER                  */}
-              {/* ========================================================= */}
-              {missingList.length > 0 ? (
+            {/* Sticky Bottom Footer: Always visible and never hidden in scroll */}
+            <View style={styles.modalStickyFooter}>
+              {hasAttemptedSubmit && missingList.length > 0 && (
                 <View style={styles.missingHintBar}>
-                  <Text style={styles.missingHintIcon}>ℹ️</Text>
+                  <Text style={styles.missingHintIcon}>⚠️</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.missingHintTitle}>{t('missingFieldsTitle', currentLang)}</Text>
+                    <Text style={styles.missingHintTitle}>{t('validationFillRequired', currentLang)}</Text>
                     <Text style={styles.missingHintList}>
                       {missingList.join(' · ')}
                     </Text>
                   </View>
                 </View>
-              ) : (
-                <View style={styles.completeHintBar}>
-                  <Text style={styles.completeHintIcon}>✓</Text>
-                  <Text style={styles.completeHintText}>{t('fieldsComplete', currentLang)}</Text>
-                </View>
               )}
 
-              {/* Submit CTA Button - Grau solange unvollständig oder ohne Unterschrift */}
               <TouchableOpacity
-                style={[
-                  styles.modalSubmitBtn,
-                  !isFormValid && styles.modalSubmitBtnDisabled,
-                ]}
+                style={styles.modalSubmitBtn}
                 onPress={handleSubmitNachtrag}
-                disabled={!isFormValid}
                 activeOpacity={0.8}
               >
-                <Text
-                  style={[
-                    styles.modalSubmitText,
-                    !isFormValid && styles.modalSubmitTextDisabled,
-                  ]}
-                >
-                  {isFormValid ? '✓ ' : ''}{activeTab === 'material' ? t('reCreate', currentLang) : t('reCreateHours', currentLang)}
+                <Text style={styles.modalSubmitText}>
+                  {activeTab === 'material' ? t('reCreate', currentLang) : t('reCreateHours', currentLang)}
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -1534,9 +1669,9 @@ export default function BookingScreen({
           {/* Header with Title and Close '✕' Button */}
           <View style={styles.modalHeader}>
             <View style={styles.modalTitleBox}>
-              <Text style={styles.modalMainTitle}>❓ {t('unclearTitle', currentLang)}</Text>
+              <Text style={styles.modalMainTitle}>📋 {t('unclearTitle', currentLang)}</Text>
               <Text style={styles.modalSubTitle}>
-                {room.name} · {t('kw', currentLang)} 27
+                {room.name} · {t('unplannedBadge', currentLang)}
               </Text>
             </View>
             <TouchableOpacity
@@ -1544,6 +1679,7 @@ export default function BookingScreen({
               onPress={() => {
                 setShowUnclearModal(false);
                 setShowUnclearSuggestions(false);
+                setHasAttemptedUnclearSubmit(false);
               }}
               activeOpacity={0.7}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -1560,6 +1696,7 @@ export default function BookingScreen({
               style={styles.modalBody}
               contentContainerStyle={styles.modalScrollContent}
               keyboardShouldPersistTaps="handled"
+              scrollEnabled={unclearScrollEnabled}
             >
               {/* Info banner */}
               <View style={styles.unclearInfoCard}>
@@ -1569,9 +1706,14 @@ export default function BookingScreen({
 
               {/* Product field + Autosuggest from GAEB / ordered */}
               <View style={styles.modalField}>
-                <Text style={styles.modalFieldLabel}>{t('unclearWhatLabel', currentLang)}</Text>
+                <Text style={styles.modalFieldLabel}>
+                  {t('unclearWhatLabel', currentLang)} <Text style={styles.requiredStar}>*</Text>
+                </Text>
                 <TextInput
-                  style={styles.modalInput}
+                  style={[
+                    styles.modalInput,
+                    hasAttemptedUnclearSubmit && !unclearText.trim() && styles.inputInvalid,
+                  ]}
                   placeholder={t('unclearWhatPlaceholder', currentLang)}
                   placeholderTextColor={COLORS.muted}
                   value={unclearText}
@@ -1615,7 +1757,9 @@ export default function BookingScreen({
 
               {/* Unit Selector & Quantity */}
               <View style={styles.modalField}>
-                <Text style={styles.modalFieldLabel}>{t('unclearSelectUnit', currentLang)}</Text>
+                <Text style={styles.modalFieldLabel}>
+                  {t('unclearSelectUnit', currentLang)} <Text style={styles.requiredStar}>*</Text>
+                </Text>
                 <View style={styles.unitSelectorRow}>
                   <TouchableOpacity
                     style={[styles.unitToggle, unclearUnit === 'Stk' && styles.unitToggleActive]}
@@ -1649,7 +1793,10 @@ export default function BookingScreen({
                 </View>
 
                 <TextInput
-                  style={styles.modalInput}
+                  style={[
+                    styles.modalInput,
+                    hasAttemptedUnclearSubmit && (!unclearQty.trim() || !(parseFloat(unclearQty) > 0)) && styles.inputInvalid,
+                  ]}
                   placeholder={
                     unclearUnit === 'm'
                       ? t('unclearQtyMeterPlaceholder', currentLang)
@@ -1662,28 +1809,77 @@ export default function BookingScreen({
                 />
               </View>
 
-              {/* Fullscreen Action Buttons */}
-              <View style={styles.overFullscreenActionRow}>
-                <TouchableOpacity
-                  style={styles.overCancelBtnLarge}
-                  onPress={() => {
-                    setShowUnclearModal(false);
-                    setShowUnclearSuggestions(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.overCancelTextLarge}>{t('cancel', currentLang)}</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.overConfirmBtnLarge, { backgroundColor: COLORS.primary }]}
-                  onPress={handleSaveUnclear}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.overConfirmTextLarge}>✓ {t('unclearRecord', currentLang)}</Text>
-                </TouchableOpacity>
+              {/* Begründung für Einbau */}
+              <View style={styles.modalField}>
+                <Text style={styles.modalFieldLabel}>
+                  {t('unplannedReason', currentLang)} <Text style={styles.requiredStar}>*</Text>
+                </Text>
+                <View style={styles.quickPillsRow}>
+                  {['Planabweichung', 'Zusatzmontage', 'Kollision Lüftung', 'Bauherrenwunsch'].map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.pill, unclearReason === r && styles.pillActive]}
+                      onPress={() => setUnclearReason(r)}
+                    >
+                      <Text style={[styles.pillText, unclearReason === r && styles.pillTextActive]}>{r}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    styles.multilineInput,
+                    hasAttemptedUnclearSubmit && !unclearReason.trim() && styles.inputInvalid,
+                  ]}
+                  placeholder={t('unplannedReasonPlaceholder', currentLang)}
+                  placeholderTextColor={COLORS.muted}
+                  multiline={true}
+                  numberOfLines={3}
+                  value={unclearReason}
+                  onChangeText={setUnclearReason}
+                />
               </View>
+
+              {/* Unterschrift */}
+              <SignaturePad
+                key="sig-unclear"
+                isInvalid={hasAttemptedUnclearSubmit && !unclearSignature}
+                currentLang={currentLang}
+                onSignatureChange={(hasSig, paths) => setUnclearSignature(hasSig ? paths : null)}
+                onDrawStart={() => setUnclearScrollEnabled(false)}
+                onDrawEnd={() => setUnclearScrollEnabled(true)}
+              />
             </ScrollView>
+
+            {/* Single Sticky Bottom Button: Material erfassen */}
+            <View style={styles.modalStickyFooter}>
+              {hasAttemptedUnclearSubmit && (!unclearText.trim() || !(parseFloat(unclearQty) > 0) || !unclearReason.trim() || !unclearSignature) && (
+                <View style={styles.missingHintBar}>
+                  <Text style={styles.missingHintIcon}>⚠️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.missingHintTitle}>{t('validationFillRequired', currentLang)}</Text>
+                    <Text style={styles.missingHintList}>
+                      {[
+                        !unclearText.trim() ? t('reMat', currentLang) : null,
+                        !(parseFloat(unclearQty) > 0) ? t('reQty', currentLang) : null,
+                        !unclearReason.trim() ? t('unplannedReason', currentLang) : null,
+                        !unclearSignature ? t('signatureLabel', currentLang) : null,
+                      ].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.modalSubmitBtn}
+                onPress={handleSaveUnclear}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {t('unplannedRecordBtn', currentLang)}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -1880,50 +2076,183 @@ const styles = StyleSheet.create({
   topActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
+    gap: 10,
+    marginBottom: 16,
   },
   actionBtnNachtrag: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 6,
+    minHeight: 56,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: '#EFF6FF',
     borderWidth: 1.5,
     borderColor: '#93C5FD',
-    borderRadius: 10,
+    borderRadius: 12,
   },
   actionBtnNachtragText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '800',
     color: COLORS.primary,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   actionBtnUnclear: {
-    flex: 1.1,
-    flexDirection: 'row',
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 6,
+    minHeight: 56,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: '#CBD5E1',
-    borderRadius: 10,
+    borderRadius: 12,
   },
   actionBtnUnclearActive: {
     backgroundColor: '#FEF3C7',
     borderColor: '#F59E0B',
   },
   actionBtnUnclearText: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: COLORS.inkSoft,
+    color: '#334155',
+    textAlign: 'center',
+    lineHeight: 18,
   },
   actionBtnUnclearTextActive: {
     color: '#B45309',
     fontWeight: '800',
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    minHeight: 48,
+  },
+  dropdownSelectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dropdownPosBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  dropdownSelectedTitle: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: COLORS.ink,
+    flex: 1,
+  },
+  dropdownPlaceholder: {
+    fontSize: 13.5,
+    color: COLORS.muted,
+  },
+  dropdownArrow: {
+    fontSize: 13,
+    color: COLORS.muted,
+    marginLeft: 8,
+  },
+  dropdownListContainer: {
+    marginTop: 6,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  dropdownListHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    backgroundColor: '#F8FAFC',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#EFF6FF',
+  },
+  dropdownItemText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.ink,
+    marginTop: 2,
+  },
+  dropdownCheckmark: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.primary,
+    marginLeft: 8,
+  },
+  qtyWithUnitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  qtyUnitBadgeBox: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qtyUnitBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  modalStickyFooter: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  unplannedBadgeChip: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  unplannedBadgeChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#B45309',
   },
   actionBtnComplete: {
     flex: 1.25,
