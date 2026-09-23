@@ -9,3 +9,6 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v57.0.0/ before 
    - **Web Admin Version**: `/home/oem/Programming/ToolTime/admin-web/src/version.ts` (e.g. `v18`, `v19`, ...)
 3. Updating the App does NOT update the Web version, and updating Web does NOT update the App version.
 
+# Git Branching Rules
+- **Monteur App**: Exclusively use branch `Monteur` (do NOT use or recreate `Monteur-App`).
+- **Web Admin**: Exclusively use branch `main` in `/home/oem/Programming/ToolTime/admin-web`.
