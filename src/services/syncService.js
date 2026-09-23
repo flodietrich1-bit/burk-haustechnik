@@ -148,6 +148,13 @@ export async function syncBookings(options = {}) {
 
         // Upload proof photos
         const uploadedUrls = [];
+        const photosToUpload = Array.isArray(booking.photoUris)
+          ? booking.photoUris
+          : booking.photoUri
+          ? [booking.photoUri]
+          : Array.isArray(booking.photos)
+          ? booking.photos
+          : [];
         for (let pIdx = 0; pIdx < photosToUpload.length; pIdx++) {
           const photoUri = photosToUpload[pIdx];
           if (typeof photoUri === 'string' && (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))) {

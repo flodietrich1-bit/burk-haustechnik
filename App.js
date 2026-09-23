@@ -38,7 +38,7 @@ import RoomListScreen from './src/screens/RoomListScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import PhotoCaptureScreen from './src/screens/PhotoCaptureScreen';
 import DoneScreen from './src/screens/DoneScreen';
-import { DEFAULT_PROJECT } from './src/constants/initialData';
+import { DEFAULT_PROJECT, DEFAULT_PROJECT_ID } from './src/constants/initialData';
 
 export default function App() {
   // App Phase: 'loading' | 'pin' | 'project_select' | 'app'
