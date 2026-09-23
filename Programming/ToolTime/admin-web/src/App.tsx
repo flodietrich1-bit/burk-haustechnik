@@ -9,6 +9,7 @@ import { LiveFeed } from './components/LiveFeed';
 import { AddendumsView } from './components/AddendumsView';
 import { AnalyticsView } from './components/AnalyticsView';
 import { ReordersView } from './components/ReordersView';
+import { AufmassView } from './components/AufmassView';
 import { ProjectSettingsView } from './components/ProjectSettingsView';
 import { UserManagementView } from './components/UserManagementView';
 import { GaebUploader } from './components/GaebUploader';
@@ -291,6 +292,20 @@ export function App() {
                     bookings={bookings}
                     alerts={alerts}
                     project={activeProject}
+                  />
+                )}
+
+                {/* TAB: Aufmaß erstellen (NEW) */}
+                {activeTab === 'aufmass' && (
+                  <AufmassView
+                    projectId={selectedProjectId}
+                    project={activeProject}
+                    positions={positions}
+                    rooms={rooms}
+                    bookings={bookings}
+                    alerts={alerts}
+                    addendums={addendums}
+                    currentUser={currentUser}
                   />
                 )}
 

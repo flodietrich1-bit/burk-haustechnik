@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type { Position, Booking, Room } from '../types';
+import type { Position, Booking, Room, AufmassDocument } from '../types';
 import { getMaterialActualQty } from './firestoreService';
 
 export function exportMaterialReportToExcel(
@@ -134,5 +134,137 @@ export function exportRoomVobAufmassToExcel(
 
   const cleanRoom = `${room.code}_${room.name}`.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `VOB_Aufmass_${projectName.replace(/\s+/g, '_')}_${cleanRoom}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Export a complete Aufmaß Snapshot into an Excel (.xlsx) file with 2 sheets:
+ * Sheet 1: Gesamtübersicht (aggregated period totals)
+ * Sheet 2: Räume (detailed room breakdown with overconsumption and reasons)
+ */
+export function exportAufmassToExcel(aufmass: AufmassDocument) {
+  const wb = XLSX.utils.book_new();
+
+  // -------------------------------------------------------------
+  // SHEET 1: Gesamtübersicht
+  // -------------------------------------------------------------
+  const summaryHeader = [
+    ['AUFMASS-PROTOKOLL (GESAMTÜBERSICHT)'],
+    ['Projekt:', aufmass.projectName],
+    ['Aufmaß-Nr:', aufmass.aufmassNumber],
+    ['Zeitraum:', `Von ${new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} bis ${new Date(aufmass.dateTo).toLocaleDateString('de-DE')}`],
+    ['Erstellt am:', `${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${aufmass.createdBy}`],
+    ['Gesamtvolumen (€):', `${aufmass.totalPeriodVolume.toFixed(2)} €`],
+    [] // blank line
+  ];
+
+  const summaryRows = aufmass.summaryItems.map(item => ({
+    'Pos-Nr': item.posNr,
+    'Gewerk / Kategorie': item.group || '-',
+    'Material / Leistungsbezeichnung': item.shortText,
+    'Soll-Menge (Plan)': item.plannedQty,
+    'Verbaut im Zeitraum': item.periodInstalledQty,
+    'Kumuliert bis Stichtag': item.totalInstalledUpToDate,
+    'Einheit': item.qu,
+    'Einzelpreis (€)': item.unitPrice ? item.unitPrice.toFixed(2) : '0.00',
+    'Abrechnungsbetrag (€)': item.totalCost ? item.totalCost.toFixed(2) : '0.00'
+  }));
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryHeader);
+  XLSX.utils.sheet_add_json(wsSummary, summaryRows, { origin: 'A8' });
+
+  // -------------------------------------------------------------
+  // SHEET 2: Räume (Detailaufstellung nach Räumen mit Begründungszeilen)
+  // -------------------------------------------------------------
+  const roomRows: any[] = [];
+
+  aufmass.roomsData.forEach(room => {
+    // Room Header Row
+    roomRows.push({
+      'Raum / Code': `${room.roomCode} - ${room.roomName} (Etage: ${room.floor})`,
+      'Pos-Nr': room.isCompleted ? '✓ 100% Abgeschlossen' : 'In Montage',
+      'Materialbezeichnung': '',
+      'Plan-Menge': '',
+      'Verbaut im Zeitraum': '',
+      'Kumuliert bis Stichtag': '',
+      'Einheit': '',
+      'Mehrverbrauch': '',
+      'Hinweis / Begründung': ''
+    });
+
+    if (room.positions.length === 0) {
+      roomRows.push({
+        'Raum / Code': '',
+        'Pos-Nr': '-',
+        'Materialbezeichnung': '(Keine Positionen für diesen Raum)',
+        'Plan-Menge': '',
+        'Verbaut im Zeitraum': '',
+        'Kumuliert bis Stichtag': '',
+        'Einheit': '',
+        'Mehrverbrauch': '',
+        'Hinweis / Begründung': ''
+      });
+    } else {
+      room.positions.forEach(pos => {
+        let deviationText = '-';
+        if (pos.isOverconsumption) {
+          deviationText = `+${pos.excessQty} ${pos.qu} (MEHRVERBRAUCH)`;
+        } else if (pos.isExtraPosition) {
+          deviationText = `+${pos.installedInPeriod} ${pos.qu} (ZUSATZPOSITION)`;
+        }
+
+        // Primary row for position
+        roomRows.push({
+          'Raum / Code': '',
+          'Pos-Nr': pos.posNr,
+          'Materialbezeichnung': pos.isExtraPosition ? `[Zusatzposition] ${pos.shortText}` : pos.shortText,
+          'Plan-Menge': pos.plannedQty,
+          'Verbaut im Zeitraum': pos.installedInPeriod,
+          'Kumuliert bis Stichtag': pos.totalInstalledToDate,
+          'Einheit': pos.qu,
+          'Mehrverbrauch': deviationText,
+          'Hinweis / Begründung': pos.reason || ''
+        });
+
+        // If there's an explicit reason, also append a dedicated notice row underneath for clear printing
+        if ((pos.isOverconsumption || pos.isExtraPosition) && pos.reason) {
+          roomRows.push({
+            'Raum / Code': '',
+            'Pos-Nr': '',
+            'Materialbezeichnung': `  ↳ BEGRÜNDUNG: ${pos.reason}`,
+            'Plan-Menge': '',
+            'Verbaut im Zeitraum': '',
+            'Kumuliert bis Stichtag': '',
+            'Einheit': '',
+            'Mehrverbrauch': '',
+            'Hinweis / Begründung': ''
+          });
+        }
+      });
+    }
+
+    // Blank separator row between rooms
+    roomRows.push({
+      'Raum / Code': '',
+      'Pos-Nr': '',
+      'Materialbezeichnung': '',
+      'Plan-Menge': '',
+      'Verbaut im Zeitraum': '',
+      'Kumuliert bis Stichtag': '',
+      'Einheit': '',
+      'Mehrverbrauch': '',
+      'Hinweis / Begründung': ''
+    });
+  });
+
+  const wsRooms = XLSX.utils.json_to_sheet(roomRows);
+
+  // Append sheets
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Gesamtübersicht');
+  XLSX.utils.book_append_sheet(wb, wsRooms, 'Räume');
+
+  // Trigger file download
+  const cleanProject = aufmass.projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Aufmass_${aufmass.aufmassNumber}_${cleanProject}_${aufmass.dateTo}.xlsx`;
   XLSX.writeFile(wb, filename);
 }

@@ -10,7 +10,8 @@ import {
   Download, 
   ShoppingCart,
   Building2,
-  UserCheck
+  UserCheck,
+  FileSpreadsheet
 } from 'lucide-react';
 
 import type { User } from '../types';
@@ -22,6 +23,7 @@ export type TabType =
   | 'bookings' 
   | 'addendums' 
   | 'reorders'
+  | 'aufmass'
   | 'analytics' 
   | 'project_settings' 
   | 'users';
@@ -78,6 +80,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: ShoppingCart,
       badge: reordersCount > 0 ? String(reordersCount) : undefined,
       badgeColor: 'bg-blue-600 text-white'
+    },
+    {
+      id: 'aufmass' as TabType,
+      label: 'Aufmaß erstellen',
+      icon: FileSpreadsheet
     },
     {
       id: 'analytics' as TabType,

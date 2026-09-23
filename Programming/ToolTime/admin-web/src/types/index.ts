@@ -191,3 +191,61 @@ export interface User {
   status?: 'active' | 'inactive';
   createdAt?: string;
 }
+
+// -------------------------------------------------------------
+// AUFMASS ERSTELLEN & HISTORIE (Unveränderliche Snapshots)
+// -------------------------------------------------------------
+
+export interface AufmassMaterialItem {
+  positionId: string;
+  posNr: string;
+  shortText: string;
+  group?: string;
+  qu: string;
+  unitPrice: number;
+  plannedQty: number;              // Geplant laut Projekt
+  totalInstalledUpToDate: number;  // Kumuliert bis Stichtag verbaut
+  periodInstalledQty: number;      // Delta in diesem Zeitraum verbaut
+  totalCost: number;               // periodInstalledQty * unitPrice
+}
+
+export interface AufmassRoomPosition {
+  positionId: string;
+  posNr: string;
+  shortText: string;
+  group?: string;
+  qu: string;
+  unitPrice: number;
+  plannedQty: number;
+  installedInPeriod: number;
+  totalInstalledToDate: number;
+  isOverconsumption: boolean;
+  excessQty: number;
+  reason?: string;                 // Begründung aus Alert / Monteurbuchung
+  isExtraPosition?: boolean;       // Zusatzposition (außerplanmäßig)
+}
+
+export interface AufmassRoomData {
+  roomId: string;
+  roomName: string;
+  roomCode: string;
+  floor: string;
+  isCompleted: boolean;
+  positions: AufmassRoomPosition[];
+}
+
+export interface AufmassDocument {
+  id: string;
+  projectId: string;
+  projectName: string;
+  aufmassNumber: string;           // z. B. "AUF-2026-001"
+  dateFrom: string;                // YYYY-MM-DD
+  dateTo: string;                  // YYYY-MM-DD (Stichtag)
+  createdAt: string;               // ISO Timestamp
+  createdBy: string;               // Name des Erstellers
+  notes?: string;
+  totalItemsCount: number;
+  totalPeriodVolume: number;       // Abrechnungswert im Zeitraum (€)
+  summaryItems: AufmassMaterialItem[];
+  roomsData: AufmassRoomData[];
+}
