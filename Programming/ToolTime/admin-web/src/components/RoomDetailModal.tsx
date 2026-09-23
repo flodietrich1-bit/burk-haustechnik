@@ -3,7 +3,6 @@ import type { Room, Position, Booking } from '../types';
 import { 
   X, 
   CheckCircle2, 
-  RotateCcw, 
   Download, 
   ArrowUpRight, 
   ArrowDownRight, 

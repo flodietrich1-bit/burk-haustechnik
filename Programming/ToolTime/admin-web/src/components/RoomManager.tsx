@@ -3,7 +3,6 @@ import type { Room, Position, Booking, RoomMaterialRequirement } from '../types'
 import { 
   Plus, 
   Globe, 
-  Trash2, 
   Package, 
   ChevronDown, 
   ChevronUp, 
@@ -18,7 +17,7 @@ import {
   Download,
   Unlock
 } from 'lucide-react';
-import { saveRoom, deleteRoom, completeRoom } from '../services/firestoreService';
+import { saveRoom, completeRoom } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { CircularProgress } from './CircularProgress';
 import { generateTranslations } from '../services/dwgParser';
@@ -101,11 +100,6 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     setNewRoom({ name: '', code: '', floor: 'EG', translations: { ro: '', pl: '', hr: '' } });
   };
 
-  const handleDelete = async (roomId: string) => {
-    if (confirm('Raum wirklich löschen?')) {
-      await deleteRoom(projectId, roomId);
-    }
-  };
 
   const handleOpenAssignModal = (room: Room) => {
     setAssigningRoom(room);
@@ -212,7 +206,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
       let totInstalled = 0;
       r.materials.forEach(m => {
         const p = Number(m.plannedQty || 0);
-        const inst = Number(m.actualQty ?? m.installedQty ?? 0);
+        const inst = Number(m.actualQty ?? (m as any).installedQty ?? 0);
         if (p > 0) {
           totPlanned += p;
           totInstalled += Math.min(p, inst);
@@ -341,16 +335,13 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
           const { isCompleted, roomPercent, photos } = getRoomInfo(room);
-          const roomTrans = (room.translations?.ro && room.translations.ro !== room.name)
-            ? room.translations
-            : generateTranslations(room.name);
-
           // Resolve Monteur Name and Language
           const matchingBookings = bookings.filter(b => b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name);
           const latestBooking = matchingBookings[matchingBookings.length - 1];
-          const monteurName = room.completedBy || room.lastUpdatedBy || (latestBooking && latestBooking.createdBy) || 'Stefan Maier';
+          const monteurName = room.completedBy || (room as any).lastUpdatedBy || (latestBooking && latestBooking.createdBy) || 'Stefan Maier';
           const rawLang = (room as any).lastMonteurLanguage || (room as any).monteurLanguage || (latestBooking as any)?.language || 'de';
           const languageDisplay = rawLang.toLowerCase() === 'ro' ? '🇷🇴 RO' : rawLang.toLowerCase() === 'pl' ? '🇵🇱 PL' : rawLang.toLowerCase() === 'hr' ? '🇭🇷 HR' : '🇩🇪 DE';
+
 
           return (
             <div 

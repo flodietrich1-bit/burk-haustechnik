@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'reorders' as TabType,
-      label: 'Nachbestellungen',
+      label: 'Abweichungen',
       icon: ShoppingCart,
       badge: reordersCount > 0 ? String(reordersCount) : undefined,
       badgeColor: 'bg-blue-600 text-white'
