@@ -379,18 +379,67 @@ Bauleitung`;
     setNewNote('');
   };
 
+  // Bauleiter direct category switcher
+  const handleSwitchCategory = async (item: Addendum, newCat: 'material' | 'unclear') => {
+    try {
+      const cleanStatus = (item.status === 'approved' || item.status === 'rejected') ? item.status : 'pending';
+      await updateAddendumStatus(item.id, cleanStatus, projectId, {
+        type: newCat === 'unclear' ? 'unklar' : 'material',
+        isUnclear: newCat === 'unclear',
+      });
+    } catch (err: any) {
+      console.warn('Error switching category:', err.message);
+    }
+  };
+
   // Classify each addendum into 1 of the 3 requested categories:
   // 1. time: 'stunden' | 'zeit' | 'regie'
-  // 2. material: 'material' | 'zusatz'
-  // 3. unclear: 'unklar' | isUnclear === true | itemOz === 'UNKLAR'
+  // 2. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Planabweichung in note/title/reason
+  // 3. material: 'material' (Mehr Material angefragt)
   const getItemCategory = (item: Addendum): 'time' | 'material' | 'unclear' => {
     const t = (item.type || '').toLowerCase();
+    const note = (item.note || '').toLowerCase();
+    const title = (item.title || '').toLowerCase();
+    const reason = ((item as any).reason || '').toLowerCase();
+    const itemOz = (item.itemOz || '').toUpperCase();
+
+    // 1. Time / Regie
     if (t === 'stunden' || t === 'zeit' || t === 'regie' || item.qu === 'h' || item.qu === 'Std') {
       return 'time';
     }
-    if (t === 'unklar' || item.isUnclear || item.itemOz === 'UNKLAR') {
+
+    // Explicit overrides
+    if (item.isUnclear === true || t === 'unklar' || t === 'ausserplanmaessig' || t === 'außerplanmäßig' || t === 'abweichung' || t === 'planabweichung' || t === 'anders') {
       return 'unclear';
     }
+
+    // 2. Anderes Material verbaut (Unklar, außerplanmäßig, Planabweichung, Zusatz etc.)
+    if (
+      t === 'unplanned' ||
+      itemOz === 'UNKLAR' ||
+      itemOz === 'ZUSATZ' ||
+      note.includes('planabweichung') ||
+      note.includes('außerplanmäßig') ||
+      note.includes('ausserplanmäßig') ||
+      note.includes('nicht im raumplan') ||
+      note.includes('nicht im plan') ||
+      note.includes('anders verbaut') ||
+      note.includes('anderes material') ||
+      reason.includes('planabweichung') ||
+      reason.includes('außerplanmäßig') ||
+      reason.includes('ausserplanmäßig') ||
+      reason.includes('nicht im raumplan') ||
+      reason.includes('abweichung') ||
+      title.includes('außerplanmäßig') ||
+      title.includes('ausserplanmäßig') ||
+      title.includes('planabweichung') ||
+      title.includes('anderes material') ||
+      title.includes('anders verbaut')
+    ) {
+      return 'unclear';
+    }
+
+    // 3. Mehr Material angefragt
     return 'material';
   };
 
@@ -514,8 +563,8 @@ Bauleitung`;
                 <HelpCircle className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-bold text-slate-800 block">Ungeplantes Material verbaut</span>
-                <span className="text-[10px] text-slate-400">Nicht im ursprünglichen Plan</span>
+                <span className="text-xs font-bold text-slate-800 block">Anderes Material verbaut</span>
+                <span className="text-[10px] text-slate-400">Planabweichung, nicht im Plan</span>
               </div>
             </div>
             <span className="text-xl font-black text-purple-600">
@@ -539,7 +588,7 @@ Bauleitung`;
             { id: 'all' as const, label: `Alle Meldungen (${totalCount})` },
             { id: 'time' as const, label: `⏱ Mehr Zeit (${timeItems.length})` },
             { id: 'material' as const, label: `📦 Mehr Material (${materialItems.length})` },
-            { id: 'unclear' as const, label: `❓ Ungeplantes Material (${unclearItems.length})` },
+            { id: 'unclear' as const, label: `❓ Anderes Material (${unclearItems.length})` },
           ].map(tab => (
             <button
               key={tab.id}
@@ -609,7 +658,7 @@ Bauleitung`;
               badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
               icon: HelpCircle,
               iconColor: 'text-purple-600',
-              label: '❓ Ungeplantes Material verbaut',
+              label: '❓ Anderes Material verbaut',
               tagBg: 'bg-purple-50 text-purple-700',
             } : {
               badgeBg: 'bg-blue-50 text-blue-800 border-blue-200',
@@ -629,10 +678,24 @@ Bauleitung`;
                 <div className="space-y-3">
                   {/* Top Bar: Category Badge + Status Badge */}
                   <div className="flex items-start justify-between gap-2">
-                    <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${theme.badgeBg}`}>
-                      <IconComp className={`w-3.5 h-3.5 ${theme.iconColor}`} />
-                      <span>{theme.label}</span>
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${theme.badgeBg}`}>
+                        <IconComp className={`w-3.5 h-3.5 ${theme.iconColor}`} />
+                        <span>{theme.label}</span>
+                      </span>
+
+                      {/* Bauleiter category toggle for pending material items */}
+                      {cat !== 'time' && isPending && (
+                        <button
+                          type="button"
+                          onClick={() => handleSwitchCategory(item, cat === 'material' ? 'unclear' : 'material')}
+                          className="text-[10px] text-slate-400 hover:text-slate-700 hover:underline transition-colors"
+                          title={cat === 'material' ? "Als 'Anderes Material verbaut' einstufen" : "Als 'Mehr Material angefragt' einstufen"}
+                        >
+                          {cat === 'material' ? "→ Zu 'Anderes Material' wechseln" : "→ Zu 'Mehr Material' wechseln"}
+                        </button>
+                      )}
+                    </div>
 
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
                       isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
@@ -959,9 +1022,9 @@ Bauleitung`;
                 <label className="font-bold text-slate-700 block mb-1.5">Art des Mehraufwands *</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { id: 'material' as const, label: '📦 Material', sub: 'Anderes Material' },
+                    { id: 'material' as const, label: '📦 Mehr Material', sub: 'Material angefragt' },
                     { id: 'stunden' as const, label: '⏱ Stunden', sub: 'Mehr Zeit / Regie' },
-                    { id: 'unklar' as const, label: '❓ Unklar', sub: 'Nicht im Plan' },
+                    { id: 'unklar' as const, label: '❓ Anderes Material', sub: 'Anderes Material verbaut' },
                   ].map(t => (
                     <button
                       type="button"
