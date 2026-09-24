@@ -197,15 +197,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer Info Box */}
-      <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-800 space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-          <span>BURK HAUSTECHNIK</span>
-          <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/40">
+      <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="bg-white/95 px-2 py-0.5 rounded-lg flex items-center shadow-xs">
+            <img 
+              src="/burk-haustechnik-logo.svg" 
+              alt="BURK Haustechnik" 
+              className="h-4 w-auto object-contain"
+            />
+          </div>
+          <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/40">
             Live
           </span>
         </div>
         <div className="flex items-center justify-between pt-0.5">
-          <span className="text-[10px] text-slate-400 font-medium">Version</span>
+          <span className="text-[10px] text-slate-400 font-medium">Cockpit Version</span>
           <span className="bg-[#3B82C4]/25 text-[#60A5FA] border border-[#3B82C4]/50 px-2 py-0.5 rounded font-mono text-xs font-bold tracking-wide">
             {ADMIN_PANEL_VERSION}
           </span>

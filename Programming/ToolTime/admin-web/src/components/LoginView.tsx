@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wrench, Lock, Mail, Eye, EyeOff, ShieldCheck, HardHat, AlertCircle } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ShieldCheck, HardHat, AlertCircle } from 'lucide-react';
 import type { User } from '../types';
 import { getLocalUsers } from '../services/firestoreService';
 
@@ -72,14 +72,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
     <div className="min-h-screen bg-slate-900 flex flex-col justify-center py-12 sm:px-6 lg:px-8 px-4 antialiased selection:bg-[#3B82C4] selection:text-white">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         {/* Logo Badge */}
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#3B82C4] to-[#2FA36B] shadow-xl shadow-blue-500/20 mb-4 ring-4 ring-slate-800">
-          <Wrench className="w-8 h-8 text-white" />
+        <div className="inline-flex items-center justify-center px-6 py-3.5 rounded-3xl bg-white shadow-2xl shadow-blue-500/10 mb-4 ring-4 ring-slate-800">
+          <img 
+            src="/burk-haustechnik-logo.svg" 
+            alt="BURK Haustechnik" 
+            className="h-12 w-auto object-contain"
+          />
         </div>
 
         <div className="flex items-center justify-center space-x-2 mb-1">
-          <span className="text-2xl font-black tracking-wider text-white">BURK</span>
-          <span className="text-xs bg-[#3B82C4] text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-            TOOL-TIME
+          <span className="text-xs bg-[#3B82C4] text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-sm">
+            TOOL-TIME COCKPIT
           </span>
         </div>
         <h1 className="text-lg font-bold text-slate-300">

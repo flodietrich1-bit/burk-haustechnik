@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Wrench, Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat
+  Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat
 } from 'lucide-react';
 import type { Project, Alert, User } from '../types';
 
@@ -55,14 +55,17 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="bg-[#1C2A3B] text-white border-b border-slate-700 sticky top-0 z-40 shadow-md">
       <div className="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         
-        {/* Brand: Links soll nur dran stehen BURK ToolTime */}
+        {/* Brand: Offizielles BURK Haustechnik Logo */}
         <div className="flex items-center space-x-3 shrink-0">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3B82C4] to-[#2FA36B] flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
-            <Wrench className="w-5 h-5 text-white" />
+          <div className="h-10 px-2.5 py-1 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0 border border-slate-700/50">
+            <img 
+              src="/burk-haustechnik-logo.svg" 
+              alt="BURK Haustechnik" 
+              className="h-7 w-auto object-contain"
+            />
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="font-bold text-lg tracking-wide text-white">BURK</span>
-            <span className="text-[11px] bg-[#3B82C4] text-white px-2 py-0.5 rounded-full font-bold">
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[11px] bg-[#3B82C4] text-white px-2 py-0.5 rounded-full font-bold shadow-xs tracking-wide">
               ToolTime
             </span>
           </div>
