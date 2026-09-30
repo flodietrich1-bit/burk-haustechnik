@@ -9,7 +9,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
-import { t } from '../locales/i18n';
+import { t, formatUnit } from '../locales/i18n';
 import {
   resolveMat,
   getRoomPlannedItem,
@@ -61,14 +61,18 @@ export default function BookingScreen({
     setActiveMaterialIds(getInitialMaterialIds());
   }, [room.id, materials.length]);
 
-  // Locked State
-  const isLocked = Boolean(room.isCompleted || room.status === 'completed');
+  // Locked State: 100% completed rooms are strictly locked
+  const isRoomCompleted = Boolean(
+    room.isCompleted ||
+    room.status === 'completed' ||
+    Number(room.pct) === 100
+  );
+  const isLocked = isRoomCompleted;
 
   const handleLockedAction = () => {
     Alert.alert(
-      t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
-      t('roomLockedAlertMsg', currentLang) ||
-        'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+      t('roomLockedAlertTitle', currentLang),
+      t('roomLockedAlertMsg', currentLang)
     );
   };
 
@@ -157,70 +161,82 @@ export default function BookingScreen({
     }
 
     // Stepping up: Check delivery stock
+    const isUnplannedMat = Boolean(
+      mat.isUnplanned ||
+      roomPlan?.isUnplanned ||
+      unclearItems?.some((u) => u.materialId === matId || u.pos === mat?.pos)
+    );
     const delivered = Number(
       mat.deliveredQty !== undefined && mat.deliveredQty !== null && Number(mat.deliveredQty) > 0
         ? mat.deliveredQty
         : mat.qty || (roomPlan && roomPlan.plannedQty) || 0
     );
-    const hasRoomPlan = Boolean(roomPlan);
-    const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : delivered;
+    const hasRoomPlan = Boolean(roomPlan) && !isUnplannedMat;
+    const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : 0;
     const installedBefore = hasRoomPlan
       ? Number(roomPlan.installedQty || 0)
       : Number(mat.installedQty || 0);
 
-    const availableToInstall = delivered - (installedBefore + currentDelta);
+    const totalInstalledAcrossSite = Number(mat.installedQty || 0) + currentDelta;
+    const siteStockAvailable = Math.max(0, delivered - totalInstalledAcrossSite);
 
-    // If delivered is 0 or nothing left in stock
-    if (delivered === 0 || availableToInstall <= 0) {
-      Alert.alert('Leider nichts mehr da', 'Leider nichts mehr da. Bitte nachbestellen.');
+    // If delivered is 0 or nothing left in stock across the project
+    if (delivered === 0 || siteStockAvailable <= 0 || stepDelta > siteStockAvailable) {
+      Alert.alert(
+        t('outOfStockTitle', currentLang),
+        t('outOfStockMsg', currentLang)
+      );
       return;
     }
 
     const nextDelta = currentDelta + stepDelta;
     const nextTotalVerb = installedBefore + nextDelta;
 
-    // If stepping UP and exceeding planned quantity
-    if (nextTotalVerb > planned) {
+    // If stepping UP and exceeding planned quantity (only for planned items)
+    if (!isUnplannedMat && planned > 0 && nextTotalVerb > planned) {
       // 1. Overall cap: Cannot exceed delivered quantity of the project
       if (nextTotalVerb > delivered) {
-        Alert.alert('Leider nichts mehr da', 'Leider nichts mehr da. Bitte nachbestellen.');
+        Alert.alert(
+          t('outOfStockTitle', currentLang),
+          t('outOfStockMsg', currentLang)
+        );
         return;
       }
 
       // 2. Mehrverbrauch check
-      const isUnplannedMat = Boolean(mat.isUnplanned || roomPlan?.isUnplanned);
-
-      if (!isUnplannedMat) {
-        if (delivered <= planned) {
-          Alert.alert(
-            t('noOverPossible', currentLang),
-            t('noOverPossibleMsg', currentLang, { delivered, planned, qu: mat.qu })
-          );
-          return;
-        }
-
-        // Trigger Mehrverbrauch explanation if not yet explained
-        if (!overExplanations[matId]) {
-          const exceeded = Math.max(1, nextTotalVerb - planned);
-          const maxPossibleExtra = Math.max(
-            0,
-            delivered - (hasRoomPlan ? planned : installedBefore)
-          );
-          const initialExtra = Math.min(exceeded, maxPossibleExtra);
-
-          setPendingOverMat({
-            mat,
-            nextDelta,
-            exceededBy: initialExtra,
-            planned,
-            installedBefore,
+      if (delivered <= planned) {
+        Alert.alert(
+          t('noOverPossible', currentLang),
+          t('noOverPossibleMsg', currentLang, {
             delivered,
-            maxPossibleExtra,
-            qu: mat.qu,
-          });
-          setShowOverModal(true);
-          return;
-        }
+            planned,
+            qu: formatUnit(mat.qu, currentLang),
+          })
+        );
+        return;
+      }
+
+      // Trigger Mehrverbrauch explanation if not yet explained
+      if (!overExplanations[matId]) {
+        const exceeded = Math.max(1, nextTotalVerb - planned);
+        const maxPossibleExtra = Math.min(
+          siteStockAvailable,
+          Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore))
+        );
+        const initialExtra = Math.min(exceeded, maxPossibleExtra);
+
+        setPendingOverMat({
+          mat,
+          nextDelta,
+          exceededBy: initialExtra,
+          planned,
+          installedBefore,
+          delivered,
+          maxPossibleExtra,
+          qu: formatUnit(mat.qu, currentLang),
+        });
+        setShowOverModal(true);
+        return;
       }
     }
 
@@ -299,16 +315,24 @@ export default function BookingScreen({
       ? room.photos
       : [];
   const effectivePhotoCount = effectivePhotos.length;
-  const isRoomCompleted = room.isCompleted || room.pct === 100;
 
   // Calculate live room percentage
   const calculateCurrentRoomPct = () => {
-    if (room.isCompleted) return 100;
+    if (isLocked) return 100;
     let totalPlanned = 0;
     let totalInstalled = 0;
     activeMaterialIds.forEach((matId) => {
       const { mat, roomPlan } = resolveMat(matId, materials, room);
-      const planned = roomPlan ? Number(roomPlan.plannedQty || 0) : Number(mat?.deliveredQty || 0);
+      const isUnplannedMat = Boolean(
+        mat?.isUnplanned ||
+        roomPlan?.isUnplanned ||
+        unclearItems?.some((u) => u.materialId === matId || u.pos === mat?.pos)
+      );
+      if (isUnplannedMat) {
+        // Unplanned material has planned = 0, so it must NOT add to totalPlanned!
+        return;
+      }
+      const planned = roomPlan ? Number(roomPlan.plannedQty || 0) : 0;
       const installedBefore = roomPlan
         ? Number(roomPlan.installedQty || 0)
         : Number(mat?.installedQty || 0);
@@ -330,8 +354,13 @@ export default function BookingScreen({
       const { mat, roomPlan } = resolveMat(matId, materials, room);
       if (!mat) return;
 
-      const hasRoomPlan = Boolean(roomPlan);
-      const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : null;
+      const isUnplannedMat = Boolean(
+        mat.isUnplanned ||
+        roomPlan?.isUnplanned ||
+        unclearItems?.some((u) => u.materialId === matId || u.pos === mat.pos)
+      );
+      const hasRoomPlan = Boolean(roomPlan) && !isUnplannedMat;
+      const planned = isUnplannedMat ? 0 : hasRoomPlan ? Number(roomPlan.plannedQty) : 0;
       const installedBefore = hasRoomPlan
         ? Number(roomPlan.installedQty || 0)
         : Number(mat.installedQty || 0);
@@ -342,22 +371,22 @@ export default function BookingScreen({
         materialId: mat.id,
         pos: mat.pos,
         name: getMaterialDisplayName(mat, roomPlan),
-        qu: mat.qu || roomPlan?.qu || 'Stk',
+        qu: formatUnit(mat.qu || roomPlan?.qu || 'Stk', currentLang),
         plannedQty: planned,
         installedQty: totalInstalled,
-        diff: planned !== null ? Number((planned - totalInstalled).toFixed(2)) : 0,
-        status:
-          planned !== null
-            ? totalInstalled > planned
-              ? 'over'
-              : totalInstalled < planned
-              ? 'under'
-              : 'exact'
-            : 'documented',
+        isUnplanned: isUnplannedMat,
+        diff: Number((planned - totalInstalled).toFixed(2)),
+        status: isUnplannedMat
+          ? 'unplanned'
+          : totalInstalled > planned
+          ? 'over'
+          : totalInstalled < planned
+          ? 'under'
+          : 'exact',
       });
     });
     return summary;
-  }, [activeMaterialIds, materials, room, sessionQuantities]);
+  }, [activeMaterialIds, materials, room, sessionQuantities, unclearItems, currentLang]);
 
   const handleMonteurFertigPress = () => {
     if (isLocked) {
@@ -366,13 +395,12 @@ export default function BookingScreen({
     }
     if (effectivePhotoCount === 0 && !isRoomCompleted) {
       Alert.alert(
-        t('photosRequiredTitle', currentLang) || 'Fotos erforderlich',
-        t('photosRequiredMsg', currentLang) ||
-          'Bitte hinterlege mindestens 1 Foto der Montagearbeiten, bevor du den Raum abschließt.',
+        t('photosRequiredTitle', currentLang),
+        t('photosRequiredMsg', currentLang),
         [
-          { text: t('cancel', currentLang) || 'Abbrechen', style: 'cancel' },
+          { text: t('cancel', currentLang), style: 'cancel' },
           {
-            text: t('toPhotos', currentLang) || 'Fotos aufnehmen',
+            text: t('toPhotos', currentLang),
             onPress: () => {
               if (onGoToPhotos) onGoToPhotos();
             },
@@ -384,12 +412,12 @@ export default function BookingScreen({
 
     const roomPct = calculateCurrentRoomPct();
     Alert.alert(
-      'Monteur fertig',
-      `Der Raum ist zu ${roomPct}% fertig.\n\nBist du aus deiner Sicht wirklich fertig, sodass die Abnahme beginnen kann?`,
+      t('confirmFinishRoom', currentLang),
+      t('confirmFinishRoomMsg', currentLang, { pct: roomPct }),
       [
-        { text: t('cancel', currentLang) || 'Abbrechen', style: 'cancel' },
+        { text: t('cancel', currentLang), style: 'cancel' },
         {
-          text: 'Ja, fertigstellen',
+          text: t('confirmFinishBtn', currentLang),
           onPress: () => handleConfirmCompleteRoom(),
         },
       ]
@@ -451,30 +479,32 @@ export default function BookingScreen({
           </View>
         )}
 
-        {/* Action Buttons direkt unter dem Titel */}
-        <View style={styles.topActionsRow}>
-          {/* Button 1: + Material/Zeit benötigt */}
-          <TouchableOpacity
-            style={styles.actionBtnNachtrag}
-            onPress={isLocked ? handleLockedAction : () => setShowNachtragModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnNachtragText}>
-              + Material/Zeit{'\n'}benötigt
-            </Text>
-          </TouchableOpacity>
+        {/* Action Buttons direkt unter dem Titel - nur anbieten wenn Raum nicht fertig/gesperrt ist */}
+        {!isLocked && (
+          <View style={styles.topActionsRow}>
+            {/* Button 1: + Material/Zeit benötigt */}
+            <TouchableOpacity
+              style={styles.actionBtnNachtrag}
+              onPress={() => setShowNachtragModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.actionBtnNachtragText}>
+                {t('btnNeedMaterialTime', currentLang)}
+              </Text>
+            </TouchableOpacity>
 
-          {/* Button 2: außerplanmäßig verbaut */}
-          <TouchableOpacity
-            style={styles.actionBtnUnclear}
-            onPress={isLocked ? handleLockedAction : () => setShowUnclearModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionBtnUnclearText}>
-              außerplanmäßig{'\n'}verbaut
-            </Text>
-          </TouchableOpacity>
-        </View>
+            {/* Button 2: außerplanmäßig verbaut */}
+            <TouchableOpacity
+              style={styles.actionBtnUnclear}
+              onPress={() => setShowUnclearModal(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.actionBtnUnclearText}>
+                {t('btnUnplannedInstalled', currentLang)}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Suchfunktion DIREKT OBERHALB der Materialkacheln */}
         <View style={styles.searchSectionDirect}>
@@ -519,16 +549,32 @@ export default function BookingScreen({
             const { mat, roomPlan } = resolveMat(matId, materials, room);
             if (!mat) return null;
 
+            const isUnplannedMat = Boolean(
+              mat.isUnplanned ||
+              roomPlan?.isUnplanned ||
+              unclearItems?.some((u) => u.materialId === matId || u.pos === mat?.pos)
+            );
+            const delivered = Number(
+              mat.deliveredQty !== undefined && mat.deliveredQty !== null && Number(mat.deliveredQty) > 0
+                ? mat.deliveredQty
+                : mat.qty || (roomPlan && roomPlan.plannedQty) || 0
+            );
+            const currentDelta = Number(sessionQuantities[matId]) || 0;
+            const totalInstalledAcrossSite = Number(mat.installedQty || 0) + currentDelta;
+            const siteStockAvailable = Math.max(0, delivered - totalInstalledAcrossSite);
+
             return (
               <MaterialBookingCard
                 key={mat.id}
                 mat={mat}
                 roomPlan={roomPlan}
-                delta={Number(sessionQuantities[matId]) || 0}
+                delta={currentDelta}
                 room={room}
                 currentLang={currentLang}
                 userReason={overExplanations[mat.id]}
                 isLocked={isLocked}
+                isUnplanned={isUnplannedMat}
+                siteStockAvailable={siteStockAvailable}
                 onStep={handleStep}
                 onReasonBadgePress={handleReasonBadgePress}
                 onLockedAction={handleLockedAction}
@@ -542,9 +588,14 @@ export default function BookingScreen({
       <View style={styles.footCta}>
         <TouchableOpacity style={styles.primaryButton} onPress={onGoToPhotos} activeOpacity={0.8}>
           <Text style={styles.primaryButtonText}>
-            {effectivePhotoCount > 0
-              ? `📸 ${effectivePhotoCount} ${effectivePhotoCount === 1 ? 'Foto' : 'Fotos'} hinterlegt (anzeigen / hinzufügen)`
-              : `📸 ${t('toPhotos', currentLang) || 'Fotos aufnehmen'} (für Abnahme erforderlich)`}
+            {isLocked
+              ? t('viewPhotosOnly', currentLang, { n: effectivePhotoCount })
+              : effectivePhotoCount > 0
+              ? t('photosSavedNotice', currentLang, {
+                  n: effectivePhotoCount,
+                  label: effectivePhotoCount === 1 ? t('photosSingle', currentLang) : t('photosPlural', currentLang),
+                })
+              : t('takePhotosRequirement', currentLang)}
           </Text>
         </TouchableOpacity>
 
@@ -564,12 +615,10 @@ export default function BookingScreen({
         >
           <Text style={styles.monteurFertigBtnText}>
             {isLocked
-              ? t('roomLockedCompletedBtn', currentLang) || '✓ Raum fertiggestellt (Gesperrt)'
-              : isRoomCompleted
-              ? '✓ Raum fertiggestellt'
+              ? t('roomLockedCompletedBtn', currentLang)
               : effectivePhotoCount === 0
-              ? 'Monteur fertig (Fotos erforderlich)'
-              : '✓ Monteur fertig (Abnahme starten)'}
+              ? t('finishRoomPendingPhotos', currentLang)
+              : t('finishRoomProgress', currentLang)}
           </Text>
         </TouchableOpacity>
       </View>

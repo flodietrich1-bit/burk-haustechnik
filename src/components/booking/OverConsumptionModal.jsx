@@ -11,7 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { COLORS } from '../../constants/theme';
-import { t } from '../../locales/i18n';
+import { t, formatUnit } from '../../locales/i18n';
 import { getMaterialDisplayName, getRoomPlannedItem } from './bookingHelpers';
 import { styles } from './overConsumptionStyles';
 
@@ -57,6 +57,8 @@ export default function OverConsumptionModal({
   const extraNum = parseFloat(overExtraQty) || 0;
   const plannedNum = pendingOverMat.planned || 0;
   const totalNewVerbaut = (plannedNum + extraNum).toFixed(1).replace(/\.0$/, '');
+
+  const displayQu = formatUnit(pendingOverMat.qu, currentLang);
 
   const roomPlan = getRoomPlannedItem(pendingOverMat.mat?.id, room);
   const displayName = getMaterialDisplayName(pendingOverMat.mat, roomPlan);
@@ -115,12 +117,12 @@ export default function OverConsumptionModal({
                 <Text style={styles.overNoticeMetaText}>
                   {t('matrixPlanned', currentLang)}:{' '}
                   <Text style={{ fontWeight: '800', color: COLORS.ink }}>
-                    {pendingOverMat.planned} {pendingOverMat.qu}
+                    {pendingOverMat.planned} {displayQu}
                   </Text>
                   {' · '}
                   {t('overNewInstalled', currentLang)}:{' '}
                   <Text style={{ fontWeight: '800', color: COLORS.red }}>
-                    {totalNewVerbaut} {pendingOverMat.qu}
+                    {totalNewVerbaut} {displayQu}
                   </Text>
                 </Text>
               </View>
@@ -129,7 +131,7 @@ export default function OverConsumptionModal({
             {/* 2. Stepper & Schnellauswahl */}
             <View style={styles.modalField}>
               <Text style={styles.modalFieldLabel}>
-                {t('overExtraQtyLabel', currentLang)} ({pendingOverMat.qu}):
+                {t('overExtraQtyLabel', currentLang)} ({displayQu}):
               </Text>
 
               <View style={styles.overQtyControlRow}>
@@ -176,7 +178,7 @@ export default function OverConsumptionModal({
                       isOverDelivery && { color: COLORS.red },
                     ]}
                   >
-                    {pendingOverMat.qu}
+                    {displayQu}
                   </Text>
                 </View>
 
@@ -195,7 +197,7 @@ export default function OverConsumptionModal({
                     ⚠️{' '}
                     {t('overDeliveryExceededWarn', currentLang, {
                       delivered: pendingOverMat.delivered || 0,
-                      qu: pendingOverMat.qu || 'Stk',
+                      qu: displayQu,
                     })}
                   </Text>
                 </View>
@@ -220,7 +222,7 @@ export default function OverConsumptionModal({
                           isSelected && styles.overQuickPillTextActive,
                         ]}
                       >
-                        +{val} {pendingOverMat.qu}
+                        +{val} {displayQu}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -307,7 +309,7 @@ export default function OverConsumptionModal({
               >
                 ✓ {t('overConfirmBtn', currentLang)} (+
                 {(parseFloat(overExtraQty) || 0).toFixed(1).replace(/\.0$/, '')}{' '}
-                {pendingOverMat.qu})
+                {displayQu})
               </Text>
             </TouchableOpacity>
           </View>

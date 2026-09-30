@@ -219,6 +219,120 @@ export const TRANSLATIONS = {
   syncNoPending: { de: 'Alle Buchungen sind bereits aktuell. Baustellenstand wurde aktualisiert.', ro: 'Toate înregistrările sunt deja la zi. Stadiul șantierului a fost actualizat.', pl: 'Wszystkie wpisy są aktualne. Stan budowy został zaktualizowany.', hr: 'Svi unosi su već ažurirani. Stanje gradilišta je osvježeno.' },
   syncUploading: { de: 'Buchungen und Fotos werden übertragen...', ro: 'Se încarcă înregistrările și pozele...', pl: 'Przesyłanie wpisów i zdjęć...', hr: 'Prijenos unosa i fotografija...' },
   syncDownloading: { de: 'Neueste Daten der Baustelle werden geladen...', ro: 'Se descarcă datele actualizate...', pl: 'Pobieranie najnowszych danych...', hr: 'Preuzimanje najnovijih podataka...' },
+
+  // Locked Room & Read-only
+  roomLockedReadOnly: { de: 'Schreibgeschützt', ro: 'Numai citire', pl: 'Tylko do odczytu', hr: 'Samo za čitanje' },
+  roomLockedPhotoBanner: {
+    de: 'Fotodokumentation abgeschlossen · Schreibgeschützt',
+    ro: 'Documentație foto finalizată · Numai citire',
+    pl: 'Dokumentacja zdjęciowa zakończona · Tylko do odczytu',
+    hr: 'Foto-dokumentacija dovršena · Samo za čitanje',
+  },
+  viewPhotosOnly: {
+    de: '📸 {n} Fotos ansehen (Schreibgeschützt)',
+    ro: '📸 Vezi {n} poze (Numai citire)',
+    pl: '📸 Zobacz {n} zdjęć (Tylko do odczytu)',
+    hr: '📸 Pogledaj {n} fotografija (Samo za čitanje)',
+  },
+  photosSavedNotice: {
+    de: '📸 {n} {label} hinterlegt (anzeigen / hinzufügen)',
+    ro: '📸 {n} {label} atașate (arată / adaugă)',
+    pl: '📸 {n} {label} załączono (pokaż / dodaj)',
+    hr: '📸 {n} {label} priloženo (pokaži / dodaj)',
+  },
+  photosSingle: { de: 'Foto', ro: 'poză', pl: 'zdjęcie', hr: 'fotografija' },
+  photosPlural: { de: 'Fotos', ro: 'poze', pl: 'zdjęć', hr: 'fotografija' },
+  takePhotosRequirement: {
+    de: '📸 Fotos aufnehmen (für Abnahme erforderlich)',
+    ro: '📸 Fă poze (obligatoriu pentru recepție)',
+    pl: '📸 Zrób zdjęcia (wymagane do odbioru)',
+    hr: '📸 Uslikaj fotografije (potrebno za preuzimanje)',
+  },
+  cameraAccessTitle: { de: 'Kamerazugriff', ro: 'Acces cameră', pl: 'Dostęp do aparatu', hr: 'Pristup kameri' },
+  cameraAccessMsg: { de: 'Kamerazugriff wird benötigt, um Baustellenfotos aufzunehmen.', ro: 'Accesul la cameră este necesar pentru pozele de șantier.', pl: 'Dostęp do aparatu jest wymagany do robienia zdjęć na budowie.', hr: 'Pristup kameri je potreban za snimanje fotografija gradilišta.' },
+  cameraTitle: { de: 'Kamera', ro: 'Cameră', pl: 'Aparat', hr: 'Kamera' },
+  cameraError: { de: 'Foto konnte nicht aufgenommen werden.', ro: 'Poza nu a putut fi făcută.', pl: 'Nie udało się zrobić zdjęcia.', hr: 'Fotografija se nije mogla snimiti.' },
+  galleryTitle: { de: 'Galerie', ro: 'Galerie', pl: 'Galeria', hr: 'Galerija' },
+  galleryError: { de: 'Fotos konnten nicht geladen werden.', ro: 'Pozele nu au putut fi încărcate.', pl: 'Nie udało się załadować zdjęć.', hr: 'Fotografije se nisu mogle učitati.' },
+  finishRoomProgress: {
+    de: '✓ Monteur fertig (Abnahme starten)',
+    ro: '✓ Montator gata (începe recepția)',
+    pl: '✓ Monter gotowy (rozpocznij odbiór)',
+    hr: '✓ Monter završio (započni preuzimanje)',
+  },
+  finishRoomPendingPhotos: {
+    de: 'Monteur fertig (Fotos erforderlich)',
+    ro: 'Montator gata (poze necesare)',
+    pl: 'Monter gotowy (wymagane zdjęcia)',
+    hr: 'Monter završio (potrebne fotografije)',
+  },
+  confirmFinishRoom: {
+    de: 'Monteur fertig',
+    ro: 'Montator gata',
+    pl: 'Monter gotowy',
+    hr: 'Monter završio',
+  },
+  confirmFinishRoomMsg: {
+    de: 'Der Raum ist zu {pct}% fertig.\n\nBist du aus deiner Sicht wirklich fertig, sodass die Abnahme beginnen kann?',
+    ro: 'Încăperea este gata în proporție de {pct}%.\n\nEști gata din punctul tău de vedere, astfel încât recepția să poată începe?',
+    pl: 'Pomieszczenie jest gotowe w {pct}%.\n\nCzy z Twojej perspektywy prace są zakończone, aby można było rozpocząć odbiór?',
+    hr: 'Prostorija je dovršena {pct}%.\n\nJeste li iz svoje perspektive stvarno gotovi kako bi preuzimanje moglo započeti?',
+  },
+  confirmFinishBtn: {
+    de: 'Ja, fertigstellen',
+    ro: 'Da, finalizează',
+    pl: 'Tak, zakończ',
+    hr: 'Da, dovrši',
+  },
+  outOfStockTitle: {
+    de: 'Leider nichts mehr da',
+    ro: 'Nu mai există stoc',
+    pl: 'Brak materiału na stanie',
+    hr: 'Nema više na zalihi',
+  },
+  outOfStockMsg: {
+    de: 'Die gelieferte Lagermenge auf der Baustelle ist aufgebraucht. Bitte nachbestellen.',
+    ro: 'Stocul livrat pe șantier a fost epuizat. Vă rugăm să comandați suplimentar.',
+    pl: 'Dostarczona ilość magazynowa na budowie została wyczerpana. Proszę zamówić dodatkowy materiał.',
+    hr: 'Isporučena zaliha na gradilištu je potrošena. Molimo naručite dodatno.',
+  },
+
+  // Photo Capture Screen
+  openCamera: { de: 'Kamera öffnen', ro: 'Deschide camera', pl: 'Otwórz aparat', hr: 'Otvori kameru' },
+  takePhotoSub: { de: 'Foto aufnehmen', ro: 'Fă o poză', pl: 'Zrób zdjęcie', hr: 'Snimi fotografiju' },
+  fromGallery: { de: 'Aus Galerie', ro: 'Din galerie', pl: 'Z galerii', hr: 'Iz galerije' },
+  chooseImagesSub: { de: 'Bilder auswählen', ro: 'Alege imagini', pl: 'Wybierz zdjęcia', hr: 'Odaberi slike' },
+  photoOptimizing: { de: 'Foto wird optimiert (< 1000 KB)...', ro: 'Optimizare poză (< 1000 KB)...', pl: 'Optymalizacja zdjęcia (< 1000 KB)...', hr: 'Optimizacija slike (< 1000 KB)...' },
+  noPhotosYetTitle: { de: 'Noch keine Fotos hinterlegt', ro: 'Încă nu sunt poze atașate', pl: 'Brak załączonych zdjęć', hr: 'Još nema fotografija' },
+  noPhotosYetDesc: {
+    de: 'Für die Abnahme («Monteur fertig») ist mindestens 1 Foto der Montagearbeiten erforderlich.',
+    ro: 'Pentru recepție („Montator gata”) este necesară cel puțin 1 poză cu lucrările de montaj.',
+    pl: 'Do odbioru („Monter gotowy”) wymagane jest co najmniej 1 zdjęcie prac montażowych.',
+    hr: 'Za preuzimanje („Monter završio”) potrebna je najmanje 1 fotografija montažnih radova.',
+  },
+  readyForAcceptance: { de: 'Bereit für die Abnahme durch die Bauleitung.', ro: 'Gata pentru recepție de către conducerea șantierului.', pl: 'Gotowe do odbioru przez kierownictwo budowy.', hr: 'Spremno za preuzimanje od strane voditelja gradilišta.' },
+  capturedPhotos: { de: 'Aufgenommene Fotos ({n})', ro: 'Poze realizate ({n})', pl: 'Zrobione zdjęcia ({n})', hr: 'Snimljene fotografije ({n})' },
+  savePhotosAndBack: {
+    de: '✓ {n} {label} speichern & zurück',
+    ro: '✓ Salvează {n} {label} & înapoi',
+    pl: '✓ Zapisz {n} {label} i wróć',
+    hr: '✓ Spremi {n} {label} i natrag',
+  },
+
+  // Modal Reason Pills
+  pillPlanDiff: { de: 'Planabweichung', ro: 'Abatere plan', pl: 'Odchylenie od planu', hr: 'Odstupanje od plana' },
+  pillExtraAssembly: { de: 'Zusatzmontage', ro: 'Montaj suplimentar', pl: 'Dodatkowy montaż', hr: 'Dodatna montaža' },
+  pillVentCollision: { de: 'Kollision Lüftung', ro: 'Coliziune ventilație', pl: 'Kolizja z wentylacją', hr: 'Kolizija s ventilacijom' },
+  pillClientWish: { de: 'Bauherrenwunsch', ro: 'Cerere beneficiar', pl: 'Życzenie inwestora', hr: 'Želja investitora' },
+  pillOverConsumption: { de: 'Mehrverbrauch', ro: 'Consum suplimentar', pl: 'Nadmierne zużycie', hr: 'Dodatna potrošnja' },
+  pillDamage: { de: 'Bruch / Beschädigung', ro: 'Rupere / deteriorare', pl: 'Uszkodzenie / pęknięcie', hr: 'Lom / oštećenje' },
+  pillPlanChange: { de: 'Planänderung', ro: 'Modificare plan', pl: 'Zmiana planu', hr: 'Izmjena plana' },
+  pillScrap: { de: 'Verschnitt', ro: 'Pierderi tăiere', pl: 'Odpady montażowe', hr: 'Otpad' },
+  pillMissingQty: { de: 'Fehlmenge', ro: 'Cantitate lipsă', pl: 'Brakująca ilość', hr: 'Nedostajuća količina' },
+
+  // Group Categories
+  groupGeneral: { de: 'Allgemein', ro: 'General', pl: 'Ogólne', hr: 'Opće' },
+  groupUnplanned: { de: 'Zusatz / Außerplanmäßig', ro: 'Suplimentar / Neplanificat', pl: 'Dodatkowe / Pozaplanowe', hr: 'Dodatno / Izvan plana' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)
@@ -242,4 +356,16 @@ export function t(key, lang = 'de', vars = {}) {
     });
   }
   return text;
+}
+
+export function formatUnit(qu, lang = 'de') {
+  if (!qu) return '';
+  const q = String(qu).trim().toLowerCase();
+  if (q === 'stk' || q === 'stück' || q === 'stck' || q === 'stk.' || q === 'pcs' || q === 'piece') {
+    return t('unitPcsShort', lang);
+  }
+  if (q === 'm' || q === 'meter' || q === 'lfm' || q === 'mtr') {
+    return t('unitMShort', lang);
+  }
+  return qu;
 }

@@ -265,14 +265,19 @@ export default function UnplannedInstallModal({
                 {t('unplannedReason', currentLang)} <Text style={styles.requiredStar}>*</Text>
               </Text>
               <View style={styles.quickPillsRow}>
-                {['Planabweichung', 'Zusatzmontage', 'Kollision Lüftung', 'Bauherrenwunsch'].map((r) => (
+                {[
+                  { key: 'pillPlanDiff', text: t('pillPlanDiff', currentLang) },
+                  { key: 'pillExtraAssembly', text: t('pillExtraAssembly', currentLang) },
+                  { key: 'pillVentCollision', text: t('pillVentCollision', currentLang) },
+                  { key: 'pillClientWish', text: t('pillClientWish', currentLang) },
+                ].map((item) => (
                   <TouchableOpacity
-                    key={r}
-                    style={[styles.pill, unclearReason === r && styles.pillActive]}
-                    onPress={() => setUnclearReason(r)}
+                    key={item.key}
+                    style={[styles.pill, unclearReason === item.text && styles.pillActive]}
+                    onPress={() => setUnclearReason(item.text)}
                   >
-                    <Text style={[styles.pillText, unclearReason === r && styles.pillTextActive]}>
-                      {r}
+                    <Text style={[styles.pillText, unclearReason === item.text && styles.pillTextActive]}>
+                      {item.text}
                     </Text>
                   </TouchableOpacity>
                 ))}

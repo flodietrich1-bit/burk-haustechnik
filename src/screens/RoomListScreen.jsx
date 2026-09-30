@@ -34,12 +34,22 @@ export default function RoomListScreen({
       {/* Project Banner Card */}
       <View style={styles.projCard}>
         <View style={styles.projHeader}>
-          <Text style={styles.p1}>{t('projTitle', currentLang)}</Text>
-          <View style={styles.badgeOverall}>
-            <Text style={styles.badgeText}>{totalProg}%</Text>
+          <View style={styles.projTitleRow}>
+            <Text style={styles.p1}>{t('projTitle', currentLang)}</Text>
+            <View style={styles.badgeOverall}>
+              <Text style={styles.badgeText}>{totalProg}%</Text>
+            </View>
           </View>
+          {onSwitchProject && (
+            <TouchableOpacity
+              style={styles.switchProjectBtn}
+              onPress={onSwitchProject}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        <Text style={styles.p2}>{t('projSub', currentLang)}</Text>
 
         {/* Quick KPI stats */}
         <View style={styles.kpiRow}>
@@ -53,16 +63,6 @@ export default function RoomListScreen({
             <Text style={styles.kpiValue}>{formatEuro(totalDeliveredVal)}</Text>
           </View>
         </View>
-
-        {onSwitchProject && (
-          <TouchableOpacity
-            style={styles.switchProjectBtn}
-            onPress={onSwitchProject}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Section Title */}
@@ -129,86 +129,88 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.bg,
   },
   content: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: 12,
+    paddingBottom: 28,
   },
   projCard: {
     backgroundColor: COLORS.ink2,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
   },
   projHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  projTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
   },
   p1: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 17,
+    fontSize: 15,
   },
   badgeOverall: {
     backgroundColor: COLORS.amber,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 10,
   },
   badgeText: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 12,
-  },
-  p2: {
-    color: COLORS.textSecondary,
-    fontSize: 12.5,
-    lineHeight: 17,
-    marginBottom: 14,
+    fontSize: 11,
   },
   kpiRow: {
     flexDirection: 'row',
     backgroundColor: '#1E2D3E',
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     alignItems: 'center',
   },
   kpiItem: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 6,
   },
   kpiDivider: {
     width: 1,
-    height: 24,
+    height: 16,
     backgroundColor: '#34475D',
   },
   kpiLabel: {
-    fontSize: 10.5,
+    fontSize: 10,
     color: COLORS.textSecondary,
     fontWeight: '600',
     textTransform: 'uppercase',
   },
   kpiValue: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginTop: 2,
   },
   switchProjectBtn: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 10,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   switchProjectText: {
     color: '#93C5FD',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
   },
   sectTitle: {
     fontSize: 12,

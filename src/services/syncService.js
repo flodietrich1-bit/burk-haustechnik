@@ -1,10 +1,10 @@
 import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { db, storage } from './firebase';
+import app, { db, storage } from './firebase';
 import {
   getPendingBookings,
   updateBookingStatus,
@@ -36,6 +36,7 @@ export async function checkOnlineStatus() {
 
 /**
  * Upload local photo file to Firebase Storage or compress to base64 Data URI
+ * Uses base64 strings with uploadString to circumvent React Native file:// fetch blob limitations.
  */
 async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex) {
   if (!localUri) return null;
@@ -43,46 +44,85 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
     return localUri;
   }
 
-  // 1. Try Firebase Storage if available
-  try {
-    const response = await fetch(localUri);
-    const blob = await response.blob();
-    const storagePath = `projects/${projectId}/proofs/${bookingId}_${photoIndex}.jpg`;
-    const storageRef = ref(storage, storagePath);
-
-    await uploadBytes(storageRef, blob);
-    const downloadUrl = await getDownloadURL(storageRef);
-    if (downloadUrl) return downloadUrl;
-  } catch (storageError) {
-    console.warn(`Firebase storage direct upload unavailable, falling back to compressed base64 data URI:`, storageError.message);
-  }
-
-  // 2. Resilient Fallback: Compress and read as base64 Data URI
+  // 1. Prepare base64 representation with compression
+  let base64Data = null;
   try {
     const manip = await ImageManipulator.manipulateAsync(
       localUri,
-      [{ resize: { width: 800 } }],
-      { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+      [{ resize: { width: 1200 } }],
+      { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG, base64: true }
     );
     if (manip && manip.base64) {
-      return `data:image/jpeg;base64,${manip.base64}`;
+      base64Data = manip.base64;
     }
   } catch (manipErr) {
-    console.warn('ImageManipulator base64 failed, trying FileSystem:', manipErr.message);
+    console.warn('ImageManipulator base64 compression failed, trying FileSystem:', manipErr?.message);
   }
+
+  if (!base64Data) {
+    try {
+      base64Data = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } catch (fsErr) {
+      console.warn('FileSystem readAsStringAsync failed:', fsErr?.message);
+    }
+  }
+
+  if (!base64Data) {
+    console.error('Could not read image for upload:', localUri);
+    return null;
+  }
+
+  // 2. Try Firebase Storage direct upload via uploadString
+  const timestamp = Date.now();
+  const cleanId = String(bookingId || 'photo').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const storagePath = `projects/${projectId}/proofs/${cleanId}_${photoIndex}_${timestamp}.jpg`;
 
   try {
-    const b64 = await FileSystem.readAsStringAsync(localUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    if (b64) {
-      return `data:image/jpeg;base64,${b64}`;
+    const storageRef = ref(storage, storagePath);
+    await uploadString(storageRef, base64Data, 'base64', { contentType: 'image/jpeg' });
+    const downloadUrl = await getDownloadURL(storageRef);
+    if (downloadUrl) return downloadUrl;
+  } catch (storageError) {
+    console.warn(`Firebase storage direct upload failed, attempting fallback bucket:`, storageError?.message);
+    const altBuckets = [
+      'gs://burk-haustechnik.appspot.com',
+      'gs://burk-haustechnik.firebasestorage.app',
+    ];
+    for (const altBucket of altBuckets) {
+      try {
+        const altStorage = getStorage(app, altBucket);
+        const altRef = ref(altStorage, storagePath);
+        await uploadString(altRef, base64Data, 'base64', { contentType: 'image/jpeg' });
+        const downloadUrl = await getDownloadURL(altRef);
+        if (downloadUrl) return downloadUrl;
+      } catch (altErr) {
+        // continue to next bucket or data-uri fallback
+      }
     }
-  } catch (fsErr) {
-    console.warn('FileSystem readAsStringAsync failed:', fsErr.message);
   }
 
-  return localUri;
+  // 3. Fallback: Compact Data URI (under 80 KB) so it can be stored in Firestore safely
+  try {
+    const lowRes = await ImageManipulator.manipulateAsync(
+      localUri,
+      [{ resize: { width: 640 } }],
+      { compress: 0.4, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    if (lowRes && lowRes.base64) {
+      return `data:image/jpeg;base64,${lowRes.base64}`;
+    }
+  } catch (lowResErr) {
+    console.warn('Low-res Data URI fallback failed:', lowResErr?.message);
+  }
+
+  if (base64Data) {
+    return `data:image/jpeg;base64,${base64Data}`;
+  }
+
+  // Strictly avoid leaking raw local file:// paths into Firestore
+  return null;
 }
 
 /**
@@ -162,17 +202,17 @@ export async function syncBookings(options = {}) {
             continue;
           }
           const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx);
-          if (cloudUrl) {
+          if (cloudUrl && !cloudUrl.startsWith('file://')) {
             uploadedUrls.push(cloudUrl);
-          } else if (photoUri) {
-            uploadedUrls.push(photoUri);
           }
         }
 
         const now = new Date().toISOString();
         const finalBookingData = {
           ...booking,
-          photoUrls: uploadedUrls.length > 0 ? uploadedUrls : (booking.photoUrls || []),
+          photoUrls: uploadedUrls.length > 0 
+            ? uploadedUrls 
+            : (booking.photoUrls || []).filter(u => typeof u === 'string' && !u.startsWith('file://')),
           photoUris: photosToUpload,
           status: 'synced',
           syncedAt: now,
@@ -245,7 +285,7 @@ export async function syncBookings(options = {}) {
             }
             if (typeof photoUri === 'string' && photoUri.startsWith('file://')) {
               const cloudUrl = await uploadPhotoToFirebase(photoUri, projectId, `room_${room.id}`, pIdx);
-              if (cloudUrl) {
+              if (cloudUrl && !cloudUrl.startsWith('file://')) {
                 uploadedPhotoUrls.push(cloudUrl);
               }
             }

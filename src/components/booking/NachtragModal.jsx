@@ -308,7 +308,9 @@ export default function NachtragModal({
                     />
                     <View style={styles.qtyUnitBadgeBox}>
                       <Text style={styles.qtyUnitBadgeText}>
-                        {matUnit === 'm' ? 'Meter (m)' : 'Stück (Stk)'}
+                        {matUnit === 'm'
+                          ? t('unitMeters', currentLang)
+                          : t('unitPieces', currentLang)}
                       </Text>
                     </View>
                   </View>
@@ -321,19 +323,23 @@ export default function NachtragModal({
                     <Text style={styles.requiredStar}>*</Text>
                   </Text>
                   <View style={styles.quickPillsRow}>
-                    {['Mehrverbrauch', 'Bruch / Beschädigung', 'Planänderung', 'Verschnitt', 'Fehlmenge'].map(
-                      (r) => (
-                        <TouchableOpacity
-                          key={r}
-                          style={[styles.pill, matNote === r && styles.pillActive]}
-                          onPress={() => setMatNote(r)}
-                        >
-                          <Text style={[styles.pillText, matNote === r && styles.pillTextActive]}>
-                            {r}
-                          </Text>
-                        </TouchableOpacity>
-                      )
-                    )}
+                    {[
+                      { key: 'pillOverConsumption', text: t('pillOverConsumption', currentLang) },
+                      { key: 'pillDamage', text: t('pillDamage', currentLang) },
+                      { key: 'pillPlanChange', text: t('pillPlanChange', currentLang) },
+                      { key: 'pillScrap', text: t('pillScrap', currentLang) },
+                      { key: 'pillMissingQty', text: t('pillMissingQty', currentLang) },
+                    ].map((item) => (
+                      <TouchableOpacity
+                        key={item.key}
+                        style={[styles.pill, matNote === item.text && styles.pillActive]}
+                        onPress={() => setMatNote(item.text)}
+                      >
+                        <Text style={[styles.pillText, matNote === item.text && styles.pillTextActive]}>
+                          {item.text}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
                   <TextInput
                     style={[

@@ -69,7 +69,11 @@ export default function PhotoCaptureScreen({
   const [previewUri, setPreviewUri] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const effectiveIsLocked = isLocked || Boolean(room?.isCompleted || room?.status === 'completed');
+  const effectiveIsLocked = isLocked || Boolean(
+    room?.isCompleted ||
+    room?.status === 'completed' ||
+    Number(room?.pct) === 100
+  );
 
   const requestCameraPermission = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -79,15 +83,15 @@ export default function PhotoCaptureScreen({
   const handleLaunchCamera = async () => {
     if (effectiveIsLocked) {
       Alert.alert(
-        t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
-        t('roomLockedAlertMsg', currentLang) || 'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+        t('roomLockedAlertTitle', currentLang),
+        t('roomLockedAlertMsg', currentLang)
       );
       return;
     }
     try {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
-        Alert.alert('Kamerazugriff', 'Kamerazugriff wird benötigt, um Baustellenfotos aufzunehmen.');
+        Alert.alert(t('cameraAccessTitle', currentLang), t('cameraAccessMsg', currentLang));
         return;
       }
 
@@ -105,7 +109,7 @@ export default function PhotoCaptureScreen({
       }
     } catch (e) {
       console.warn('Camera error:', e);
-      Alert.alert('Kamera', 'Foto konnte nicht aufgenommen werden.');
+      Alert.alert(t('cameraTitle', currentLang), t('cameraError', currentLang));
     } finally {
       setIsProcessing(false);
     }
@@ -114,8 +118,8 @@ export default function PhotoCaptureScreen({
   const handleLaunchLibrary = async () => {
     if (effectiveIsLocked) {
       Alert.alert(
-        t('roomLockedAlertTitle', currentLang) || 'Raum bereits fertiggestellt',
-        t('roomLockedAlertMsg', currentLang) || 'Dieser Raum wurde bereits fertiggestellt. Änderungen sind gesperrt und können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.'
+        t('roomLockedAlertTitle', currentLang),
+        t('roomLockedAlertMsg', currentLang)
       );
       return;
     }
@@ -138,7 +142,7 @@ export default function PhotoCaptureScreen({
       }
     } catch (e) {
       console.warn('Image library error:', e);
-      Alert.alert('Galerie', 'Fotos konnten nicht geladen werden.');
+      Alert.alert(t('galleryTitle', currentLang), t('galleryError', currentLang));
     } finally {
       setIsProcessing(false);
     }
@@ -163,11 +167,11 @@ export default function PhotoCaptureScreen({
             activeOpacity={0.7}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.backBtnText}>‹ {t('backShort', currentLang) || 'Zurück'}</Text>
+            <Text style={styles.backBtnText}>‹ {t('backShort', currentLang)}</Text>
           </TouchableOpacity>
 
           <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>📸 {t('photoTitle', currentLang) || 'Fotodokumentation'}</Text>
+            <Text style={styles.headerTitle}>📸 {t('photoTitle', currentLang)}</Text>
             <Text style={styles.headerRoom} numberOfLines={1}>{room?.name || 'Raum'}</Text>
           </View>
         </View>
@@ -178,43 +182,45 @@ export default function PhotoCaptureScreen({
             <View style={styles.roomLockedBanner}>
               <Text style={styles.roomLockedIcon}>🔒</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.roomLockedTitle}>{t('roomLockedBanner', currentLang)}</Text>
+                <Text style={styles.roomLockedTitle}>{t('roomLockedPhotoBanner', currentLang)}</Text>
                 <Text style={styles.roomLockedSub}>{t('roomLockedBannerSub', currentLang)}</Text>
               </View>
             </View>
           )}
 
-          {/* Quick Action Cards: Camera & Gallery */}
-          <View style={styles.actionCardsRow}>
-            <TouchableOpacity
-              style={[styles.actionCard, styles.actionCardPrimary, effectiveIsLocked && styles.actionCardDisabled]}
-              onPress={handleLaunchCamera}
-              activeOpacity={0.8}
-            >
-              <View style={styles.actionIconBoxPrimary}>
-                <Text style={styles.actionIcon}>📷</Text>
-              </View>
-              <Text style={styles.actionCardTitle}>Kamera öffnen</Text>
-              <Text style={styles.actionCardSub}>Foto aufnehmen</Text>
-            </TouchableOpacity>
+          {/* Quick Action Cards: Camera & Gallery - HIDE when room is completed/locked */}
+          {!effectiveIsLocked && (
+            <View style={styles.actionCardsRow}>
+              <TouchableOpacity
+                style={[styles.actionCard, styles.actionCardPrimary]}
+                onPress={handleLaunchCamera}
+                activeOpacity={0.8}
+              >
+                <View style={styles.actionIconBoxPrimary}>
+                  <Text style={styles.actionIcon}>📷</Text>
+                </View>
+                <Text style={styles.actionCardTitle}>{t('openCamera', currentLang)}</Text>
+                <Text style={styles.actionCardSub}>{t('takePhotoSub', currentLang)}</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.actionCard, styles.actionCardSecondary, effectiveIsLocked && styles.actionCardDisabled]}
-              onPress={handleLaunchLibrary}
-              activeOpacity={0.8}
-            >
-              <View style={styles.actionIconBoxSecondary}>
-                <Text style={styles.actionIcon}>🖼️</Text>
-              </View>
-              <Text style={styles.actionCardTitle}>Aus Galerie</Text>
-              <Text style={styles.actionCardSub}>Bilder auswählen</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[styles.actionCard, styles.actionCardSecondary]}
+                onPress={handleLaunchLibrary}
+                activeOpacity={0.8}
+              >
+                <View style={styles.actionIconBoxSecondary}>
+                  <Text style={styles.actionIcon}>🖼️</Text>
+                </View>
+                <Text style={styles.actionCardTitle}>{t('fromGallery', currentLang)}</Text>
+                <Text style={styles.actionCardSub}>{t('chooseImagesSub', currentLang)}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {isProcessing && (
             <View style={styles.processingBanner}>
               <ActivityIndicator size="small" color={COLORS.amber} />
-              <Text style={styles.processingText}>Foto wird optimiert (&lt; 1000 KB)...</Text>
+              <Text style={styles.processingText}>{t('photoOptimizing', currentLang)}</Text>
             </View>
           )}
 
@@ -224,9 +230,9 @@ export default function PhotoCaptureScreen({
               <View style={styles.emptyStateIconCircle}>
                 <Text style={styles.emptyStateEmoji}>📸</Text>
               </View>
-              <Text style={styles.emptyStateTitle}>Noch keine Fotos hinterlegt</Text>
+              <Text style={styles.emptyStateTitle}>{t('noPhotosYetTitle', currentLang)}</Text>
               <Text style={styles.emptyStateDesc}>
-                Für die Abnahme («Monteur fertig») ist mindestens 1 Foto der Montagearbeiten erforderlich.
+                {t('noPhotosYetDesc', currentLang)}
               </Text>
             </View>
           ) : (
@@ -234,10 +240,10 @@ export default function PhotoCaptureScreen({
               <Text style={styles.readyBannerIcon}>✓</Text>
               <View style={{ flex: 1 }}>
                 <Text style={styles.readyBannerTitle}>
-                  {photos.length} {photos.length === 1 ? 'Foto' : 'Fotos'} hinterlegt
+                  {t('photoCount', currentLang, { n: photos.length })}
                 </Text>
                 <Text style={styles.readyBannerSub}>
-                  Bereit für die Abnahme durch die Bauleitung.
+                  {t('readyForAcceptance', currentLang)}
                 </Text>
               </View>
             </View>
@@ -246,7 +252,7 @@ export default function PhotoCaptureScreen({
           {/* Photo Gallery Grid */}
           {photos.length > 0 && (
             <View style={styles.gallerySection}>
-              <Text style={styles.galleryHeading}>Aufgenommene Fotos ({photos.length})</Text>
+              <Text style={styles.galleryHeading}>{t('capturedPhotos', currentLang, { n: photos.length })}</Text>
               <View style={styles.grid}>
                 {photos.map((uri, index) => (
                   <TouchableOpacity
@@ -258,7 +264,9 @@ export default function PhotoCaptureScreen({
                     <Image source={{ uri }} style={styles.photoImg} />
                     <View style={styles.photoBadgeRow}>
                       <View style={styles.photoBadge}>
-                        <Text style={styles.photoBadgeText}>Foto {index + 1}</Text>
+                        <Text style={styles.photoBadgeText}>
+                          {t('photoBadge', currentLang)} {index + 1}
+                        </Text>
                       </View>
                       {!effectiveIsLocked && (
                         <TouchableOpacity
@@ -287,7 +295,7 @@ export default function PhotoCaptureScreen({
               activeOpacity={0.8}
             >
               <Text style={styles.saveBtnText}>
-                ‹ {t('backShort', currentLang) || 'Zurück zum Raum'}
+                ‹ {t('backShort', currentLang)}
               </Text>
             </TouchableOpacity>
           ) : (
@@ -298,7 +306,12 @@ export default function PhotoCaptureScreen({
               activeOpacity={0.8}
             >
               <Text style={styles.saveBtnText}>
-                {isSaving ? 'Speichere...' : '💾 Fotos speichern'}
+                {isSaving
+                  ? t('syncing', currentLang)
+                  : t('savePhotosAndBack', currentLang, {
+                      n: photos.length,
+                      label: photos.length === 1 ? t('photosSingle', currentLang) : t('photosPlural', currentLang),
+                    })}
               </Text>
             </TouchableOpacity>
           )}
@@ -313,7 +326,7 @@ export default function PhotoCaptureScreen({
                 onPress={() => setPreviewUri(null)}
                 activeOpacity={0.7}
               >
-                <Text style={styles.previewCloseText}>✕ Schließen</Text>
+                <Text style={styles.previewCloseText}>✕ {t('cancel', currentLang)}</Text>
               </TouchableOpacity>
               {previewUri && (
                 <Image

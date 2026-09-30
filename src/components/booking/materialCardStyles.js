@@ -242,6 +242,13 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.ink,
   },
+  stepperBtnDisabled: {
+    backgroundColor: '#EDF2F7',
+    opacity: 0.35,
+  },
+  stepperBtnTextDisabled: {
+    color: '#A0AEC0',
+  },
   stepperValBox: {
     minWidth: 50,
     paddingHorizontal: 6,

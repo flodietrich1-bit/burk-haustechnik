@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { t } from '../../locales/i18n';
+import { t, formatUnit } from '../../locales/i18n';
 import ProgressBar from '../ProgressBar';
 import {
   formatQty,
@@ -18,22 +18,30 @@ export default function MaterialBookingCard({
   currentLang = 'de',
   userReason = '',
   isLocked = false,
+  isUnplanned = false,
+  siteStockAvailable = null,
   onStep,
   onReasonBadgePress,
   onLockedAction,
 }) {
   if (!mat) return null;
 
-  const isUnplanned = Boolean(mat.isUnplanned || roomPlan?.isUnplanned);
+  const finalIsUnplanned = Boolean(isUnplanned || mat.isUnplanned || roomPlan?.isUnplanned);
   const displayName = getMaterialDisplayName(mat, roomPlan);
-  const displayGroup =
+  const rawGroup =
     mat?.group && mat.group !== 'Allgemein'
       ? mat.group
       : roomPlan?.group || mat?.group || 'Allgemein';
-  const displayQu = mat?.qu || roomPlan?.qu || 'Stk';
+  const displayGroup =
+    rawGroup === 'Allgemein'
+      ? t('groupGeneral', currentLang)
+      : rawGroup === 'Zusatz / Außerplanmäßig'
+      ? t('groupUnplanned', currentLang)
+      : rawGroup;
+  const displayQu = formatUnit(mat?.qu || roomPlan?.qu || 'Stk', currentLang);
 
-  const hasRoomPlan = Boolean(roomPlan);
-  const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty || 0) : null;
+  const hasRoomPlan = Boolean(roomPlan) && !finalIsUnplanned;
+  const roomPlanned = hasRoomPlan ? Number(roomPlan.plannedQty || 0) : 0;
   const roomInstalledBefore = hasRoomPlan
     ? Number(roomPlan.installedQty || 0)
     : Number(mat.installedQty || 0);
@@ -45,35 +53,42 @@ export default function MaterialBookingCard({
       : mat.qty || (roomPlan && roomPlan.plannedQty) || 0
   );
 
-  // Target for planning: For unplanned items, the available pool is the project delivered amount!
-  const baseTarget = isUnplanned
-    ? projectDelivered > 0
-      ? projectDelivered
-      : currentRoomVerb
+  // Target for planning: For unplanned items, planned is strictly 0!
+  const baseTarget = finalIsUnplanned
+    ? 0
     : hasRoomPlan
     ? roomPlanned
     : projectDelivered;
 
-  // Verfügbar: For unplanned items, it reflects remaining project stock
-  const availableQty = Math.max(0, baseTarget - currentRoomVerb);
+  // Verfügbar: For unplanned items, it reflects remaining project site stock
+  const availableQty = siteStockAvailable !== null
+    ? siteStockAvailable
+    : finalIsUnplanned
+    ? Math.max(0, projectDelivered - currentRoomVerb)
+    : Math.max(0, baseTarget - currentRoomVerb);
 
   // isOver: For unplanned items, ONLY over if currentRoomVerb exceeds total projectDelivered!
-  const isOver = isUnplanned
+  const isOver = finalIsUnplanned
     ? projectDelivered > 0
       ? currentRoomVerb > projectDelivered
       : false
-    : currentRoomVerb > baseTarget;
+    : baseTarget > 0
+    ? currentRoomVerb > baseTarget
+    : false;
 
   const exceededBy = isOver
-    ? Math.max(0, currentRoomVerb - (isUnplanned ? projectDelivered : baseTarget))
+    ? Math.max(0, currentRoomVerb - (finalIsUnplanned ? projectDelivered : baseTarget))
     : 0;
 
   // Progress percentage: unplanned items are completed (100%), not 0% or red over-limit
-  const progressPct = isUnplanned
+  const progressPct = finalIsUnplanned
     ? 100
     : baseTarget > 0
     ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100))
     : 0;
+
+  const isStockExhausted = siteStockAvailable !== null ? siteStockAvailable <= 0 : false;
+  const isPlusDisabled = isLocked || isStockExhausted;
 
   const gloss = getForeignGloss(mat, currentLang);
 
@@ -98,7 +113,7 @@ export default function MaterialBookingCard({
             <View style={styles.posChip}>
               <Text style={styles.posChipText}>Pos {mat.pos}</Text>
             </View>
-            {isUnplanned ? (
+            {finalIsUnplanned ? (
               <View style={styles.unplannedBadgeChip}>
                 <Text style={styles.unplannedBadgeChipText}>
                   🏷️ {t('unplannedBadge', currentLang)}
@@ -135,7 +150,7 @@ export default function MaterialBookingCard({
         <View style={styles.metricCell}>
           <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
           <Text style={styles.metricValue}>
-            {isUnplanned ? (
+            {finalIsUnplanned ? (
               <>
                 0 <Text style={styles.metricUnit}>{displayQu}</Text>
               </>
@@ -147,7 +162,7 @@ export default function MaterialBookingCard({
             )}
           </Text>
           <Text style={styles.metricSub}>
-            {isUnplanned
+            {finalIsUnplanned
               ? t('unplannedBadge', currentLang)
               : hasRoomPlan
               ? t('matrixRoom', currentLang)
@@ -172,7 +187,7 @@ export default function MaterialBookingCard({
           <Text style={styles.metricSub}>
             {isOver
               ? t('matrixOver', currentLang)
-              : isUnplanned
+              : finalIsUnplanned
               ? t('matrixRemaining', currentLang) || 'Rest'
               : t('matrixOpen', currentLang)}
           </Text>
@@ -236,26 +251,41 @@ export default function MaterialBookingCard({
         {/* Stepper (+ / −) */}
         <View style={styles.stepperWrapper}>
           <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => onStep(mat.id, -1)}
+            style={[styles.stepperBtn, isLocked && styles.stepperBtnDisabled]}
+            onPress={() => {
+              if (isLocked) {
+                if (onLockedAction) onLockedAction();
+                return;
+              }
+              onStep(mat.id, -1);
+            }}
+            disabled={isLocked}
             activeOpacity={0.6}
           >
-            <Text style={styles.stepperBtnText}>−</Text>
+            <Text style={[styles.stepperBtnText, isLocked && styles.stepperBtnTextDisabled]}>−</Text>
           </TouchableOpacity>
 
           <View style={styles.stepperValBox}>
             <Text style={styles.stepperValText}>{delta > 0 ? `+${delta}` : delta}</Text>
             <Text style={styles.stepperUnitText}>
-              {mat.qu} {t('perWeek', currentLang)}
+              {displayQu} {t('perWeek', currentLang)}
             </Text>
           </View>
 
           <TouchableOpacity
-            style={styles.stepperBtn}
-            onPress={() => onStep(mat.id, 1)}
+            style={[styles.stepperBtn, isPlusDisabled && styles.stepperBtnDisabled]}
+            onPress={() => {
+              if (isLocked) {
+                if (onLockedAction) onLockedAction();
+                return;
+              }
+              if (isStockExhausted) return;
+              onStep(mat.id, 1);
+            }}
+            disabled={isPlusDisabled}
             activeOpacity={0.6}
           >
-            <Text style={styles.stepperBtnText}>+</Text>
+            <Text style={[styles.stepperBtnText, isPlusDisabled && styles.stepperBtnTextDisabled]}>+</Text>
           </TouchableOpacity>
         </View>
       </View>

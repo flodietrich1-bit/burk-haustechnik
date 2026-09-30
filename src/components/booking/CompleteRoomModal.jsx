@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
-import { t } from '../../locales/i18n';
+import { t, formatUnit } from '../../locales/i18n';
 import { styles } from './completeRoomStyles';
 
 export default function CompleteRoomModal({
@@ -40,9 +40,11 @@ export default function CompleteRoomModal({
           {/* Delta Summary List */}
           <ScrollView style={styles.deltaScrollList}>
             {deltaSummary.map((item) => {
-              const hasRoomPlan = item.plannedQty !== null && item.plannedQty !== undefined;
-              const isUnder = item.status === 'under' || (hasRoomPlan && item.diff > 0);
-              const isOver = item.status === 'over' || (hasRoomPlan && item.diff < 0);
+              const displayQu = formatUnit(item.qu, currentLang);
+              const isUnplanned = Boolean(item.isUnplanned || item.status === 'unplanned');
+              const hasRoomPlan = !isUnplanned && item.plannedQty !== null && item.plannedQty !== undefined;
+              const isUnder = !isUnplanned && (item.status === 'under' || (hasRoomPlan && item.diff > 0));
+              const isOver = !isUnplanned && (item.status === 'over' || (hasRoomPlan && item.diff < 0));
 
               return (
                 <View key={item.materialId} style={styles.deltaRow}>
@@ -51,29 +53,40 @@ export default function CompleteRoomModal({
                       Pos {item.pos} · {item.name}
                     </Text>
                     <Text style={styles.deltaMatSub}>
-                      {hasRoomPlan
-                        ? `${t('matrixPlanned', currentLang)}: ${item.plannedQty} ${item.qu}  |  ${t(
+                      {isUnplanned
+                        ? `${t('matrixPlanned', currentLang)}: 0 ${displayQu}  |  ${t(
                             'matrixInstalled',
                             currentLang
-                          )}: ${item.installedQty} ${item.qu}`
-                        : `${t('matrixInstalled', currentLang)}: ${item.installedQty} ${item.qu} (${t(
+                          )}: ${item.installedQty} ${displayQu} (${t('unplannedBadge', currentLang)})`
+                        : hasRoomPlan
+                        ? `${t('matrixPlanned', currentLang)}: ${item.plannedQty} ${displayQu}  |  ${t(
+                            'matrixInstalled',
+                            currentLang
+                          )}: ${item.installedQty} ${displayQu}`
+                        : `${t('matrixInstalled', currentLang)}: ${item.installedQty} ${displayQu} (${t(
                             'matrixOnlyGaeb',
                             currentLang
                           )})`}
                     </Text>
                   </View>
 
-                  {hasRoomPlan ? (
+                  {isUnplanned ? (
+                    <View style={styles.deltaBadgeOver}>
+                      <Text style={styles.deltaBadgeOverText}>
+                        +{item.installedQty} {displayQu} {t('unplannedBadge', currentLang)}
+                      </Text>
+                    </View>
+                  ) : hasRoomPlan ? (
                     isUnder ? (
                       <View style={styles.deltaBadgeUnder}>
                         <Text style={styles.deltaBadgeUnderText}>
-                          +{item.diff.toFixed(1)} {item.qu} {t('completeUnder', currentLang)}
+                          +{item.diff.toFixed(1)} {displayQu} {t('completeUnder', currentLang)}
                         </Text>
                       </View>
                     ) : isOver ? (
                       <View style={styles.deltaBadgeOver}>
                         <Text style={styles.deltaBadgeOverText}>
-                          -{Math.abs(item.diff).toFixed(1)} {item.qu} {t('completeOver', currentLang)}
+                          -{Math.abs(item.diff).toFixed(1)} {displayQu} {t('completeOver', currentLang)}
                         </Text>
                       </View>
                     ) : (
@@ -86,7 +99,7 @@ export default function CompleteRoomModal({
                   ) : (
                     <View style={styles.deltaBadgeExact}>
                       <Text style={styles.deltaBadgeExactText}>
-                        {item.installedQty} {item.qu}
+                        {item.installedQty} {displayQu}
                       </Text>
                     </View>
                   )}
