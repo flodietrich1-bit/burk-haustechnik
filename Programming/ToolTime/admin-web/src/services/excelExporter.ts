@@ -121,7 +121,7 @@ export function exportRoomVobAufmassToExcel(
     { 'Merkmal': 'Geschoss / Etage', 'Wert': room.floor },
     { 'Merkmal': 'Status', 'Wert': room.status === 'completed' ? '100% Fertiggestellt' : 'In Bearbeitung' },
     { 'Merkmal': 'Fortschritt', 'Wert': `${room.progressPercent || 0}%` },
-    { 'Merkmal': 'Abgenommen von', 'Wert': room.completedBy || 'Florian Buck (Bauleiter)' },
+    { 'Merkmal': 'Abgenommen von', 'Wert': room.completedBy || 'Florian Buck (Projektleiter)' },
     { 'Merkmal': 'Abnahmedatum', 'Wert': room.completedAt ? new Date(room.completedAt).toLocaleDateString('de-DE') : '-' },
     { 'Merkmal': 'Exportiert am', 'Wert': new Date().toLocaleString('de-DE') },
     { 'Merkmal': 'VOB/B §14 Regelung', 'Wert': 'Aufmaßblatt für Schlussrechnung / Nachtragsprüfung' }
@@ -152,7 +152,8 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
     ['AUFMASS-PROTOKOLL (GESAMTÜBERSICHT)'],
     ['Projekt:', aufmass.projectName],
     ['Aufmaß-Nr:', aufmass.aufmassNumber],
-    ['Zeitraum:', `Von ${new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} bis ${new Date(aufmass.dateTo).toLocaleDateString('de-DE')}`],
+    ['Stichtag der Abrechnung:', new Date(aufmass.dateTo).toLocaleDateString('de-DE')],
+    ['Zeitraum (Delta seit vorigem Aufmaß):', `Von ${new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} bis ${new Date(aufmass.dateTo).toLocaleDateString('de-DE')}`],
     ['Erstellt am:', `${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${aufmass.createdBy}`],
     ['Gesamtvolumen (€):', `${aufmass.totalPeriodVolume.toFixed(2)} €`],
     [] // blank line
@@ -163,15 +164,15 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
     'Gewerk / Kategorie': item.group || '-',
     'Material / Leistungsbezeichnung': item.shortText,
     'Soll-Menge (Plan)': item.plannedQty,
-    'Verbaut im Zeitraum': item.periodInstalledQty,
     'Kumuliert bis Stichtag': item.totalInstalledUpToDate,
+    'Delta seit vorigem Aufmaß': item.periodInstalledQty,
     'Einheit': item.qu,
     'Einzelpreis (€)': item.unitPrice ? item.unitPrice.toFixed(2) : '0.00',
     'Abrechnungsbetrag (€)': item.totalCost ? item.totalCost.toFixed(2) : '0.00'
   }));
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryHeader);
-  XLSX.utils.sheet_add_json(wsSummary, summaryRows, { origin: 'A8' });
+  XLSX.utils.sheet_add_json(wsSummary, summaryRows, { origin: 'A9' });
 
   // -------------------------------------------------------------
   // SHEET 2: Räume (Detailaufstellung nach Räumen mit Begründungszeilen)
@@ -185,7 +186,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
       'Pos-Nr': room.isCompleted ? '✓ 100% Abgeschlossen' : 'In Montage',
       'Materialbezeichnung': '',
       'Plan-Menge': '',
-      'Verbaut im Zeitraum': '',
+      'Delta seit vorigem Aufmaß': '',
       'Kumuliert bis Stichtag': '',
       'Einheit': '',
       'Mehrverbrauch': '',
@@ -198,7 +199,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
         'Pos-Nr': '-',
         'Materialbezeichnung': '(Keine Positionen für diesen Raum)',
         'Plan-Menge': '',
-        'Verbaut im Zeitraum': '',
+        'Delta seit vorigem Aufmaß': '',
         'Kumuliert bis Stichtag': '',
         'Einheit': '',
         'Mehrverbrauch': '',
@@ -219,7 +220,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
           'Pos-Nr': pos.posNr,
           'Materialbezeichnung': pos.isExtraPosition ? `[Zusatzposition] ${pos.shortText}` : pos.shortText,
           'Plan-Menge': pos.plannedQty,
-          'Verbaut im Zeitraum': pos.installedInPeriod,
+          'Delta seit vorigem Aufmaß': pos.installedInPeriod,
           'Kumuliert bis Stichtag': pos.totalInstalledToDate,
           'Einheit': pos.qu,
           'Mehrverbrauch': deviationText,
@@ -233,7 +234,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
             'Pos-Nr': '',
             'Materialbezeichnung': `  ↳ BEGRÜNDUNG: ${pos.reason}`,
             'Plan-Menge': '',
-            'Verbaut im Zeitraum': '',
+            'Delta seit vorigem Aufmaß': '',
             'Kumuliert bis Stichtag': '',
             'Einheit': '',
             'Mehrverbrauch': '',
@@ -249,7 +250,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
       'Pos-Nr': '',
       'Materialbezeichnung': '',
       'Plan-Menge': '',
-      'Verbaut im Zeitraum': '',
+      'Delta seit vorigem Aufmaß': '',
       'Kumuliert bis Stichtag': '',
       'Einheit': '',
       'Mehrverbrauch': '',
@@ -267,4 +268,65 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
   const cleanProject = aufmass.projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Aufmass_${aufmass.aufmassNumber}_${cleanProject}_${aufmass.dateTo}.xlsx`;
   XLSX.writeFile(wb, filename);
+}
+
+/**
+ * PDF-Export: druckfertiges Aufmaß (Browser-Druckdialog -> "Als PDF speichern").
+ * Enthält kumulierte Menge bis Stichtag UND Delta seit dem vorigen Aufmaß.
+ */
+export function exportAufmassToPdf(aufmass: AufmassDocument) {
+  const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const eur = (n: number) => `${(n || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+  const d = (s: string) => new Date(s).toLocaleDateString('de-DE');
+
+  const summaryRows = aufmass.summaryItems.map(i => `<tr>
+    <td>${esc(i.posNr)}</td><td>${esc(i.shortText)}</td>
+    <td class="r">${i.plannedQty}</td>
+    <td class="r b">${i.totalInstalledUpToDate}</td>
+    <td class="r b">${i.periodInstalledQty}</td>
+    <td>${esc(i.qu)}</td>
+    <td class="r">${i.unitPrice ? i.unitPrice.toFixed(2) : '-'}</td>
+    <td class="r b">${i.totalCost ? i.totalCost.toFixed(2) : '-'}</td></tr>`).join('');
+
+  const roomBlocks = aufmass.roomsData.map(r => `
+    <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) ${r.isCompleted ? '✓ abgeschlossen' : '(in Montage)'}</h3>
+    <table><thead><tr><th>Pos</th><th>Material</th><th class="r">Plan</th><th class="r">Kumuliert bis Stichtag</th><th class="r">Delta seit vorigem Aufmaß</th><th>Hinweis</th></tr></thead><tbody>
+    ${r.positions.map(p => `<tr><td>${esc(p.posNr)}</td><td>${esc(p.shortText)}</td><td class="r">${p.plannedQty} ${esc(p.qu)}</td><td class="r b">${p.totalInstalledToDate}</td><td class="r b">${p.installedInPeriod}</td><td>${p.isOverconsumption ? `+${p.excessQty} ${esc(p.qu)} ` : ''}${esc(p.reason || '')}</td></tr>`).join('')}
+    </tbody></table>`).join('');
+
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(aufmass.aufmassNumber)}</title>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:24px}
+    h1{font-size:18px;margin:0}h3{font-size:12px;margin:16px 0 4px}
+    .brand{color:#3B82C4;font-weight:bold;font-size:12px}
+    table{width:100%;border-collapse:collapse;margin-top:6px}
+    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
+    th{background:#eef2f7}.r{text-align:right}.b{font-weight:bold}
+    .meta td{border:none;padding:1px 6px 1px 0}
+    .sig{display:flex;gap:60px;margin-top:50px}.sig div{border-top:1px solid #000;width:240px;padding-top:4px}
+    @media print{.pb{page-break-before:always}}
+  </style></head><body>
+  <div class="brand">BURK Haustechnik</div>
+  <h1>Aufmaß ${esc(aufmass.aufmassNumber)}</h1>
+  <table class="meta"><tr><td>Projekt:</td><td><b>${esc(aufmass.projectName)}</b></td></tr>
+  <tr><td>Stichtag der Abrechnung:</td><td><b>${d(aufmass.dateTo)}</b></td></tr>
+  <tr><td>Delta-Zeitraum (seit vorigem Aufmaß):</td><td>${d(aufmass.dateFrom)} bis ${d(aufmass.dateTo)}</td></tr>
+  <tr><td>Erstellt:</td><td>${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${esc(aufmass.createdBy)}</td></tr>
+  <tr><td>Abrechnungsvolumen (Delta):</td><td><b>${eur(aufmass.totalPeriodVolume)}</b></td></tr></table>
+  ${aufmass.notes ? `<p>Bemerkung: ${esc(aufmass.notes)}</p>` : ''}
+  <h3>Gesamtübersicht</h3>
+  <table><thead><tr><th>Pos</th><th>Material / Leistung</th><th class="r">Plan</th><th class="r">Kumuliert bis Stichtag</th><th class="r">Delta seit vorigem Aufmaß</th><th>Einheit</th><th class="r">EP (€)</th><th class="r">Betrag Delta (€)</th></tr></thead><tbody>${summaryRows}</tbody></table>
+  <div class="pb"></div>
+  <h2>Raumaufstellung</h2>${roomBlocks}
+  <div class="sig"><div>Datum / Auftragnehmer</div><div>Datum / Auftraggeber</div></div>
+  <script>window.onload=function(){window.focus();window.print();}<\/script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (!w) {
+    alert('Pop-up wurde blockiert. Bitte Pop-ups für den PDF-Export erlauben.');
+    return;
+  }
+  w.document.write(html);
+  w.document.close();
 }

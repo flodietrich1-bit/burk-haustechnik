@@ -39,9 +39,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
     }
 
     // Check role: Only admin and bauleiter allowed in cockpit
-    if (user.role !== 'admin' && user.role !== 'bauleiter') {
+    if (user.role !== 'admin' && user.role !== 'bauleiter' && user.role !== 'projektleiter') {
       setLoading(false);
-      setError('Zugriff verweigert: Dieser Zugang ist ausschließlich für Eigentümer/Admin und Bauleiter freigeschaltet.');
+      setError('Zugriff verweigert: Dieser Zugang ist ausschließlich für Eigentümer/Admin und Projektleiter freigeschaltet.');
       return;
     }
 
@@ -86,7 +86,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
           </span>
         </div>
         <h1 className="text-lg font-bold text-slate-300">
-          Cockpit-Anmeldung für Bauleitung & Eigentümer
+          Cockpit-Anmeldung für Projektleitung & Eigentümer
         </h1>
       </div>
 
@@ -190,7 +190,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
                 </span>
               </button>
 
-              {/* Bauleiter Demo Button */}
+              {/* Projektleiter Demo Button */}
               <button
                 type="button"
                 onClick={() => handleQuickLogin('f.buck@burk-haustechnik.de', 'Bauleiter2026!')}
@@ -202,7 +202,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLogin }) => {
                   </div>
                   <div>
                     <span className="text-xs font-bold text-white block group-hover:text-amber-400 transition-colors">
-                      Bauleiter: Florian Buck
+                      Projektleiter: Florian Buck
                     </span>
                     <span className="text-[11px] text-slate-400 block font-mono">
                       f.buck@burk-haustechnik.de • PW: Bauleiter2026!

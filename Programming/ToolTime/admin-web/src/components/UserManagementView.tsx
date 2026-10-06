@@ -37,8 +37,10 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
     status: 'active'
   });
 
+  const isPL = (u: User) => u.role === 'projektleiter' || u.role === 'bauleiter';
   const filteredUsers = users.filter(u => {
     if (roleFilter === 'all') return true;
+    if (roleFilter === 'projektleiter') return isPL(u);
     return u.role === roleFilter;
   });
 
@@ -113,18 +115,19 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
             <span>Eigentümer / Admin</span>
           </span>
         );
+      case 'projektleiter':
       case 'bauleiter':
         return (
           <span className="inline-flex items-center space-x-1 text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 px-2.5 py-0.5 rounded-full">
             <HardHat className="w-3.5 h-3.5 text-blue-600" />
-            <span>Bauleiter</span>
+            <span>Projektleiter</span>
           </span>
         );
       case 'kaufmaennisch':
         return (
           <span className="inline-flex items-center space-x-1 text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
             <Briefcase className="w-3.5 h-3.5 text-amber-600" />
-            <span>Kaufmännische Leitung</span>
+            <span>Kaufmann / Kauffrau</span>
           </span>
         );
       case 'monteur':
@@ -152,7 +155,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
               Benutzer- & Rollenverwaltung
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Zentrale Verwaltung von Eigentümern, Bauleitern, Kaufmännischen Leitern und Monteuren inkl. App-PINs
+              Zentrale Verwaltung von Eigentümern, Projektleitern, Kaufleuten und Monteuren inkl. App-PINs
             </p>
           </div>
         </div>
@@ -171,8 +174,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
         {[
           { id: 'all', label: `Alle (${users.length})` },
           { id: 'admin', label: `Admins / Eigentümer (${users.filter(u => u.role === 'admin').length})` },
-          { id: 'bauleiter', label: `Bauleiter (${users.filter(u => u.role === 'bauleiter').length})` },
-          { id: 'kaufmaennisch', label: `Kaufm. Leitung (${users.filter(u => u.role === 'kaufmaennisch').length})` },
+          { id: 'projektleiter', label: `Projektleiter (${users.filter(isPL).length})` },
+          { id: 'kaufmaennisch', label: `Kaufmann / Kauffrau (${users.filter(u => u.role === 'kaufmaennisch').length})` },
           { id: 'monteur', label: `Monteure (${users.filter(u => u.role === 'monteur').length})` }
         ].map(tab => (
           <button
@@ -415,8 +418,8 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                 >
                   <option value="monteur">Monteur (Baustelle / App)</option>
-                  <option value="bauleiter">Bauleiter (Baustellenleitung)</option>
-                  <option value="kaufmaennisch">Kaufmännische Leitung (Bestellungen & Rechnungen)</option>
+                  <option value="projektleiter">Projektleiter (Projekt- & Baustellenleitung)</option>
+                  <option value="kaufmaennisch">Kaufmann / Kauffrau (Bestellungen & Rechnungen)</option>
                   <option value="admin">Eigentümer / Admin</option>
                 </select>
               </div>

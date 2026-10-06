@@ -176,7 +176,7 @@ export interface PlanDeviationItem {
   actionNote?: string;
 }
 
-export type UserRole = 'admin' | 'bauleiter' | 'kaufmaennisch' | 'monteur';
+export type UserRole = 'admin' | 'projektleiter' | 'bauleiter' | 'kaufmaennisch' | 'monteur';
 
 export interface User {
   id: string;

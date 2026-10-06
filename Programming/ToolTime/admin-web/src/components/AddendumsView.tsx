@@ -153,7 +153,7 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [newUnit, setNewUnit] = useState('Stk');
   const [newRoomId, setNewRoomId] = useState('');
   const [newNote, setNewNote] = useState('');
-  const [newRequestedBy, setNewRequestedBy] = useState('Bauleiter');
+  const [newRequestedBy, setNewRequestedBy] = useState('Projektleiter');
 
   // Reorder Modal State ("Material Nachbestellen")
   const [reorderItem, setReorderItem] = useState<Addendum | null>(null);
@@ -369,7 +369,7 @@ Bauleitung`;
       roomId: newRoomId || 'allgemein',
       roomName: selectedRoom ? selectedRoom.name : 'Baustelle allgemein',
       note: newNote.trim(),
-      requestedBy: newRequestedBy.trim() || 'Bauleiter',
+      requestedBy: newRequestedBy.trim() || 'Projektleiter',
       status: 'pending',
     });
 
@@ -1133,7 +1133,7 @@ Bauleitung`;
                 <label className="font-bold text-slate-700 block mb-1">Gemeldet durch</label>
                 <input
                   type="text"
-                  placeholder="z. B. Florian Buck (Bauleiter)"
+                  placeholder="z. B. Florian Buck (Projektleiter)"
                   value={newRequestedBy}
                   onChange={e => setNewRequestedBy(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"

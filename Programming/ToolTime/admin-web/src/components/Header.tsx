@@ -300,7 +300,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className={`text-[10px] font-bold uppercase tracking-wider block ${
                     currentUser.role === 'admin' ? 'text-blue-400' : 'text-amber-400'
                   }`}>
-                    {currentUser.role === 'admin' ? 'Eigentümer / Admin' : 'Bauleiter'}
+                    {currentUser.role === 'admin' ? 'Eigentümer / Admin' : 'Projektleiter'}
                   </span>
                 </div>
               </button>
@@ -320,7 +320,7 @@ export const Header: React.FC<HeaderProps> = ({
                         ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
                         : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     }`}>
-                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : 'Zuständiger Bauleiter'}
+                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : 'Projektleiter'}
                     </span>
                   </div>
 

@@ -56,7 +56,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   useEffect(() => {
     if (!projectManagerId && users.length > 0) {
-      const bl = users.find(u => u.role === 'bauleiter') || users.find(u => u.name.includes('Buck')) || users[0];
+      const bl = users.find(u => u.role === 'projektleiter' || u.role === 'bauleiter') || users.find(u => u.name.includes('Buck')) || users[0];
       if (bl) {
         setProjectManagerId(bl.id);
         setProjectManager(bl.name);
@@ -89,7 +89,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   if (!isOpen) return null;
 
-  const bauleiterList = users.filter(u => u.role === 'bauleiter' || u.role === 'admin');
+  const bauleiterList = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmList = users.filter(u => u.role === 'kaufmaennisch' || u.role === 'admin');
   const monteurList = users.filter(u => u.role === 'monteur');
 
@@ -500,21 +500,21 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   />
                 </div>
 
-                {/* Bauleiter Dropdown */}
+                {/* Projektleiter Dropdown */}
                 <div className="space-y-1">
                   <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                     <HardHat className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Zuständiger Bauleiter *</span>
+                    <span>Zuständiger Projektleiter *</span>
                   </label>
                   <select
                     value={projectManagerId}
                     onChange={(e) => handleSelectBauleiter(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                   >
-                    <option value="">-- Bauleiter auswählen --</option>
+                    <option value="">-- Projektleiter auswählen --</option>
                     {bauleiterList.map(u => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Bauleiter'})
+                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
                       </option>
                     ))}
                   </select>
@@ -530,17 +530,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 <div className="space-y-1">
                   <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                     <Briefcase className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Kaufmännischer Leiter (Nachbestellungen & Freigaben) *</span>
+                    <span>Kaufmann / Kauffrau (Nachbestellungen & Freigaben) *</span>
                   </label>
                   <select
                     value={commercialManagerId}
                     onChange={(e) => handleSelectKfm(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                   >
-                    <option value="">-- Kaufmännischen Leiter auswählen --</option>
+                    <option value="">-- Kaufmann / Kauffrau auswählen --</option>
                     {kfmList.map(u => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmännische Leitung'})
+                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
                       </option>
                     ))}
                   </select>
@@ -723,8 +723,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-slate-600">
                   <div>Projekt: <strong className="text-slate-900 block truncate">{name}</strong></div>
-                  <div>Bauleiter: <strong className="text-slate-900 block truncate">{projectManager}</strong></div>
-                  <div>Kfm. Leitung: <strong className="text-slate-900 block truncate">{commercialManager}</strong></div>
+                  <div>Projektleiter: <strong className="text-slate-900 block truncate">{projectManager}</strong></div>
+                  <div>Kaufmann / Kauffrau: <strong className="text-slate-900 block truncate">{commercialManager}</strong></div>
                   <div>Monteure: <strong className="text-slate-900 block">{assignedMonteurIds.length} zugewiesen</strong></div>
                 </div>
               </div>

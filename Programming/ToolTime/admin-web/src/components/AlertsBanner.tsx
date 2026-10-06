@@ -89,7 +89,7 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
             projectId,
             alert.id,
             'acknowledged',
-            'Vom Bauleiter als erledigt bestätigt (kein Nachbestellbedarf)'
+            'Vom Projektleiter als erledigt bestätigt (kein Nachbestellbedarf)'
           );
         } else if (choice === 'reorder') {
           // Vormerken für E-Mail an kaufmännischen Leiter
@@ -138,7 +138,7 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
     ),
     'Bitte beim zuständigen Großhändler auslösen.',
     '',
-    `Mit freundlichen Grüßen,\n${project?.projectManager || 'Florian Buck (Bauleiter)'}\nBurk Haustechnik`
+    `Mit freundlichen Grüßen,\n${project?.projectManager || 'Florian Buck (Projektleiter)'}\nBurk Haustechnik`
   ];
   const mailBody = encodeURIComponent(mailLines.join('\n'));
   const mailtoHref = `mailto:${kfmEmail}?subject=${mailSubject}&body=${mailBody}`;
@@ -169,8 +169,8 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
                 {isExpanded 
-                  ? 'Bauleiter-Entscheidung: Prüfen Sie Vor-Ort-Bedarf vs. Lagerbestände und veranlassen Sie Nachbestellungen.'
-                  : `${openAlerts.length} Posten benötigen Feedback durch die Bauleitung (Klicken zum Aufklappen)`}
+                  ? 'Projektleiter-Entscheidung: Prüfen Sie Vor-Ort-Bedarf vs. Lagerbestände und veranlassen Sie Nachbestellungen.'
+                  : `${openAlerts.length} Posten benötigen Feedback durch die Projektleitung (Klicken zum Aufklappen)`}
               </p>
             </div>
           </div>
@@ -268,7 +268,7 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
 
                         {/* 3 RADIO BUTTON OPTIONS FOR BAULEITER */}
                         <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-                          <span className="text-xs font-bold text-slate-700">Entscheidung Bauleiter:</span>
+                          <span className="text-xs font-bold text-slate-700">Entscheidung Projektleiter:</span>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
                             {/* Option 1: Bestätigen */}
@@ -371,7 +371,7 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Nachbestellung an Kaufmännische Leitung übermitteln
+                    Nachbestellung an Kaufmann / Kauffrau übermitteln
                   </h3>
                   <p className="text-xs text-slate-500">
                     Empfänger: <strong>{project?.commercialManager || 'Sabine Müller'}</strong> ({kfmEmail})

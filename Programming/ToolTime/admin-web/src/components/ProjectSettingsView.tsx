@@ -25,7 +25,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const isBauleiter = currentUser?.role === 'bauleiter';
+  const isBauleiter = currentUser?.role !== 'admin'; // Nicht-Admins (Projektleiter): Stammdaten, Projektleiter & Kaufmann gesperrt
 
   useEffect(() => {
     if (project) {
@@ -57,7 +57,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
     );
   }
 
-  const bauleiterUsers = users.filter(u => u.role === 'bauleiter' || u.role === 'admin');
+  const bauleiterUsers = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || (u.role as string) === 'kaufmännisch' || u.role === 'admin');
   const monteurUsers = users.filter(u => u.role === 'monteur');
 
@@ -95,7 +95,12 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
     e.preventDefault();
     setIsSaving(true);
     try {
-      await updateProjectDetails(project.id, form);
+      // Nur Admin/Owner darf Stammdaten, Projektleiter & Kaufmann/Kauffrau ändern.
+      // Projektleiter dürfen ausschließlich die Monteure des Projekts verwalten.
+      const payload: Partial<Project> = isBauleiter
+        ? { assignedMonteurIds: form.assignedMonteurIds || [] }
+        : form;
+      await updateProjectDetails(project.id, payload);
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
     } finally {
@@ -116,7 +121,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               Projekteinstellungen: {project.name}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Anpassen von Stammdaten, Bauleitung, kaufmännischer Leitung und zugewiesenen Monteuren
+              Anpassen von Stammdaten, Projektleitung, Kaufmann / Kauffrau und zugewiesenen Monteuren
             </p>
           </div>
         </div>
@@ -268,11 +273,11 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               />
             </div>
 
-            {/* Zuständiger Bauleiter Dropdown */}
+            {/* Zuständiger Projektleiter Dropdown */}
             <div className="space-y-1">
               <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                 <HardHat className="w-3.5 h-3.5 text-blue-600" />
-                <span>Zuständiger Bauleiter *</span>
+                <span>Zuständiger Projektleiter * (nur Admin)</span>
               </label>
               <select
                 disabled={isBauleiter}
@@ -282,10 +287,10 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                   isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
                 }`}
               >
-                <option value="">-- Bauleiter auswählen --</option>
+                <option value="">-- Projektleiter auswählen --</option>
                 {bauleiterUsers.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Bauleiter'})
+                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
                   </option>
                 ))}
               </select>
@@ -301,7 +306,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
             <div className="space-y-1">
               <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                 <Briefcase className="w-3.5 h-3.5 text-amber-600" />
-                <span>Kaufmännischer Leiter (Nachbestellungen & Abrechnung) *</span>
+                <span>Kaufmann / Kauffrau (Nachbestellungen & Abrechnung) * (nur Admin)</span>
               </label>
               <select
                 disabled={isBauleiter}
@@ -311,10 +316,10 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                   isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
                 }`}
               >
-                <option value="">-- Kaufmännischen Leiter auswählen --</option>
+                <option value="">-- Kaufmann / Kauffrau auswählen --</option>
                 {kfmUsers.map(u => (
                   <option key={u.id} value={u.id}>
-                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmännische Leitung'})
+                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
                   </option>
                 ))}
               </select>
@@ -338,7 +343,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
             <div className="flex items-center space-x-2">
               {isBauleiter && (
                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full">
-                  ✓ Für Bauleiter freigegeben
+                  ✓ Für Projektleiter freigegeben (nur Monteure)
                 </span>
               )}
               <span className="text-xs font-semibold text-[#3B82C4] bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">

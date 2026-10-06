@@ -207,7 +207,7 @@ export const RoomDetailModal: React.FC<RoomDetailModalProps> = ({
 
               {room.completedAt && (
                 <span className="text-xs text-slate-500">
-                  Abgeschlossen am {new Date(room.completedAt).toLocaleDateString('de-DE')} durch {room.completedBy || 'Bauleiter'}
+                  Abgeschlossen am {new Date(room.completedAt).toLocaleDateString('de-DE')} durch {room.completedBy || 'Projektleiter'}
                 </span>
               )}
             </div>

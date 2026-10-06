@@ -32,7 +32,7 @@ import {
   deleteAufmassDocument, 
   calculateAufmassSnapshot 
 } from '../services/aufmassService';
-import { exportAufmassToExcel } from '../services/excelExporter';
+import { exportAufmassToExcel, exportAufmassToPdf } from '../services/excelExporter';
 
 interface AufmassViewProps {
   projectId: string;
@@ -68,10 +68,12 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // 1. Listen to Aufmasse from Firestore
+  // 1. Listen to Aufmasse from Firestore (neueste Stichtage zuerst)
   useEffect(() => {
     if (!projectId) return;
-    const unsub = listenToAufmasse(projectId, setAufmasse);
+    const unsub = listenToAufmasse(projectId, (list) =>
+      setAufmasse([...list].sort((a, b) => b.dateTo.localeCompare(a.dateTo) || b.createdAt.localeCompare(a.createdAt)))
+    );
     return () => unsub();
   }, [projectId]);
 
@@ -166,6 +168,11 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     exportAufmassToExcel(aufmass);
   };
 
+  const handleExportPdf = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    exportAufmassToPdf(aufmass);
+  };
+
   // Filtered Summary in Detail View
   const filteredSummaryItems = useMemo(() => {
     if (!selectedAufmass) return [];
@@ -242,6 +249,13 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
             >
               <Download className="w-4 h-4" />
               <span>Excel Export (.xlsx)</span>
+            </button>
+            <button
+              onClick={() => handleExportPdf(selectedAufmass)}
+              className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+            >
+              <Download className="w-4 h-4" />
+              <span>PDF Export</span>
             </button>
           </div>
         </div>
@@ -606,6 +620,13 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                       <Download className="w-4 h-4" />
                     </button>
                     <button
+                      onClick={(e) => handleExportPdf(aufmass, e)}
+                      className="px-1.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                      title="PDF-Export"
+                    >
+                      PDF
+                    </button>
+                    <button
                       onClick={(e) => handleDeleteAufmass(aufmass.id, e)}
                       className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Aufmaß löschen"
@@ -682,25 +703,26 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
 
             {/* Modal Form */}
             <form onSubmit={handleCreateSubmit} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Stichtag (Bis-Datum) *
+              <div className="bg-blue-50 border-2 border-[#3B82C4] rounded-xl p-3">
+                <label className="block font-bold text-[#1C2A3B] mb-1">
+                  Stichtag der Abrechnung *
                 </label>
                 <input
                   type="date"
                   required
+                  autoFocus
                   value={dateTo}
                   onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  className="w-full px-3 py-2 bg-white border border-[#3B82C4] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                 />
                 <span className="text-[11px] text-slate-400 mt-1 block">
-                  Alle bis zu diesem Datum verbauten Materialien werden abgerechnet.
+                  Vorbelegt mit heutigem Datum. Alle bis zu diesem Stichtag verbauten Materialien werden kumuliert abgerechnet.
                 </span>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Von-Datum (Beginn des Intervalls) *
+                  Beginn des Abrechnungszeitraums (Von-Datum) *
                 </label>
                 <input
                   type="date"

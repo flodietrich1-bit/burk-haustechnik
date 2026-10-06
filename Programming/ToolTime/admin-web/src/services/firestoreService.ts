@@ -627,7 +627,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
     description: addendumData.description || '',
     quantity: addendumData.quantity || '1',
     qu: addendumData.qu || 'Stk',
-    requestedBy: addendumData.requestedBy || 'Bauleiter',
+    requestedBy: addendumData.requestedBy || 'Projektleiter',
     status: (addendumData.status as any) || 'pending',
     note: addendumData.note || '',
     signature: addendumData.signature || null,
@@ -771,7 +771,7 @@ export async function completeRoom(
   projectId: string,
   roomId: string,
   isCompleted: boolean = true,
-  completedBy: string = 'Florian Buck (Bauleiter)'
+  completedBy: string = 'Florian Buck (Projektleiter)'
 ) {
   const now = new Date().toISOString();
   const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
@@ -932,7 +932,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'user_bl_1',
     name: 'Florian Buck',
-    role: 'bauleiter',
+    role: 'projektleiter',
     email: 'f.buck@burk-haustechnik.de',
     password: 'Bauleiter2026!',
     phone: '+49 171 1234567',
@@ -942,7 +942,7 @@ export const MOCK_USERS: User[] = [
   {
     id: 'user_bl_2',
     name: 'Michael Weber',
-    role: 'bauleiter',
+    role: 'projektleiter',
     email: 'm.weber@burk-haustechnik.de',
     password: 'Bauleiter2026!',
     phone: '+49 171 2345678',

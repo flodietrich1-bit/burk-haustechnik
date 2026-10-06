@@ -28,6 +28,7 @@ export interface RoomDeviation {
   plannedQty: number;
   actualQty: number;
   diff: number; // actual - planned
+  counts?: boolean; // zählt zur Netto-Abweichung (Mehrverbrauch sofort, Minderverbrauch nur bei fertigem Raum)
 }
 
 export interface GroupedDeviation {
@@ -38,7 +39,7 @@ export interface GroupedDeviation {
   qu: string;
   unitPrice: number;
   rooms: RoomDeviation[];
-  netDelta: number; // sum of diffs across all rooms
+  netDelta: number; // sum of confirmed diffs across all rooms
   totalPlannedAcrossRooms: number;
   totalActualAcrossRooms: number;
   deviationType: 'over' | 'under' | 'exact';
@@ -46,8 +47,9 @@ export interface GroupedDeviation {
   reorderedAt?: string;
   actionNote?: string;
   // Project-wide stats
-  projectAvailable: number; // noch verfügbar
-  projectNeeded: number;    // laut Projektplanung benötigt
+  projectAvailable: number; // tatsächlich verfügbar
+  projectNeeded: number;    // laut Plan noch benötigt
+  shortage: number;         // Fehlbedarf = max(0, needed - available)
 }
 
 interface ReordersViewProps {
@@ -108,11 +110,13 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
         const diff = actual - planned;
 
         // RULE:
-        // Overconsumption (diff > 0) shows immediately (even in progress).
-        // Underconsumption (diff < 0) only shows when room is completed (100% fertiggestellt).
-        const hasRelevantDeviation = (diff > 0) || (diff < 0 && isCompleted);
+        // Overconsumption (diff > 0) counts immediately (even in progress).
+        // Underconsumption (diff < 0) counts towards savings only when the room is finished;
+        // otherwise it is pending (remaining work) and only shown informatively.
+        const countsTowardsNet = (diff > 0) || (diff < 0 && isCompleted);
 
-        if (hasRelevantDeviation) {
+        // Consolidate ALL rooms that use this material (e.g. Wasserrohr in Bad + Küche)
+        if (diff !== 0 || countsTowardsNet) {
           const key = m.posNr || m.positionId || m.shortText;
           if (!map.has(key)) {
             const p = posMap.get(m.posNr) || (m.positionId ? posIdMap.get(m.positionId) : undefined);
@@ -134,7 +138,8 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
             isRoomCompleted: isCompleted,
             plannedQty: planned,
             actualQty: actual,
-            diff
+            diff,
+            counts: countsTowardsNet
           });
         }
       });
@@ -170,7 +175,10 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
     const result: GroupedDeviation[] = [];
 
     map.forEach((entry, key) => {
-      const netDelta = entry.rooms.reduce((sum, r) => sum + r.diff, 0);
+      // Netto-Abweichung = Summe der bestätigten Abweichungen aller Räume
+      // (offene Räume mit Minderverbrauch sind nur Restbedarf, keine Ersparnis)
+      const netDelta = entry.rooms.reduce((sum, r) => sum + (r.counts === false ? 0 : r.diff), 0);
+      const hasCounting = entry.rooms.some(r => r.counts !== false);
       const totalPlannedAcrossRooms = entry.rooms.reduce((sum, r) => sum + r.plannedQty, 0);
       const totalActualAcrossRooms = entry.rooms.reduce((sum, r) => sum + r.actualQty, 0);
 
@@ -234,6 +242,11 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
         ? 'over' 
         : (netDelta < 0 ? 'under' : 'exact');
 
+      const shortage = Math.max(0, projectNeeded - projectAvailable);
+
+      // Nur Positionen mit bestätigter Abweichung (oder Alert) anzeigen
+      if (!hasCounting) return;
+
       result.push({
         id: `group_${entry.posNr}_${key}`,
         posNr: entry.posNr,
@@ -250,7 +263,8 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
         reorderedAt: latestAlert?.reorderedAt || latestAlert?.updatedAt,
         actionNote: latestAlert?.actionNote,
         projectAvailable,
-        projectNeeded
+        projectNeeded,
+        shortage
       });
     });
 
@@ -284,12 +298,12 @@ auf der Baustelle "${projectName}" ist für die Position "${group.posNr} - ${gro
 • Position: ${group.posNr} - ${group.materialName}
 • Nachzubestellende Menge: ${qty} ${group.qu}
 • Betroffene Räume: ${roomsSummary}
-• Aktueller Projektstand: Noch verfügbar: ${group.projectAvailable} ${group.qu} • Laut Planung noch benötigt: ${group.projectNeeded} ${group.qu}
+• Aktueller Projektstand: Tatsächlich verfügbar: ${group.projectAvailable} ${group.qu} • Laut Plan noch benötigt: ${group.projectNeeded} ${group.qu}
 
 Bitte veranlassen Sie zeitnah die Nachbestellung beim Großhändler, damit die Montagearbeiten ohne Unterbrechung fortgeführt werden können.
 
 Mit freundlichen Grüßen
-Bauleitung Burk Haustechnik`;
+Projektleitung Burk Haustechnik`;
   };
 
   const handleOpenReorderModal = (group: GroupedDeviation) => {
@@ -332,8 +346,8 @@ Bauleitung Burk Haustechnik`;
         plannedQty: selectedGroup.totalPlannedAcrossRooms,
         requestedTotal: selectedGroup.totalActualAcrossRooms,
         exceededBy: reorderQty,
-        monteurName: 'Bauleiter',
-        reason: `Nachbestellung (+${reorderQty} ${selectedGroup.qu}) vom Bauleiter an kaufmännische Leitung (${managerFirstName}) übermittelt`,
+        monteurName: 'Projektleiter',
+        reason: `Nachbestellung (+${reorderQty} ${selectedGroup.qu}) vom Projektleiter an kaufmännische Leitung (${managerFirstName}) übermittelt`,
         status: 'reordered',
         createdAt: now,
         updatedAt: now,
@@ -355,7 +369,23 @@ Bauleitung Burk Haustechnik`;
     }
   };
 
-  const handleDismissNotice = async (group: GroupedDeviation) => {
+  // Bulk: alle nicht-handlungsrelevanten Hinweise (kein Fehlbedarf) mit einem Klick schließen
+  const noShortageOpen = groupedDeviations.filter(d => d.shortage === 0 && d.status === 'open');
+
+  const handleBulkDismissNoShortage = async () => {
+    if (noShortageOpen.length === 0) return;
+    if (!window.confirm(`${noShortageOpen.length} Hinweise ohne Fehlbedarf schließen?`)) return;
+    setIsProcessing(true);
+    try {
+      for (const g of noShortageOpen) {
+        await handleDismissNotice(g, 'Automatisch geschlossen: Position ohne Fehlbedarf (Bestand ausreichend)');
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDismissNotice = async (group: GroupedDeviation, note?: string) => {
     const alertId = `alert_${group.posNr.replace(/[^a-zA-Z0-9]/g, '_')}`;
     const now = new Date().toISOString();
 
@@ -370,12 +400,12 @@ Bauleitung Burk Haustechnik`;
       plannedQty: group.totalPlannedAcrossRooms,
       requestedTotal: group.totalActualAcrossRooms,
       exceededBy: group.netDelta,
-      monteurName: 'Bauleiter',
-      reason: `Hinweis zur Abweichung ${group.posNr} vom Bauleiter geprüft`,
+      monteurName: 'Projektleiter',
+      reason: `Hinweis zur Abweichung ${group.posNr} vom Projektleiter geprüft`,
       status: 'acknowledged',
       createdAt: now,
       updatedAt: now,
-      actionNote: `Hinweis vom Bauleiter am ${new Date().toLocaleDateString('de-DE')} geschlossen / quittiert`
+      actionNote: note || `Hinweis vom Projektleiter am ${new Date().toLocaleDateString('de-DE')} geschlossen / quittiert`
     });
   };
 
@@ -406,7 +436,7 @@ Bauleitung Burk Haustechnik`;
           <div className="bg-slate-50 border border-slate-200 px-3.5 py-2 rounded-xl text-xs flex items-center space-x-2.5 self-start md:self-auto">
             <Mail className="w-4 h-4 text-[#3B82C4]" />
             <div>
-              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Zuständige Kfm. Leitung:</span>
+              <span className="text-[10px] text-slate-400 block font-semibold uppercase">Zuständige(r) Kaufmann / Kauffrau:</span>
               <span className="font-bold text-slate-800">{project.commercialManager}</span>
               {project.commercialManagerEmail && (
                 <span className="text-slate-500 text-[11px] block">{project.commercialManagerEmail}</span>
@@ -506,6 +536,19 @@ Bauleitung Burk Haustechnik`;
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Bulk action */}
+      <div className="flex justify-end">
+        <button
+          type="button"
+          disabled={isProcessing || noShortageOpen.length === 0}
+          onClick={handleBulkDismissNoShortage}
+          className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+        >
+          <CheckCheck className="w-3.5 h-3.5" />
+          <span>Hinweise schließen für Positionen ohne Fehlbedarf ({noShortageOpen.length})</span>
+        </button>
       </div>
 
       {/* Filter Tabs */}
@@ -654,9 +697,9 @@ Bauleitung Burk Haustechnik`;
                             <span className="text-slate-500">Plan: {r.plannedQty}</span>
                             <span className="text-slate-800 font-bold">Ist: {r.actualQty}</span>
                             <span className={`font-black ${
-                              r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded'
+                              r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : (r.counts === false ? 'text-amber-700 bg-amber-50 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded')
                             }`}>
-                              {r.diff > 0 ? `+${r.diff}` : `${r.diff}`} {group.qu}
+                              {r.counts === false ? `offen ${Math.abs(r.diff)}` : (r.diff > 0 ? `+${r.diff}` : `${r.diff}`)} {group.qu}
                             </span>
                           </div>
                         </div>
@@ -668,10 +711,10 @@ Bauleitung Burk Haustechnik`;
                   <div className="grid grid-cols-2 gap-2.5 p-3 bg-blue-50/50 rounded-xl border border-blue-100/80 text-center">
                     <div className="bg-white/80 p-2 rounded-lg border border-blue-200/60 shadow-xs">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Noch verfügbar
+                        Tatsächlich verfügbar
                       </span>
                       <span className={`text-base font-black block mt-0.5 ${
-                        group.projectAvailable >= group.projectNeeded ? 'text-emerald-700' : 'text-red-600'
+                        group.shortage === 0 ? 'text-emerald-700' : 'text-red-600'
                       }`}>
                         {group.projectAvailable} {group.qu}
                       </span>
@@ -682,13 +725,13 @@ Bauleitung Burk Haustechnik`;
 
                     <div className="bg-white/80 p-2 rounded-lg border border-blue-200/60 shadow-xs">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Laut Planung benötigt
+                        Laut Plan benötigt
                       </span>
                       <span className="text-base font-black text-slate-900 block mt-0.5">
                         {group.projectNeeded} {group.qu}
                       </span>
                       <span className="text-[9px] text-slate-400 block mt-0.5">
-                        in weiteren Räumen
+                        {group.shortage > 0 ? `Fehlbedarf: ${group.shortage} ${group.qu}` : 'kein Fehlbedarf'}
                       </span>
                     </div>
                   </div>
@@ -728,7 +771,7 @@ Bauleitung Burk Haustechnik`;
                       title="Nachbestellung an kaufmännische Leitung per E-Mail senden"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>{isReordered ? 'Nachbestellung erneut senden' : 'Nachbestellung an Kfm. Leitung'}</span>
+                      <span>{isReordered ? 'Nachbestellung erneut senden' : 'Nachbestellung an Kaufmann / Kauffrau'}</span>
                     </button>
                   ) : (
                     <button
@@ -755,7 +798,7 @@ Bauleitung Burk Haustechnik`;
               <div className="flex items-center space-x-2">
                 <Send className="w-5 h-5 text-red-600" />
                 <h3 className="font-bold text-base text-slate-900">
-                  Material-Nachbestellung an Kfm. Leitung
+                  Material-Nachbestellung an Kaufmann / Kauffrau
                 </h3>
               </div>
               <button
@@ -815,8 +858,8 @@ Bauleitung Burk Haustechnik`;
                 </div>
 
                 <div className="pt-2 border-t border-red-200/60 flex items-center justify-between text-[11px] text-red-800">
-                  <span>Projektstand: Noch verfügbar: <strong>{selectedGroup.projectAvailable} {selectedGroup.qu}</strong></span>
-                  <span>Laut Planung benötigt: <strong>{selectedGroup.projectNeeded} {selectedGroup.qu}</strong></span>
+                  <span>Projektstand: Tatsächlich verfügbar: <strong>{selectedGroup.projectAvailable} {selectedGroup.qu}</strong></span>
+                  <span>Laut Plan benötigt: <strong>{selectedGroup.projectNeeded} {selectedGroup.qu}</strong></span>
                 </div>
               </div>
 
