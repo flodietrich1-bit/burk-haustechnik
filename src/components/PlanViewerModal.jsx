@@ -47,27 +47,58 @@ export default function PlanViewerModal({
   const initialScaleRef = useRef(1);
   const lastTouchPosRef = useRef({ x: 0, y: 0 });
 
+  const getFitScale = () => {
+    const viewportWidth = SCREEN_WIDTH;
+    const viewportHeight = SCREEN_HEIGHT - 210;
+    return Math.max(0.2, Math.min((viewportWidth - 24) / CANVAS_WIDTH, (viewportHeight - 24) / CANVAS_HEIGHT, 1.0));
+  };
+
+  const focusOnRoom = (r, animatedScale = 1.35) => {
+    const rx = r.x + r.width / 2;
+    const ry = r.y + r.height / 2;
+    const targetScale = animatedScale;
+    const targetPanX = (CANVAS_WIDTH / 2 - rx) * targetScale;
+    const targetPanY = (CANVAS_HEIGHT / 2 - ry) * targetScale;
+    updateZoomState(targetScale, { x: targetPanX, y: targetPanY });
+  };
+
   useEffect(() => {
     if (visible) {
-      // Reset zoom on open
-      setScale(1);
-      setPan({ x: 0, y: 0 });
-      scaleRef.current = 1;
-      panRef.current = { x: 0, y: 0 };
-      setCurrentZoomLabel('100%');
+      const fitScale = getFitScale();
+      const vectorData = plan?.vectorData;
+
+      const targetRoom = vectorData?.rooms?.find(r => 
+        (room?.id && r.id && room.id === r.id) ||
+        (room?.code && r.code && room.code.toLowerCase() === r.code.toLowerCase()) ||
+        (room?.name && r.name && (
+          room.name.toLowerCase() === r.name.toLowerCase() ||
+          r.name.toLowerCase().includes(room.name.toLowerCase()) ||
+          room.name.toLowerCase().includes(r.name.toLowerCase())
+        ))
+      );
+
+      if (targetRoom) {
+        // Direct room focus on open (e.g. Monteur in bathroom sees bathroom immediately)
+        focusOnRoom(targetRoom);
+      } else {
+        // Full overview fit on open
+        updateZoomState(fitScale, { x: 0, y: 0 });
+      }
     }
-  }, [visible, plan?.id]);
+  }, [visible, plan?.id, room?.id]);
 
   const updateZoomState = (newScale, newPan) => {
-    const clampedScale = Math.min(6.0, Math.max(0.8, newScale));
+    const fitScale = getFitScale();
+    const minScale = Math.min(0.25, fitScale * 0.8);
+    const clampedScale = Math.min(6.0, Math.max(minScale, newScale));
     setScale(clampedScale);
     scaleRef.current = clampedScale;
     setCurrentZoomLabel(`${Math.round(clampedScale * 100)}%`);
 
     if (newPan) {
       // Clamping pan bounds based on zoom
-      const maxPanX = ((CANVAS_WIDTH * clampedScale) - SCREEN_WIDTH) / 2 + 100;
-      const maxPanY = ((CANVAS_HEIGHT * clampedScale) - SCREEN_HEIGHT) / 2 + 150;
+      const maxPanX = Math.max(120, ((CANVAS_WIDTH * clampedScale) - SCREEN_WIDTH) / 2 + 150);
+      const maxPanY = Math.max(120, ((CANVAS_HEIGHT * clampedScale) - SCREEN_HEIGHT) / 2 + 200);
       const clampedX = Math.max(-maxPanX, Math.min(maxPanX, newPan.x));
       const clampedY = Math.max(-maxPanY, Math.min(maxPanY, newPan.y));
       setPan({ x: clampedX, y: clampedY });
@@ -126,21 +157,40 @@ export default function PlanViewerModal({
     })
   ).current;
 
-  // Zoom Button Controls
+  // Zoom & Focus Button Controls
   const handleZoomIn = () => {
-    updateZoomState(scaleRef.current + 0.5, panRef.current);
+    updateZoomState(scaleRef.current + 0.4, panRef.current);
   };
 
   const handleZoomOut = () => {
-    updateZoomState(scaleRef.current - 0.5, panRef.current);
+    updateZoomState(scaleRef.current - 0.4, panRef.current);
   };
 
-  const handleResetZoom = () => {
-    updateZoomState(1.0, { x: 0, y: 0 });
+  const handleFitScreen = () => {
+    const fitScale = getFitScale();
+    updateZoomState(fitScale, { x: 0, y: 0 });
+  };
+
+  const handleFocusActiveRoom = () => {
+    const vectorData = plan?.vectorData;
+    const targetRoom = vectorData?.rooms?.find(r => 
+      (room?.id && r.id && room.id === r.id) ||
+      (room?.code && r.code && room.code.toLowerCase() === r.code.toLowerCase()) ||
+      (room?.name && r.name && (
+        room.name.toLowerCase() === r.name.toLowerCase() ||
+        r.name.toLowerCase().includes(room.name.toLowerCase()) ||
+        room.name.toLowerCase().includes(r.name.toLowerCase())
+      ))
+    );
+    if (targetRoom) {
+      focusOnRoom(targetRoom);
+    } else {
+      handleFitScreen();
+    }
   };
 
   const handleMaxZoom = () => {
-    updateZoomState(3.5, { x: 0, y: 0 });
+    updateZoomState(3.0, panRef.current);
   };
 
   const handleOpenExternalPdf = async () => {
@@ -394,6 +444,30 @@ export default function PlanViewerModal({
                           <Rect x={d.x - 10} y={d.y - 6} width={20} height={12} fill="#38BDF8" rx={3} />
                           <SvgText x={d.x + 14} y={d.y + 4} fill="#E2E8F0" fontSize={9}>
                             {d.label || 'WT'}
+                          </SvgText>
+                        </G>
+                      );
+                    }
+                    if (d.type === 'dusche') {
+                      return (
+                        <G key={`vd_${i}`}>
+                          <Rect x={d.x - 16} y={d.y - 16} width={32} height={32} fill="#0284C7" stroke="#38BDF8" strokeWidth={1.5} rx={3} />
+                          <Line x1={d.x - 16} y1={d.y - 16} x2={d.x + 16} y2={d.y + 16} stroke="#38BDF8" strokeWidth={0.8} strokeDasharray="2,2" />
+                          <Line x1={d.x - 16} y1={d.y + 16} x2={d.x + 16} y2={d.y - 16} stroke="#38BDF8" strokeWidth={0.8} strokeDasharray="2,2" />
+                          <Circle cx={d.x} cy={d.y} r={3} fill="#FFFFFF" />
+                          <SvgText x={d.x} y={d.y + 24} fill="#E2E8F0" fontSize={8} textAnchor="middle">
+                            {d.label || 'Dusche'}
+                          </SvgText>
+                        </G>
+                      );
+                    }
+                    if (d.type === 'badewanne') {
+                      return (
+                        <G key={`vd_${i}`}>
+                          <Rect x={d.x - 24} y={d.y - 12} width={48} height={24} fill="#0369A1" stroke="#38BDF8" strokeWidth={1.5} rx={6} />
+                          <Circle cx={d.x + 15} cy={d.y} r={2.5} fill="#FFFFFF" />
+                          <SvgText x={d.x} y={d.y + 20} fill="#E2E8F0" fontSize={8} textAnchor="middle">
+                            {d.label || 'Wanne'}
                           </SvgText>
                         </G>
                       );
@@ -703,16 +777,22 @@ export default function PlanViewerModal({
               <Text style={styles.zoomBtnText}>−</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.zoomResetBtn} onPress={handleResetZoom} activeOpacity={0.7}>
-              <Text style={styles.zoomResetText}>{currentZoomLabel}</Text>
+            <TouchableOpacity style={styles.zoomResetBtn} onPress={handleFitScreen} activeOpacity={0.7}>
+              <Text style={styles.zoomResetText}>📐 Gesamt</Text>
             </TouchableOpacity>
+
+            {room && (
+              <TouchableOpacity style={styles.roomFocusBtn} onPress={handleFocusActiveRoom} activeOpacity={0.7}>
+                <Text style={styles.roomFocusBtnText} numberOfLines={1}>🏠 {room.name || 'Raum'}</Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity style={styles.zoomBtn} onPress={handleZoomIn} activeOpacity={0.7}>
               <Text style={styles.zoomBtnText}>+</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.zoomMaxBtn} onPress={handleMaxZoom} activeOpacity={0.7}>
-              <Text style={styles.zoomMaxText}>🔍 3.5x</Text>
+              <Text style={styles.zoomMaxText}>🔍 3x</Text>
             </TouchableOpacity>
           </View>
 
@@ -863,6 +943,22 @@ const styles = StyleSheet.create({
     color: '#38BDF8',
     fontSize: 12,
     fontWeight: '800',
+  },
+  roomFocusBtn: {
+    paddingHorizontal: 10,
+    maxWidth: 120,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#0284C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+  },
+  roomFocusBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   zoomMaxBtn: {
     paddingHorizontal: 8,
