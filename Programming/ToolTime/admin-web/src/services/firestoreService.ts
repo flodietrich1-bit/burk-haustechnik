@@ -1258,6 +1258,27 @@ export function getMaterialActualQty(
   );
 
   if (directBookings.length > 0) {
+    // If an alert booking exists, it represents an over-consumption event where:
+    // - requestedTotal is the absolute total installed in the room, OR
+    // - quantity/exceededBy is the excess delta on top of plannedQty.
+    const alertBooking = directBookings.find(b => 
+      b.type === 'over_consumption_alert' || 
+      (b as any).isAlert || 
+      (b as any).requestedTotal !== undefined
+    );
+
+    if (alertBooking) {
+      if ((alertBooking as any).requestedTotal !== undefined && Number((alertBooking as any).requestedTotal) > 0) {
+        return Number((alertBooking as any).requestedTotal);
+      }
+      if ((alertBooking as any).exceededBy !== undefined && Number((alertBooking as any).exceededBy) > 0) {
+        return (Number(mat.plannedQty) || 0) + Number((alertBooking as any).exceededBy);
+      }
+      if (alertBooking.type === 'over_consumption_alert' && alertBooking.quantity) {
+        return (Number(mat.plannedQty) || 0) + Number(alertBooking.quantity);
+      }
+    }
+
     return directBookings.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
   }
 

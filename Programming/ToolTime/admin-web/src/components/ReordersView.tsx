@@ -177,8 +177,23 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
       const isCompleted = !isExplicitlyUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
 
       (room.materials || []).forEach(m => {
-        const planned = Number(m.plannedQty) || 0;
-        const actual = getMaterialActualQty(m, room, bookings);
+        let planned = Number(m.plannedQty) || 0;
+        let actual = getMaterialActualQty(m, room, bookings);
+
+        // Active alert check for this specific room and material
+        const roomAlert = alerts.find(a => 
+          (a.roomId === room.id || a.roomId === room.code || (a.roomName && room.name && a.roomName.toLowerCase() === room.name.toLowerCase())) &&
+          ((a.materialPos && a.materialPos === m.posNr) || (a.materialId && a.materialId === m.positionId) || (a.materialName && m.shortText && a.materialName.toLowerCase() === m.shortText.toLowerCase()))
+        );
+
+        if (roomAlert && (roomAlert.status === 'open' || roomAlert.status === 'reordered')) {
+          if (roomAlert.requestedTotal && Number(roomAlert.requestedTotal) > actual) {
+            actual = Number(roomAlert.requestedTotal);
+          } else if (roomAlert.exceededBy && actual <= planned) {
+            actual = planned + Number(roomAlert.exceededBy);
+          }
+        }
+
         const diff = actual - planned;
 
         // RULE:
@@ -324,8 +339,9 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
       const shortage = Math.max(0, projectNeeded - projectAvailable);
 
-      // Nur Positionen mit bestätigter Abweichung (oder Alert) anzeigen
-      if (!hasCounting) return;
+      // Nur Positionen mit bestätigter Abweichung ODER aktivem Alert anzeigen
+      const hasActiveAlert = matchingAlerts.some(a => a.status === 'open' || a.status === 'reordered');
+      if (!hasCounting && !hasActiveAlert) return;
 
       result.push({
         id: `group_${entry.posNr}_${key}`,

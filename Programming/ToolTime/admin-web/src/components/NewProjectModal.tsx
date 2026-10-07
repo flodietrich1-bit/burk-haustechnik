@@ -431,7 +431,9 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             size: plan.size,
             uploadedAt: new Date().toISOString(),
             createdAt: new Date().toISOString(),
-            detectedRoomsCount: plan.detectedRoomsCount
+            detectedRoomsCount: plan.detectedRoomsCount,
+            detectedLayers: plan.detectedLayers,
+            vectorData: plan.vectorData
           };
         })
       );

@@ -203,22 +203,25 @@ export function App() {
 
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
   
-  // Overconsumption count (rooms where actual > planned)
-  const overconsumptionCount = useMemo(() => {
-    let count = 0;
+  // Reorders and deviation count (distinct positions with overconsumption or active alert)
+  const reordersCount = useMemo(() => {
+    const deviationPositions = new Set<string>();
     rooms.forEach(room => {
       (room.materials || []).forEach(m => {
         const actual = getMaterialActualQty(m, room, bookings);
-        const planned = m.plannedQty || 0;
+        const planned = Number(m.plannedQty) || 0;
         if (actual > planned) {
-          count++;
+          deviationPositions.add(m.posNr || m.positionId || m.shortText);
         }
       });
     });
-    return count;
-  }, [rooms, bookings]);
-
-  const reordersCount = overconsumptionCount + alerts.filter(a => a.status === 'open' || a.status === 'reordered').length;
+    alerts.forEach(a => {
+      if (a.status === 'open' || a.status === 'reordered') {
+        deviationPositions.add(a.materialPos || a.materialId || a.materialName);
+      }
+    });
+    return deviationPositions.size;
+  }, [rooms, bookings, alerts]);
 
   if (!currentUser) {
     return (

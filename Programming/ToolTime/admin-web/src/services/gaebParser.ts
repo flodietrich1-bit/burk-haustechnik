@@ -150,7 +150,7 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
         id: `pos_${posNr.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
         posNr: posNr,
         group: inferGroupFromPosNr(posNr, shortText),
-        shortText: cleanHtml(shortText),
+        shortText: cleanShortText(shortText),
         longText: cleanHtml(longText),
         qty: qty,
         qu: qu,
@@ -197,7 +197,7 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
           id: `pos_${posNr.replace(/\./g, '_')}`,
           posNr: posNr,
           group: categoryTitle,
-          shortText: cleanHtml(shortText),
+          shortText: cleanShortText(shortText),
           longText: cleanHtml(longText),
           qty: qty,
           qu: qu,
@@ -293,7 +293,7 @@ export function parseGaeb90(content: string, fileName: string = ''): GaebParseRe
         }
       }
 
-      shortText = shortText.trim() || `Position ${posNr}`;
+      shortText = cleanShortText(shortText) || `Position ${posNr}`;
 
       positions.push({
         id: `pos_${posNr}`,
@@ -345,6 +345,14 @@ function cleanHtml(str: string): string {
   return str
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function cleanShortText(str: string): string {
+  if (!str) return '';
+  const cleaned = cleanHtml(str);
+  return cleaned
+    .replace(/^wie\s+(?:vor)?pos(?:ition)?\.?\s*(?:\[[^\]]+\]|\d+(?:\.\d+)*)\s*,?\s*jedoch\s+/i, '')
     .trim();
 }
 
@@ -509,7 +517,7 @@ function parseExcelOrCsvBuffer(buffer: ArrayBuffer, fileName: string): GaebParse
       id: `pos_${posNr.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
       posNr,
       group,
-      shortText: cleanHtml(shortText),
+      shortText: cleanShortText(shortText),
       longText: cleanHtml(shortText),
       qty,
       qu,
