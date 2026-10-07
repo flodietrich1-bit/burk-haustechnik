@@ -35,6 +35,134 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number; panX: number; panY: number }>({ x: 0, y: 0, panX: 0, panY: 0 });
 
+  // Autodesk Platform Services (APS) Viewer State
+  const [viewMode, setViewMode] = useState<'aps' | 'svg'>('aps');
+  const [isApsLoading, setIsApsLoading] = useState<boolean>(false);
+  const [apsError, setApsError] = useState<string | null>(null);
+  const apsContainerRef = useRef<HTMLDivElement>(null);
+  const apsViewerInstance = useRef<any>(null);
+
+  // Sync default viewMode with plan apsUrn
+  useEffect(() => {
+    if (plan?.apsUrn) {
+      setViewMode('aps');
+    } else {
+      setViewMode('svg');
+    }
+  }, [plan?.apsUrn, plan?.id]);
+
+  // Load and initialize official Autodesk Viewer SDK
+  useEffect(() => {
+    if (!isOpen || viewMode !== 'aps' || !plan?.apsUrn) return;
+
+    let isMounted = true;
+    setIsApsLoading(true);
+    setApsError(null);
+
+    const initApsViewer = async () => {
+      try {
+        // 1. Inject Autodesk Viewing CSS & JS dynamically if not already in document
+        if (!(window as any).Autodesk?.Viewing) {
+          await new Promise<void>((resolve, reject) => {
+            const existingScript = document.getElementById('aps-viewer-script');
+            if (existingScript) {
+              existingScript.addEventListener('load', () => resolve());
+              return;
+            }
+
+            const link = document.createElement('link');
+            link.id = 'aps-viewer-style';
+            link.rel = 'stylesheet';
+            link.href = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css';
+            document.head.appendChild(link);
+
+            const script = document.createElement('script');
+            script.id = 'aps-viewer-script';
+            script.src = 'https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Autodesk Viewer SDK konnte nicht geladen werden'));
+            document.body.appendChild(script);
+          });
+        }
+
+        if (!isMounted) return;
+
+        // 2. Initializer options with token provider
+        const Autodesk = (window as any).Autodesk;
+        const options = {
+          env: 'AutodeskProduction2',
+          api: 'streamingV2',
+          getAccessToken: async (onTokenReady: (token: string, expires: number) => void) => {
+            try {
+              const res = await fetch('http://localhost:3001/api/aps/token');
+              const data = await res.json();
+              if (data.access_token) {
+                onTokenReady(data.access_token, data.expires_in || 3600);
+              }
+            } catch (err) {
+              console.error('Failed to get APS viewer token from backend:', err);
+            }
+          }
+        };
+
+        Autodesk.Viewing.Initializer(options, () => {
+          if (!isMounted || !apsContainerRef.current) return;
+
+          // Destroy previous viewer instance if exists
+          if (apsViewerInstance.current) {
+            try {
+              apsViewerInstance.current.finish();
+            } catch {}
+            apsViewerInstance.current = null;
+          }
+
+          const viewer = new Autodesk.Viewing.GuiViewer3D(apsContainerRef.current);
+          const startCode = viewer.start();
+          if (startCode > 0) {
+            console.error('Failed to start Autodesk Viewer, code:', startCode);
+            return;
+          }
+          apsViewerInstance.current = viewer;
+
+          const documentId = 'urn:' + plan.apsUrn;
+          Autodesk.Viewing.Document.load(
+            documentId,
+            (doc: any) => {
+              if (!isMounted) return;
+              const defaultModel = doc.getRoot().getDefaultGeometry();
+              viewer.loadDocumentNode(doc, defaultModel);
+              setIsApsLoading(false);
+            },
+            (errorCode: any) => {
+              console.warn('Autodesk Document Load Warning:', errorCode);
+              if (isMounted) {
+                setIsApsLoading(false);
+                setApsError('Modell wird noch verarbeitet oder konnte nicht geladen werden.');
+              }
+            }
+          );
+        });
+      } catch (err: any) {
+        if (isMounted) {
+          setIsApsLoading(false);
+          setApsError(err.message || 'Autodesk Viewer Fehler');
+        }
+      }
+    };
+
+    initApsViewer();
+
+    return () => {
+      isMounted = false;
+      if (apsViewerInstance.current) {
+        try {
+          apsViewerInstance.current.finish();
+          apsViewerInstance.current = null;
+        } catch {}
+      }
+    };
+  }, [isOpen, viewMode, plan?.apsUrn, plan?.id]);
+
   const vectorData = useMemo(() => {
     if (plan?.vectorData && Array.isArray(plan.vectorData.rooms) && plan.vectorData.rooms.length > 0) {
       return plan.vectorData;
@@ -170,6 +298,35 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
           </div>
 
           <div className="flex items-center space-x-2">
+            {plan?.apsUrn && (
+              <div className="flex items-center bg-slate-800/90 rounded-xl p-0.5 border border-slate-700 mr-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('aps')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'aps'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Originale AutoCAD Vektoransicht (Autodesk Platform Services)"
+                >
+                  AutoCAD Original
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('svg')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    viewMode === 'svg'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Schematische Raumaufteilung"
+                >
+                  Montage-Schema
+                </button>
+              </div>
+            )}
+
             {(plan?.pdfUrl || plan?.downloadUrl) && !(plan.pdfUrl || plan.downloadUrl)?.startsWith('file://') && (
               <a
                 href={plan.pdfUrl || plan.downloadUrl}
@@ -215,9 +372,39 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
           </div>
         )}
 
-        {/* CAD Canvas Viewport */}
-        <div 
-          ref={containerRef}
+        {/* Viewport: Either Autodesk Official Viewer OR SVG Blueprint */}
+        {viewMode === 'aps' && plan?.apsUrn ? (
+          <div className="flex-1 relative w-full h-full bg-[#090D16] overflow-hidden">
+            {isApsLoading && (
+              <div className="absolute inset-0 bg-[#090D16]/90 z-20 flex flex-col items-center justify-center space-y-3">
+                <div className="w-9 h-9 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-slate-300 font-semibold tracking-wide">
+                  Lade originalen AutoCAD-Plan über Autodesk Cloud...
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Vollständige Vektoren, Layer, Schraffuren & Bemaßung
+                </p>
+              </div>
+            )}
+            {apsError && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-amber-950/90 border border-amber-600 text-amber-200 px-4 py-2.5 rounded-xl text-xs flex items-center space-x-3 shadow-xl">
+                <span>⚠️ {apsError}</span>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('svg')}
+                  className="bg-amber-800 hover:bg-amber-700 text-white px-2.5 py-1 rounded-lg font-bold text-[11px] cursor-pointer"
+                >
+                  Zu Montage-Schema wechseln
+                </button>
+              </div>
+            )}
+            <div ref={apsContainerRef} className="w-full h-full" />
+          </div>
+        ) : (
+          <>
+            {/* CAD Canvas Viewport */}
+            <div 
+              ref={containerRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -545,6 +732,8 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
             Mausrad zum Zoomen • Klicken & Ziehen zum Verschieben
           </div>
         </div>
+        </>
+      )}
 
       </div>
     </div>

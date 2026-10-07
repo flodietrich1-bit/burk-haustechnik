@@ -7,6 +7,7 @@ import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from './firebaseConfig.js';
 import { renderCadToVectorPdf } from './vectorPdfRenderer.js';
+import { uploadAndTranslateDwg } from './apsService.js';
 
 /**
  * Supported plan levels / building sections
@@ -309,6 +310,19 @@ export async function processAndStorePlan({
       pdfUrl = `gs://${pdfStoragePath}`;
     }
 
+    // Step 4b: Trigger Autodesk Platform Services (APS) translation if DWG
+    let apsUrn = null;
+    if (path.extname(fileName).toLowerCase() === '.dwg') {
+      try {
+        console.log(`[APS] Triggering Autodesk Model Derivative for ${fileName}...`);
+        const apsResult = await uploadAndTranslateDwg(fileBuffer, fileName);
+        apsUrn = apsResult?.urn || null;
+        console.log(`[APS] Translation triggered successfully. URN: ${apsUrn}`);
+      } catch (apsErr) {
+        console.warn(`[APS] Autodesk translation warning:`, apsErr.message);
+      }
+    }
+
     // Step 5: Update Firestore with final 'ready' document
     const finalPlanDoc = {
       id: planId,
@@ -320,7 +334,8 @@ export async function processAndStorePlan({
       status: 'ready',
       createdAt: now,
       pdfSize: pdfBuffer.length,
-      dwgSize: fileBuffer.length
+      dwgSize: fileBuffer.length,
+      ...(apsUrn ? { apsUrn } : {})
     };
 
     try {

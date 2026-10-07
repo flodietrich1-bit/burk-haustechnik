@@ -81,6 +81,7 @@ export interface PlanDocument {
   detectedRoomsCount?: number;
   detectedLayers?: string[];
   vectorData?: CadVectorData;
+  apsUrn?: string;
   notes?: string;
 }
 

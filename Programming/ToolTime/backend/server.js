@@ -10,6 +10,11 @@ import {
   generatePlanName,
   PLAN_LEVELS
 } from './cadConverterService.js';
+import {
+  getViewerToken,
+  getManifest,
+  uploadAndTranslateDwg
+} from './apsService.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -36,6 +41,34 @@ app.get('/api/health', (req, res) => {
     service: 'ToolTime CAD Backend Engine',
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * 0. Endpoint: Autodesk Platform Services (APS) Viewer Token
+ * GET /api/aps/token
+ */
+app.get('/api/aps/token', async (req, res) => {
+  try {
+    const tokenData = await getViewerToken();
+    res.json(tokenData);
+  } catch (err) {
+    console.error('Error fetching APS token:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to get APS token' });
+  }
+});
+
+/**
+ * Endpoint: Get APS Manifest for a URN
+ * GET /api/aps/manifest/:urn
+ */
+app.get('/api/aps/manifest/:urn', async (req, res) => {
+  try {
+    const manifest = await getManifest(req.params.urn);
+    res.json(manifest);
+  } catch (err) {
+    console.error('Error fetching APS manifest:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to get manifest' });
+  }
 });
 
 /**
