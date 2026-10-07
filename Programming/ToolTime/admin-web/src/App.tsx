@@ -132,7 +132,16 @@ export function App() {
 
   // 2. Listen to active project data whenever selectedProjectId changes
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId) {
+      localStorage.removeItem('burk_tooltime_active_project_id');
+      setActiveProject(null);
+      setPositions([]);
+      setRooms([]);
+      setBookings([]);
+      setAddendums([]);
+      setAlerts([]);
+      return;
+    }
 
     localStorage.setItem('burk_tooltime_active_project_id', selectedProjectId);
 

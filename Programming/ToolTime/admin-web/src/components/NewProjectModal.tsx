@@ -119,8 +119,6 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const [loading, setLoading] = useState<boolean>(false);
 
-  if (!isOpen) return null;
-
   const bauleiterList = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmList = users.filter(u => u.role === 'kaufmaennisch' || u.role === 'admin');
 
@@ -139,6 +137,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     }
     return deduped;
   }, [users]);
+
+  if (!isOpen) return null;
 
   const handleSelectBauleiter = (userId: string) => {
     setProjectManagerId(userId);
