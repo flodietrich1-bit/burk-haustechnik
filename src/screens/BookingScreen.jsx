@@ -458,7 +458,7 @@ export default function BookingScreen({
           <View style={{ flex: 1 }}>
             <Text style={styles.roomTitle}>{getRoomDisplayName(room, currentLang)}</Text>
             <Text style={styles.roomSubtitle}>
-              {t('bookHead', currentLang)} · {t('kw', currentLang)} 27 · Geschoss {floor}
+              {t('bookHead', currentLang)} · {t('kw', currentLang)} 27 · {t('floorPrefix', currentLang, { floor })}
             </Text>
           </View>
           <TouchableOpacity

@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.13` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.14` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, interactive CAD Plan-Viewer modal with continuous pinch-to-zoom (1x–6x) and pan, offline plan sync with local PDF storage (`expo-file-system`), unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -143,6 +143,10 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-07 v2.14: i18n & Glossar-Korrekturen:
+  - Übersetzung von Materialgruppen (`translateGroup` in `i18n.js` und Nutzung in `MaterialBookingCard.jsx`), inklusive "Verteiler & Armaturen", "Sanitär", "Trinkwasser", "Abwasser", "Dämmung", "Befestigung", "Heizung", "Lüftung" für RO, PL, HR.
+  - Behebung fehlerhafter Glossar-Tags (`getForeignGloss` in `bookingHelpers.js`): Intelligente Stichwort-Erkennung (Armatur, Kugelhahn, Ventil, Verteiler, Bogen, Sanitär etc.) und Beseitigung des falschen Fallbacks zu `Țeavă` (Rohr).
+  - Lokalisierung des Geschoss-Präfixes im Header-Untertitel (`floorPrefix` in `BookingScreen.jsx`: z.B. "Etaj EG", "Piętro EG").
 - 2026-10-07 v2.13: Blocker-Fixes, Geschoss-Filterung & Mobiler Plan-Viewer:
   - Entfernung der harten Blockade `if (delivered <= planned)` in `BookingScreen.jsx` – Mehrverbrauchsbuchung ist nun immer möglich, sobald der Monteur `OverConsumptionModal.jsx` ausfüllt.
   - Alarmierung mit `type: 'over_consumption_alert'` wird zuverlässig erstellt und nun zusätzlich in `projects/{projectId}/alerts` repliziert, sodass das Admin-Banner sofort aktualisiert wird.
@@ -187,5 +191,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-07 — v2.13 Update: Blocker-Entfernung bei Mehrverbrauch in `BookingScreen.jsx`, Geschoss-Filterleiste `[Alle, UG, EG, OG, DG, Strangschema]` in `RoomListScreen.jsx`, Offline-Plan-Synchronisation mit lokalem PDF-Download via `expo-file-system`, neuer CAD Plan-Viewer mit stufenlosem Pinch-to-Zoom & Pan (`PlanViewerModal.jsx`), und Replikation von `over_consumption_alert` zu `projects/{projectId}/alerts`.
+2026-10-07 — v2.14 Update: Übersetzung von Materialgruppen ("Verteiler & Armaturen" etc. via `translateGroup`), Behebung von falschen Glossar-Tags (`getForeignGloss` ohne `Țeavă`-Fallback), Lokalisierung des Geschoss-Präfixes (`floorPrefix`) im Header.
 

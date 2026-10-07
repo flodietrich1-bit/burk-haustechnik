@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { t, formatUnit } from '../../locales/i18n';
+import { t, formatUnit, translateGroup } from '../../locales/i18n';
 import ProgressBar from '../ProgressBar';
 import {
   formatQty,
@@ -32,12 +32,7 @@ export default function MaterialBookingCard({
     mat?.group && mat.group !== 'Allgemein'
       ? mat.group
       : roomPlan?.group || mat?.group || 'Allgemein';
-  const displayGroup =
-    rawGroup === 'Allgemein'
-      ? t('groupGeneral', currentLang)
-      : rawGroup === 'Zusatz / Außerplanmäßig'
-      ? t('groupUnplanned', currentLang)
-      : rawGroup;
+  const displayGroup = translateGroup(rawGroup, currentLang);
   const displayQu = formatUnit(mat?.qu || roomPlan?.qu || 'Stk', currentLang);
 
   const hasRoomPlan = Boolean(roomPlan) && !finalIsUnplanned;

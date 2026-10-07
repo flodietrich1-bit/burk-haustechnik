@@ -382,19 +382,73 @@ export const TRANSLATIONS = {
   planPinchHint: { de: 'Mit 2 Fingern stufenlos zoomen & verschieben', ro: 'Mărește cu 2 degete și deplasează', pl: 'Powiększaj 2 palcami i przesuwaj', hr: 'Povećajte s 2 prsta i pomičite' },
   planResetZoom: { de: '100% Reset', ro: '100% Reset', pl: '100% Reset', hr: '100% Reset' },
   noPlanAvailable: { de: 'Kein Plan für dieses Geschoss hinterlegt', ro: 'Niciun plan atașat pentru acest etaj', pl: 'Brak planu dla tego piętra', hr: 'Nema plana za ovu etažu' },
+  floorPrefix: { de: 'Geschoss {floor}', ro: 'Etaj {floor}', pl: 'Piętro {floor}', hr: 'Etaža {floor}' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)
 export const GLOSSARY = {
   rohr: { ro: 'Țeavă', pl: 'Rura', hr: 'Cijev' },
   bogen: { ro: 'Cot', pl: 'Kolano', hr: 'Koljeno' },
-  abzweig: { ro: 'Ramificație', pl: 'Odgałęzienie', hr: 'Odvojak' },
+  abzweig: { ro: 'Ramificație', pl: 'Trójnik', hr: 'Odvojak' },
   reduzierung: { ro: 'Reducție', pl: 'Redukcja', hr: 'Redukcija' },
   schelle: { ro: 'Brățară', pl: 'Obejma', hr: 'Obujmica' },
   ventil: { ro: 'Robinet', pl: 'Zawór', hr: 'Ventil' },
+  kugelhahn: { ro: 'Robinet cu sferă', pl: 'Zawór kulowy', hr: 'Kuglasti ventil' },
+  armatur: { ro: 'Baterie / Armătură', pl: 'Bateria / Armatura', hr: 'Miješalica / Slavina' },
+  verteiler: { ro: 'Distribuitor', pl: 'Rozdzielacz', hr: 'Razdjelnik' },
   muffe: { ro: 'Mufă', pl: 'Mufa', hr: 'Mufa' },
   isolierung: { ro: 'Izolație', pl: 'Izolacja', hr: 'Izolacija' },
+  sanitaer: { ro: 'Obiect sanitar', pl: 'Przybór sanitarny', hr: 'Sanitarija' },
 };
+
+export function translateGroup(rawGroup, lang = 'de') {
+  if (!rawGroup || typeof rawGroup !== 'string' || lang === 'de') return rawGroup || '';
+  const lower = rawGroup.toLowerCase().trim();
+
+  if (lower.includes('verteiler') && lower.includes('armatur')) {
+    return lang === 'ro' ? 'Distribuitoare & Armături' : lang === 'pl' ? 'Rozdzielacze i armatura' : 'Razdjelnici i armature';
+  }
+  if (lower.includes('verteiler')) {
+    return lang === 'ro' ? 'Distribuitoare' : lang === 'pl' ? 'Rozdzielacze' : 'Razdjelnici';
+  }
+  if (lower.includes('armatur')) {
+    return lang === 'ro' ? 'Armături / Baterii' : lang === 'pl' ? 'Armatura' : 'Armature';
+  }
+  if (lower.includes('abwasser') || lower.includes('entwässerung') || lower.includes('kanal')) {
+    return lang === 'ro' ? 'Canalizare & Scurgere' : lang === 'pl' ? 'Kanalizacja i odpływy' : 'Kanalizacija i odvodnja';
+  }
+  if (lower.includes('trinkwasser')) {
+    return lang === 'ro' ? 'Apă potabilă' : lang === 'pl' ? 'Woda pitna' : 'Pitka voda';
+  }
+  if (lower.includes('rohr') || lower.includes('leitung')) {
+    return lang === 'ro' ? 'Țevi & Fitinguri' : lang === 'pl' ? 'Rury i kształtki' : 'Cijevi i spojnice';
+  }
+  if (lower.includes('sanitär')) {
+    return lang === 'ro' ? 'Obiecte sanitare' : lang === 'pl' ? 'Przybory sanitarne' : 'Sanitarije';
+  }
+  if (lower.includes('dämmung') || lower.includes('isolier')) {
+    return lang === 'ro' ? 'Izolație' : lang === 'pl' ? 'Izolacja' : 'Izolacija';
+  }
+  if (lower.includes('befestig')) {
+    return lang === 'ro' ? 'Tehnică de fixare' : lang === 'pl' ? 'Technika mocowania' : 'Pričvrsna tehnika';
+  }
+  if (lower.includes('heiz')) {
+    return lang === 'ro' ? 'Încălzire' : lang === 'pl' ? 'Ogrzewanie' : 'Grijanje';
+  }
+  if (lower.includes('lüft')) {
+    return lang === 'ro' ? 'Ventilație' : lang === 'pl' ? 'Wentylacja' : 'Ventilacija';
+  }
+  if (lower.includes('gas')) {
+    return lang === 'ro' ? 'Instalație gaz' : lang === 'pl' ? 'Instalacja gazowa' : 'Plinska instalacija';
+  }
+  if (lower === 'allgemein') {
+    return t('groupGeneral', lang);
+  }
+  if (lower.includes('außerplan') || lower.includes('zusatz') || lower.includes('unplanned')) {
+    return t('groupUnplanned', lang);
+  }
+  return rawGroup;
+}
 
 export function t(key, lang = 'de', vars = {}) {
   const item = TRANSLATIONS[key];

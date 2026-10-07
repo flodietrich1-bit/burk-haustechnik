@@ -70,15 +70,59 @@ export const getMaterialDisplayName = (mat, roomPlan = null) => {
 
 export const getForeignGloss = (mat, currentLang) => {
   if (!mat || currentLang === 'de') return '';
-  const key =
-    mat.icon === 'bend'
-      ? 'bogen'
-      : mat.icon === 'valve'
-      ? 'ventil'
-      : mat.icon === 'clamp'
-      ? 'schelle'
-      : 'rohr';
-  return GLOSSARY[key]?.[currentLang] || '';
+  const text = (
+    (mat.name || '') + ' ' +
+    (mat.cleanName || '') + ' ' +
+    (mat.shortText || '') + ' ' +
+    (mat.group || '')
+  ).toLowerCase();
+
+  // Explicit keywords matching
+  if (text.includes('armatur') || text.includes('mischer') || text.includes('brause') || text.includes('thermostat')) {
+    return GLOSSARY.armatur?.[currentLang] || '';
+  }
+  if (text.includes('kugelhahn') || text.includes('hahn')) {
+    return GLOSSARY.kugelhahn?.[currentLang] || GLOSSARY.ventil?.[currentLang] || '';
+  }
+  if (text.includes('ventil') || text.includes('absperr') || text.includes('schieber')) {
+    return GLOSSARY.ventil?.[currentLang] || '';
+  }
+  if (text.includes('verteiler')) {
+    return GLOSSARY.verteiler?.[currentLang] || '';
+  }
+  if (text.includes('bogen') || text.includes('winkel')) {
+    return GLOSSARY.bogen?.[currentLang] || '';
+  }
+  if (text.includes('t-stück') || text.includes('abzweig') || text.includes('t-stk')) {
+    return GLOSSARY.abzweig?.[currentLang] || '';
+  }
+  if (text.includes('reduzier')) {
+    return GLOSSARY.reduzierung?.[currentLang] || '';
+  }
+  if (text.includes('schelle')) {
+    return GLOSSARY.schelle?.[currentLang] || '';
+  }
+  if (text.includes('muffe')) {
+    return GLOSSARY.muffe?.[currentLang] || '';
+  }
+  if (text.includes('isolier') || text.includes('dämmung') || text.includes('schale')) {
+    return GLOSSARY.isolierung?.[currentLang] || '';
+  }
+  if (text.includes('wc') || text.includes('waschtisch') || text.includes('becken') || text.includes('urinal') || text.includes('spülkasten')) {
+    return GLOSSARY.sanitaer?.[currentLang] || '';
+  }
+  if (text.includes('rohr') || mat.qu === 'm') {
+    return GLOSSARY.rohr?.[currentLang] || '';
+  }
+
+  // Fallback by icon if specified
+  if (mat.icon === 'bend') return GLOSSARY.bogen?.[currentLang] || '';
+  if (mat.icon === 'valve') return GLOSSARY.ventil?.[currentLang] || '';
+  if (mat.icon === 'clamp') return GLOSSARY.schelle?.[currentLang] || '';
+  if (mat.icon === 'pipe') return GLOSSARY.rohr?.[currentLang] || '';
+
+  // Do not falsely default to pipe
+  return '';
 };
 
 export const getMatIconSymbol = (icon) => {
