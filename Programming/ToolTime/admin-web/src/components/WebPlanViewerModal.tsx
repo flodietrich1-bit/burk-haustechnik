@@ -38,6 +38,8 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
   // Autodesk Platform Services (APS) Viewer State
   const [viewMode, setViewMode] = useState<'aps' | 'svg'>('aps');
   const [isApsLoading, setIsApsLoading] = useState<boolean>(false);
+  const [apsStatus, setApsStatus] = useState<'checking' | 'inprogress' | 'success' | 'failed' | null>(null);
+  const [apsProgress, setApsProgress] = useState<string>('');
   const [apsError, setApsError] = useState<string | null>(null);
   const apsContainerRef = useRef<HTMLDivElement>(null);
   const apsViewerInstance = useRef<any>(null);
@@ -51,17 +53,65 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
     }
   }, [plan?.apsUrn, plan?.id]);
 
-  // Load and initialize official Autodesk Viewer SDK
+  // Load and initialize official Autodesk Viewer SDK with manifest check & polling
   useEffect(() => {
     if (!isOpen || viewMode !== 'aps' || !plan?.apsUrn) return;
 
     let isMounted = true;
+    let pollTimer: any = null;
     setIsApsLoading(true);
     setApsError(null);
+    setApsStatus('checking');
 
-    const initApsViewer = async () => {
+    const checkManifestAndInit = async () => {
       try {
-        // 1. Inject Autodesk Viewing CSS & JS dynamically if not already in document
+        // A. Check manifest status from backend
+        let isReady = false;
+        try {
+          const manifestRes = await fetch(`http://localhost:3001/api/aps/manifest/${plan.apsUrn}`);
+          if (manifestRes.ok) {
+            const manifestData = await manifestRes.json();
+            if (manifestData.status === 'success') {
+              isReady = true;
+              setApsStatus('success');
+            } else if (manifestData.status === 'inprogress') {
+              setApsStatus('inprogress');
+              setApsProgress(manifestData.progress || 'wird berechnet...');
+              // Poll manifest every 4 seconds
+              pollTimer = setInterval(async () => {
+                if (!isMounted) return;
+                try {
+                  const pollRes = await fetch(`http://localhost:3001/api/aps/manifest/${plan.apsUrn}`);
+                  if (pollRes.ok) {
+                    const pData = await pollRes.json();
+                    if (pData.status === 'success') {
+                      clearInterval(pollTimer);
+                      pollTimer = null;
+                      if (isMounted) {
+                        setApsStatus('success');
+                        loadModelIntoViewer();
+                      }
+                    } else if (pData.status === 'inprogress') {
+                      if (isMounted) setApsProgress(pData.progress || 'wird berechnet...');
+                    } else if (pData.status === 'failed') {
+                      clearInterval(pollTimer);
+                      pollTimer = null;
+                      if (isMounted) {
+                        setIsApsLoading(false);
+                        setApsStatus('failed');
+                        setApsError('Konvertierung in Autodesk fehlgeschlagen.');
+                      }
+                    }
+                  }
+                } catch {}
+              }, 4000);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not check manifest status, proceeding to viewer directly:', e);
+        }
+
+        // B. Inject Autodesk Viewing CSS & JS dynamically if not already in document
         if (!(window as any).Autodesk?.Viewing) {
           await new Promise<void>((resolve, reject) => {
             const existingScript = document.getElementById('aps-viewer-script');
@@ -87,61 +137,10 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
 
         if (!isMounted) return;
 
-        // 2. Initializer options with token provider
-        const Autodesk = (window as any).Autodesk;
-        const options = {
-          env: 'AutodeskProduction2',
-          api: 'streamingV2',
-          getAccessToken: async (onTokenReady: (token: string, expires: number) => void) => {
-            try {
-              const res = await fetch('http://localhost:3001/api/aps/token');
-              const data = await res.json();
-              if (data.access_token) {
-                onTokenReady(data.access_token, data.expires_in || 3600);
-              }
-            } catch (err) {
-              console.error('Failed to get APS viewer token from backend:', err);
-            }
-          }
-        };
-
-        Autodesk.Viewing.Initializer(options, () => {
-          if (!isMounted || !apsContainerRef.current) return;
-
-          // Destroy previous viewer instance if exists
-          if (apsViewerInstance.current) {
-            try {
-              apsViewerInstance.current.finish();
-            } catch {}
-            apsViewerInstance.current = null;
-          }
-
-          const viewer = new Autodesk.Viewing.GuiViewer3D(apsContainerRef.current);
-          const startCode = viewer.start();
-          if (startCode > 0) {
-            console.error('Failed to start Autodesk Viewer, code:', startCode);
-            return;
-          }
-          apsViewerInstance.current = viewer;
-
-          const documentId = 'urn:' + plan.apsUrn;
-          Autodesk.Viewing.Document.load(
-            documentId,
-            (doc: any) => {
-              if (!isMounted) return;
-              const defaultModel = doc.getRoot().getDefaultGeometry();
-              viewer.loadDocumentNode(doc, defaultModel);
-              setIsApsLoading(false);
-            },
-            (errorCode: any) => {
-              console.warn('Autodesk Document Load Warning:', errorCode);
-              if (isMounted) {
-                setIsApsLoading(false);
-                setApsError('Modell wird noch verarbeitet oder konnte nicht geladen werden.');
-              }
-            }
-          );
-        });
+        // C. If already ready, start viewer immediately
+        if (isReady) {
+          loadModelIntoViewer();
+        }
       } catch (err: any) {
         if (isMounted) {
           setIsApsLoading(false);
@@ -150,10 +149,84 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
       }
     };
 
-    initApsViewer();
+    const loadModelIntoViewer = () => {
+      const Autodesk = (window as any).Autodesk;
+      if (!Autodesk?.Viewing) return;
+
+      const options = {
+        env: 'AutodeskProduction2',
+        api: 'streamingV2',
+        getAccessToken: async (onTokenReady: (token: string, expires: number) => void) => {
+          try {
+            const res = await fetch('http://localhost:3001/api/aps/token');
+            const data = await res.json();
+            if (data.access_token) {
+              onTokenReady(data.access_token, data.expires_in || 3600);
+            }
+          } catch (err) {
+            console.error('Failed to get APS viewer token from backend:', err);
+          }
+        }
+      };
+
+      Autodesk.Viewing.Initializer(options, () => {
+        if (!isMounted || !apsContainerRef.current) return;
+
+        if (apsViewerInstance.current) {
+          try {
+            apsViewerInstance.current.finish();
+          } catch {}
+          apsViewerInstance.current = null;
+        }
+
+        const viewer = new Autodesk.Viewing.GuiViewer3D(apsContainerRef.current);
+        const startCode = viewer.start();
+        if (startCode > 0) {
+          console.error('Failed to start Autodesk Viewer, code:', startCode);
+          return;
+        }
+        apsViewerInstance.current = viewer;
+
+        const documentId = 'urn:' + plan.apsUrn;
+        Autodesk.Viewing.Document.load(
+          documentId,
+          (doc: any) => {
+            if (!isMounted) return;
+            let viewable = doc.getRoot().getDefaultGeometry(true);
+            if (!viewable) {
+              const geometries = doc.getRoot().search({ type: 'geometry' });
+              if (geometries && geometries.length > 0) {
+                viewable = geometries[0];
+              }
+            }
+
+            if (viewable) {
+              viewer.loadDocumentNode(doc, viewable);
+              setIsApsLoading(false);
+            } else {
+              setIsApsLoading(false);
+              setApsError('Keine 2D-Ansicht in der AutoCAD-Datei gefunden.');
+            }
+          },
+          (errorCode: any) => {
+            console.warn('Autodesk Document Load Warning:', errorCode);
+            if (isMounted) {
+              setIsApsLoading(false);
+              setApsError('Modell wird noch verarbeitet oder konnte nicht geladen werden.');
+            }
+          }
+        );
+      });
+    };
+
+    checkManifestAndInit();
 
     return () => {
       isMounted = false;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
       if (apsViewerInstance.current) {
         try {
           apsViewerInstance.current.finish();
@@ -376,13 +449,44 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
         {viewMode === 'aps' && plan?.apsUrn ? (
           <div className="flex-1 relative w-full h-full bg-[#090D16] overflow-hidden">
             {isApsLoading && (
-              <div className="absolute inset-0 bg-[#090D16]/90 z-20 flex flex-col items-center justify-center space-y-3">
-                <div className="w-9 h-9 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                <p className="text-xs text-slate-300 font-semibold tracking-wide">
-                  Lade originalen AutoCAD-Plan über Autodesk Cloud...
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Vollständige Vektoren, Layer, Schraffuren & Bemaßung
+              <div className="absolute inset-0 bg-[#090D16]/95 z-20 flex flex-col items-center justify-center p-6 text-center space-y-4 max-w-lg mx-auto">
+                <div className="relative">
+                  <div className="w-12 h-12 border-3 border-blue-500/30 border-t-blue-400 rounded-full animate-spin" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping" />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <h4 className="text-sm font-bold text-slate-100">
+                    {apsStatus === 'inprogress' 
+                      ? 'Autodesk Cloud berechnet originale DWG-Vektoren...' 
+                      : 'Verbinde mit Autodesk Platform Services...'}
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    {apsStatus === 'inprogress'
+                      ? 'Aufgrund der Dateigröße (16 MB) und Tausenden AutoCAD-Elementen (Wände, Schraffuren, Bemaßungen) dauert die Erstverarbeitung in der Autodesk Cloud ca. 1–3 Minuten.'
+                      : 'Lade Geometrien, Layer und Vektoren...'}
+                  </p>
+                  {apsStatus === 'inprogress' && (
+                    <div className="inline-flex items-center space-x-1.5 bg-blue-950/70 border border-blue-500/30 text-blue-300 px-3 py-1 rounded-full text-[11px] font-mono mt-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <span>Status: {apsProgress || 'wird verarbeitet...'}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 flex flex-col sm:flex-row items-center gap-2.5 w-full justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('svg')}
+                    className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-blue-500/20 transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                  >
+                    <span>📐 Sofort zum Montage-Schema wechseln</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Sobald Autodesk die Datei fertiggestellt hat, ist der Original-CAD-Plan dauerhaft abrufbar.
                 </p>
               </div>
             )}
