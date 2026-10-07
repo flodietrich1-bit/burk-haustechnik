@@ -15,6 +15,7 @@ export default function Header({
   isSyncing = false,
   monteurName = 'Monteur',
   onSwitchProject = null,
+  onLockPress = null,
 }) {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
@@ -115,9 +116,18 @@ export default function Header({
             {isOnline ? t('online', currentLang) : t('offline', currentLang)}
           </Text>
           {monteurName ? (
-            <Text style={styles.monteurText} numberOfLines={1}>
-              · {monteurName}
-            </Text>
+            <TouchableOpacity
+              onPress={onLockPress}
+              disabled={!onLockPress}
+              activeOpacity={0.7}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              style={{ flexDirection: 'row', alignItems: 'center' }}
+            >
+              <Text style={styles.monteurText} numberOfLines={1}>
+                · {monteurName}
+              </Text>
+              {onLockPress && <Text style={{ fontSize: 10, color: COLORS.muted }}> 🔒</Text>}
+            </TouchableOpacity>
           ) : null}
         </View>
 

@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.16` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.17` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, interactive CAD Plan-Viewer modal with continuous pinch-to-zoom (1x–6x) and pan, offline plan sync with local PDF storage (`expo-file-system`), unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -79,8 +79,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 [code] "Authentication" is a client-side 4-digit PIN lookup; there is **no Firebase Auth sign-in** (`getAuth` is created but never used).
 - Online: query `users` then `monteurs` by PIN directly from the client. Offline/fallback: `ttapp_known_monteurs` cache or the hard-coded `SEED_MONTEURS` list in `authService.js` (contains names and PINs — do not copy them elsewhere). Note: `ttapp_known_monteurs` is only read, never written anywhere in the app [code], so the offline fallback is effectively the seed list.
 - Lockout: 3 wrong PINs → 30 min lock, stored in AsyncStorage (bypassable by clearing app data).
-- Roles: seed data includes `monteur` and `bauleiter` roles, but the app does not branch on role [code: no role checks found in App.js/screens — Unknown / needs confirmation for admin-web].
-- Project access: user's `assignedProjectIds`/`projectIds`; if none match any known project, the app shows **all** projects (deliberate fallback, commit `64a1d05`).
+- Project access: Strictly governed by project settings (`projects/{projectId}.assignedMonteurIds`, managed in `ProjectSettingsView` in ToolTime admin-web) matching `monteur.id`, name slug, or name; plus `monteur.assignedProjectIds`/`projectIds`; admins have access to all projects. Users with no assigned projects see an empty state in `ProjectSelectScreen` and cannot access unauthorized projects.
 - Authorization is enforced only by Firestore/Storage rules in `ToolTime/backend/*.rules` (outside this repo). The local copies are fully open (`allow read, write: if true`) [config of sibling repo]. Whether the deployed rules are identical: Unknown / needs confirmation.
 
 ## 8. External Integrations
@@ -143,6 +142,12 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-07 v2.17: Strikte Umsetzung der Zugriffsrechte aus den Projekteinstellungen:
+  - Projektzuordnung (`authService.js`): Funktion `isUserAssignedToProject(monteur, project)` prüft `project.assignedMonteurIds` (aus den Admin-Web-Projekteinstellungen) auf Monteur-ID, Namens-Slug und Name.
+  - Fallback-Entfernung: Der fehlerhafte Fallback, der bei leeren oder nicht gematchten IDs alle Projekte anzeigte, wurde vollständig entfernt. Monteure sehen exakt nur ihre zugewiesenen Projekte.
+  - Automatisches Routing (`App.js`): Bei 1 Projekt direktes Öffnen des Bauvorhabens ohne Switcher; bei >1 Projekten Auswahlliste; bei 0 Projekten sauberer Empty-State mit Abmelde-Option.
+  - UX-Verbesserungen: Sperr-/Abmelde-Button (`🔒`) in Header und `ProjectSelectScreen` zur bequemen Rückkehr zur PIN-Eingabe.
+  - Internationalisierung: Neue Übersetzungsschlüssel für leeren Projektstatus und Abmelden (`de`, `ro`, `pl`, `hr`).
 - 2026-10-07 v2.16: Unterzeichner im Außerplanmäßig-Modal & Bereinigung von GAEB-Folgepositionspräfixen:
   - "Außerplanmäßig verbaut" Modal (`UnplannedInstallModal.jsx`): Pflichtfeld für "Name des Unterzeichnenden" (`unclearSigner`) hinzugefügt (analog zu `NachtragModal.jsx`), vorausgefüllt mit dem Monteurnamen, validiert bei Absenden, Übergabe als `requestedBy` und `signerName`.
   - Bereinigung von Folgepositionen ("wie Pos. [01.1] , jedoch..."):
@@ -201,5 +206,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-07 — v2.16 Update: Unterzeichner-Name als Pflichtfeld in `UnplannedInstallModal.jsx` & Bereinigung von GAEB-Folgepositionspräfixen ("wie Pos. [01.1] , jedoch...") in Admin-Web (`gaebParser.ts`) und Monteur-App (`bookingHelpers.js`).
+2026-10-07 — v2.17 Update: Strikte Zugriffsrechte nach Admin-Projekteinstellungen (`assignedMonteurIds`), Entfernung des unberechtigten Fallbacks auf alle Projekte, dynamisches Routing & Abmelde-Option.
 
