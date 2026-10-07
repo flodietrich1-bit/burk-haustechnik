@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.15` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.16` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, interactive CAD Plan-Viewer modal with continuous pinch-to-zoom (1x–6x) and pan, offline plan sync with local PDF storage (`expo-file-system`), unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -143,6 +143,11 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-07 v2.16: Unterzeichner im Außerplanmäßig-Modal & Bereinigung von GAEB-Folgepositionspräfixen:
+  - "Außerplanmäßig verbaut" Modal (`UnplannedInstallModal.jsx`): Pflichtfeld für "Name des Unterzeichnenden" (`unclearSigner`) hinzugefügt (analog zu `NachtragModal.jsx`), vorausgefüllt mit dem Monteurnamen, validiert bei Absenden, Übergabe als `requestedBy` und `signerName`.
+  - Bereinigung von Folgepositionen ("wie Pos. [01.1] , jedoch..."):
+    - Im Admin-Web (`ToolTime/admin-web/src/services/gaebParser.ts`): Funktion `cleanShortText()` filtert das Standard-GAEB-Präfix `/^wie\s+(?:vor)?pos(?:ition)?\.?\s*(?:\[[^\]]+\]|\d+(?:\.\d+)*)\s*,?\s*jedoch\s+/i` beim Import heraus.
+    - In der Monteur-App (`TTApp/src/components/booking/bookingHelpers.js` & `BookingScreen.jsx`): Funktion `cleanMaterialName()` säubert das Präfix zur Laufzeit in Materialkarten, Dropdowns und Modals für bereits existierende Daten und Cache.
 - 2026-10-07 v2.15: Dynamischer CAD-Vektorplan (DWG/DXF -> JSON) & Raum-Highlighting:
   - Admin-Web (`ToolTime`): Parser (`dwgParser.ts`) erzeugt nun beim Upload von DWG/DXF-Plänen strukturierte Vektordaten (`vectorData`: Wände, Rohrtrassen für Kaltwasser/Warmwasser/Abwasser/Heizung, Raumgrenzen, Geräte und Beschriftungen).
   - Monteur-App (`TTApp`): `PlanViewerModal.jsx` rendert `plan.vectorData` dynamisch via SVG mit stufenlosem Pinch-to-Zoom (1x–6x) und Pan.
@@ -196,5 +201,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-07 — v2.15 Update: Dynamischer CAD-Vektorplan (DWG/DXF -> JSON) und Raum-Highlighting in `PlanViewerModal.jsx`. Parser in Admin-Web erzeugt `vectorData`.
+2026-10-07 — v2.16 Update: Unterzeichner-Name als Pflichtfeld in `UnplannedInstallModal.jsx` & Bereinigung von GAEB-Folgepositionspräfixen ("wie Pos. [01.1] , jedoch...") in Admin-Web (`gaebParser.ts`) und Monteur-App (`bookingHelpers.js`).
 

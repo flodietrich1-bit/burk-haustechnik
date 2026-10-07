@@ -15,6 +15,7 @@ import {
   getRoomPlannedItem,
   getMaterialDisplayName,
   getRoomDisplayName,
+  cleanMaterialName,
 } from '../components/booking/bookingHelpers';
 import MaterialBookingCard from '../components/booking/MaterialBookingCard';
 import NachtragModal from '../components/booking/NachtragModal';
@@ -115,13 +116,14 @@ export default function BookingScreen({
         list.push({
           id: mId,
           pos: rm.posNr || full?.pos || '',
-          name:
+          name: cleanMaterialName(
             rm.shortText ||
             rm.cleanName ||
             rm.name ||
             full?.cleanName ||
             full?.name ||
-            'Material',
+            'Material'
+          ),
           qu: rm.qu || full?.qu || 'Stk',
           group: rm.group || full?.group || '',
         });

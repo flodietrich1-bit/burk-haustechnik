@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -31,9 +31,17 @@ export default function UnplannedInstallModal({
   const [selectedUnclearMat, setSelectedUnclearMat] = useState(null);
   const [showUnclearSuggestions, setShowUnclearSuggestions] = useState(false);
   const [unclearReason, setUnclearReason] = useState('');
+  const [unclearSigner, setUnclearSigner] = useState('');
   const [unclearSignature, setUnclearSignature] = useState(null);
   const [unclearScrollEnabled, setUnclearScrollEnabled] = useState(true);
   const [hasAttemptedUnclearSubmit, setHasAttemptedUnclearSubmit] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      if (!unclearSigner) setUnclearSigner(monteur?.name || '');
+      setHasAttemptedUnclearSubmit(false);
+    }
+  }, [visible, monteur]);
 
   if (!visible || !room) return null;
 
@@ -69,7 +77,12 @@ export default function UnplannedInstallModal({
 
   const handleSave = () => {
     const qtyVal = parseFloat(unclearQty) || 0;
-    const isMissing = !unclearText.trim() || qtyVal <= 0 || !unclearReason.trim() || !unclearSignature;
+    const isMissing =
+      !unclearText.trim() ||
+      qtyVal <= 0 ||
+      !unclearReason.trim() ||
+      !unclearSigner.trim() ||
+      !unclearSignature;
     if (isMissing) {
       setHasAttemptedUnclearSubmit(true);
       return;
@@ -89,7 +102,8 @@ export default function UnplannedInstallModal({
       isOrdered: !!selectedUnclearMat,
       reason: unclearReason.trim(),
       signature: unclearSignature,
-      requestedBy: monteur?.name || 'Monteur',
+      requestedBy: unclearSigner.trim() || monteur?.name || 'Monteur',
+      signerName: unclearSigner.trim() || monteur?.name || 'Monteur',
       roomId: room.id,
       roomName: room.name,
     });
@@ -297,6 +311,23 @@ export default function UnplannedInstallModal({
               />
             </View>
 
+            {/* Name des Unterzeichnenden */}
+            <View style={styles.modalField}>
+              <Text style={styles.modalFieldLabel}>
+                {t('reBest', currentLang)} <Text style={styles.requiredStar}>*</Text>
+              </Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  hasAttemptedUnclearSubmit && !unclearSigner.trim() && styles.inputInvalid,
+                ]}
+                placeholder={t('reBest', currentLang)}
+                placeholderTextColor={COLORS.muted}
+                value={unclearSigner}
+                onChangeText={setUnclearSigner}
+              />
+            </View>
+
             {/* Unterschrift */}
             <SignaturePad
               key="sig-unclear"
@@ -314,6 +345,7 @@ export default function UnplannedInstallModal({
               (!unclearText.trim() ||
                 !(parseFloat(unclearQty) > 0) ||
                 !unclearReason.trim() ||
+                !unclearSigner.trim() ||
                 !unclearSignature) && (
                 <View style={styles.missingHintBar}>
                   <Text style={styles.missingHintIcon}>⚠️</Text>
@@ -326,6 +358,7 @@ export default function UnplannedInstallModal({
                         !unclearText.trim() ? t('reMat', currentLang) : null,
                         !(parseFloat(unclearQty) > 0) ? t('reQty', currentLang) : null,
                         !unclearReason.trim() ? t('unplannedReason', currentLang) : null,
+                        !unclearSigner.trim() ? t('reBest', currentLang) : null,
                         !unclearSignature ? t('signatureLabel', currentLang) : null,
                       ]
                         .filter(Boolean)

@@ -40,32 +40,36 @@ export const getRoomPlannedItem = (matId, room) => {
   return null;
 };
 
+export const cleanMaterialName = (name) => {
+  if (!name || typeof name !== 'string') return '';
+  let str = name.trim();
+  // Strip GAEB reference prefixes e.g. "wie Pos. [01.1] , jedoch " or "wie Pos. 01.18, jedoch "
+  str = str.replace(/^wie\s+(?:vor)?pos(?:ition)?\.?\s*(?:\[[^\]]+\]|\d+(?:\.\d+)*)\s*,?\s*jedoch\s+/i, '');
+  return str.trim();
+};
+
 export const getMaterialDisplayName = (mat, roomPlan = null) => {
+  let raw = '';
   if (mat?.cleanName && mat.cleanName !== 'Neues Material') {
-    return mat.cleanName;
-  }
-  if (mat?.shortText && mat.shortText !== 'Neues Material') {
-    return mat.shortText;
-  }
-  if (roomPlan?.shortText && roomPlan.shortText !== 'Neues Material') {
-    return roomPlan.shortText;
-  }
-  if (mat?.name && mat.name !== 'Neues Material') {
-    return mat.name;
-  }
-  if (roomPlan?.cleanName && roomPlan.cleanName !== 'Neues Material') {
-    return roomPlan.cleanName;
-  }
-  if (roomPlan?.name && roomPlan.name !== 'Neues Material') {
-    return roomPlan.name;
-  }
-  if (mat?.longText) {
-    return mat.longText;
-  }
-  if (mat?.pos || roomPlan?.posNr) {
+    raw = mat.cleanName;
+  } else if (mat?.shortText && mat.shortText !== 'Neues Material') {
+    raw = mat.shortText;
+  } else if (roomPlan?.shortText && roomPlan.shortText !== 'Neues Material') {
+    raw = roomPlan.shortText;
+  } else if (mat?.name && mat.name !== 'Neues Material') {
+    raw = mat.name;
+  } else if (roomPlan?.cleanName && roomPlan.cleanName !== 'Neues Material') {
+    raw = roomPlan.cleanName;
+  } else if (roomPlan?.name && roomPlan.name !== 'Neues Material') {
+    raw = roomPlan.name;
+  } else if (mat?.longText) {
+    raw = mat.longText;
+  } else if (mat?.pos || roomPlan?.posNr) {
     return `Pos ${mat?.pos || roomPlan?.posNr}`;
+  } else {
+    return 'Material';
   }
-  return 'Material';
+  return cleanMaterialName(raw);
 };
 
 export const getForeignGloss = (mat, currentLang) => {
