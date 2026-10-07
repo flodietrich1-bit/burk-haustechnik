@@ -472,7 +472,7 @@ Bauleitung`;
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                Mehrbedarf / anders verbaut
+                Nachtrag
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 Baustellen-Mehraufwände: Mehrstunden/Regie, zusätzliches Material und ungeplant verbaute Bauteile

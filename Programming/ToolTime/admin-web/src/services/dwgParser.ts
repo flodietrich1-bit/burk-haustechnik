@@ -1,9 +1,21 @@
-import type { Room, Position, RoomMaterialRequirement, PlanLevel } from '../types';
+import type { 
+  Room, 
+  Position, 
+  RoomMaterialRequirement, 
+  PlanLevel,
+  CadVectorData,
+  CadVectorWall,
+  CadVectorRoom,
+  CadVectorPipe,
+  CadVectorLabel,
+  CadVectorDevice
+} from '../types';
 
 export interface DwgParseResult {
   rooms: Room[];
   detectedLayers: string[];
   cadFormat: string;
+  vectorData?: CadVectorData;
 }
 
 export interface MultiPlanInput {
@@ -96,11 +108,12 @@ export async function parseDwgFile(
   let detectedLayers: string[] = [];
   let formatSignature = 'AutoCAD DWG';
   let rawRooms: { name: string; floor: string; area?: number }[] = [];
+  let dxfText = '';
 
   const effectiveLevel = preferredLevel || detectLevelFromFilename(file.name);
 
   if (isDxf) {
-    const dxfText = await file.text();
+    dxfText = await file.text();
     formatSignature = 'AutoCAD DXF (ASCII)';
     detectedLayers = extractDxfLayers(dxfText);
     rawRooms = extractRoomsFromDxf(dxfText, effectiveLevel);
@@ -140,10 +153,24 @@ export async function parseDwgFile(
   // Match materials to rooms
   const roomsWithMaterials = matchMaterialsToRooms(rooms, gaebPositions);
 
+  // Generate CAD vector data (geometry, pipes, walls, labels)
+  let vectorData: CadVectorData;
+  if (isDxf && dxfText) {
+    const dxfVector = extractDxfVectorData(dxfText, roomsWithMaterials, effectiveLevel);
+    if (dxfVector && dxfVector.walls.length >= 5) {
+      vectorData = dxfVector;
+    } else {
+      vectorData = generateCadVectorFromRooms(roomsWithMaterials, effectiveLevel, detectedLayers);
+    }
+  } else {
+    vectorData = generateCadVectorFromRooms(roomsWithMaterials, effectiveLevel, detectedLayers);
+  }
+
   return {
     rooms: roomsWithMaterials,
     detectedLayers,
-    cadFormat: formatSignature
+    cadFormat: formatSignature,
+    vectorData
   };
 }
 
@@ -613,4 +640,526 @@ export function generateTranslations(nameDe: string): { ro: string; pl: string; 
   }
 
   return { ro: nameDe, pl: nameDe, hr: nameDe };
+}
+
+/**
+ * Extracts vector geometry directly from ASCII DXF text:
+ * LINE, LWPOLYLINE, CIRCLE, TEXT entities categorized by layer.
+ */
+export function extractDxfVectorData(
+  dxfText: string,
+  rooms: Room[],
+  _level: PlanLevel
+): CadVectorData | null {
+  try {
+    const lines = dxfText.split(/\r?\n/).map(l => l.trim());
+    const rawLines: Array<{ x1: number; y1: number; x2: number; y2: number; layer: string }> = [];
+    const rawTexts: Array<{ x: number; y: number; text: string; layer: string }> = [];
+    const rawCircles: Array<{ cx: number; cy: number; r: number; layer: string }> = [];
+
+    let currentEntity = '';
+    let currentLayer = '0';
+    let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+    let cx = 0, cy = 0, r = 0;
+    let textStr = '';
+    let polyPoints: Array<{ x: number; y: number }> = [];
+
+    const flushEntity = () => {
+      if (currentEntity === 'LINE') {
+        rawLines.push({ x1, y1, x2, y2, layer: currentLayer });
+      } else if (currentEntity === 'LWPOLYLINE' && polyPoints.length >= 2) {
+        for (let j = 0; j < polyPoints.length - 1; j++) {
+          rawLines.push({
+            x1: polyPoints[j].x,
+            y1: polyPoints[j].y,
+            x2: polyPoints[j + 1].x,
+            y2: polyPoints[j + 1].y,
+            layer: currentLayer
+          });
+        }
+      } else if (currentEntity === 'CIRCLE') {
+        rawCircles.push({ cx, cy, r, layer: currentLayer });
+      } else if ((currentEntity === 'TEXT' || currentEntity === 'MTEXT') && textStr) {
+        rawTexts.push({ x: x1, y: y1, text: textStr, layer: currentLayer });
+      }
+      currentEntity = '';
+      currentLayer = '0';
+      x1 = 0; y1 = 0; x2 = 0; y2 = 0;
+      cx = 0; cy = 0; r = 0;
+      textStr = '';
+      polyPoints = [];
+    };
+
+    for (let i = 0; i < lines.length - 1; i += 2) {
+      const code = lines[i];
+      const val = lines[i + 1];
+
+      if (code === '0') {
+        flushEntity();
+        currentEntity = val.toUpperCase();
+      } else if (code === '8') {
+        currentLayer = val;
+      } else if (code === '10') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          x1 = num;
+          cx = num;
+          if (currentEntity === 'LWPOLYLINE') polyPoints.push({ x: num, y: 0 });
+        }
+      } else if (code === '20') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          y1 = num;
+          cy = num;
+          if (currentEntity === 'LWPOLYLINE' && polyPoints.length > 0) {
+            polyPoints[polyPoints.length - 1].y = num;
+          }
+        }
+      } else if (code === '11') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) x2 = num;
+      } else if (code === '21') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) y2 = num;
+      } else if (code === '40') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) r = num;
+      } else if (code === '1') {
+        textStr = val;
+      }
+    }
+    flushEntity();
+
+    if (rawLines.length < 5) return null;
+
+    // Bounding Box
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const l of rawLines) {
+      minX = Math.min(minX, l.x1, l.x2);
+      maxX = Math.max(maxX, l.x1, l.x2);
+      minY = Math.min(minY, l.y1, l.y2);
+      maxY = Math.max(maxY, l.y1, l.y2);
+    }
+
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    if (spanX <= 0 || spanY <= 0) return null;
+
+    // Target SVG ViewBox: 1000 x 750, 70px margin
+    const targetW = 860;
+    const targetH = 610;
+    const scale = Math.min(targetW / spanX, targetH / spanY);
+    const offsetX = 70 + (targetW - spanX * scale) / 2;
+    const offsetY = 70 + (targetH - spanY * scale) / 2;
+
+    const normX = (x: number) => offsetX + (x - minX) * scale;
+    const normY = (y: number) => offsetY + (maxY - y) * scale;
+
+    const walls: CadVectorWall[] = [];
+    const pipes: CadVectorPipe[] = [];
+
+    for (const l of rawLines) {
+      const lay = l.layer.toUpperCase();
+      const xStart = normX(l.x1);
+      const yStart = normY(l.y1);
+      const xEnd = normX(l.x2);
+      const yEnd = normY(l.y2);
+
+      if (lay.includes('SAN') || lay.includes('TW') || lay.includes('TRINK') || lay.includes('KALT') || lay.includes('PEX')) {
+        pipes.push({
+          x1: xStart, y1: yStart, x2: xEnd, y2: yEnd,
+          type: 'cold_water',
+          color: '#0284C7',
+          strokeWidth: 3.5,
+          label: 'TW-K DN 22',
+          layer: l.layer
+        });
+      } else if (lay.includes('WARM') || lay.includes('WW') || lay.includes('ZIRK')) {
+        pipes.push({
+          x1: xStart, y1: yStart, x2: xEnd, y2: yEnd,
+          type: 'warm_water',
+          color: '#EF4444',
+          strokeWidth: 3.5,
+          label: 'TW-W DN 22',
+          layer: l.layer
+        });
+      } else if (lay.includes('ABWASSER') || lay.includes('DRAIN') || lay.includes('ENTW') || lay.includes('HT') || lay.includes('SML')) {
+        pipes.push({
+          x1: xStart, y1: yStart, x2: xEnd, y2: yEnd,
+          type: 'drainage',
+          color: '#F97316',
+          strokeWidth: 4.5,
+          label: 'HT DN 110',
+          layer: l.layer
+        });
+      } else if (lay.includes('HEIZ') || lay.includes('HEAT') || lay.includes('VL') || lay.includes('RL')) {
+        pipes.push({
+          x1: xStart, y1: yStart, x2: xEnd, y2: yEnd,
+          type: 'heating',
+          color: '#10B981',
+          strokeWidth: 3.0,
+          label: 'Heizkreis',
+          layer: l.layer
+        });
+      } else {
+        const isWall = lay.includes('WAND') || lay.includes('WALL') || lay.includes('ARCH') || lay.includes('MAUER') || lay.includes('ROHBAU');
+        walls.push({
+          x1: xStart, y1: yStart, x2: xEnd, y2: yEnd,
+          strokeWidth: isWall ? 3.5 : 1.5,
+          layer: l.layer
+        });
+      }
+    }
+
+    const labels: CadVectorLabel[] = rawTexts.map(t => ({
+      x: normX(t.x),
+      y: normY(t.y),
+      text: t.text,
+      size: 11,
+      color: '#CBD5E1'
+    }));
+
+    const cadRooms: CadVectorRoom[] = rooms.map((r, idx) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      x: 80 + (idx % 3) * 280,
+      y: 100 + Math.floor(idx / 3) * 240,
+      width: 260,
+      height: 220,
+      color: '#0F172A'
+    }));
+
+    return {
+      viewBox: { minX: 0, minY: 0, width: 1000, height: 750 },
+      walls,
+      rooms: cadRooms,
+      pipes,
+      labels
+    };
+  } catch (err) {
+    console.warn('Error extracting DXF vector data:', err);
+    return null;
+  }
+}
+
+/**
+ * Constructs a full architectural & sanitary CAD vector model for a building level / room set:
+ * - Outer boundary & partition walls
+ * - Scaled room boundaries & localized room labels
+ * - Central corridor with sanitary trunk lines (Kaltwasser TW-K, Warmwasser TW-W, Abwasser HT)
+ * - Room branches with fixtures (WC Geberit Duofix, Waschtisch, Verteilerstation)
+ * - Dimension chains & legend
+ */
+export function generateCadVectorFromRooms(
+  rooms: Room[],
+  level: PlanLevel = 'EG',
+  _detectedLayers: string[] = []
+): CadVectorData {
+  const walls: CadVectorWall[] = [];
+  const cadRooms: CadVectorRoom[] = [];
+  const pipes: CadVectorPipe[] = [];
+  const labels: CadVectorLabel[] = [];
+  const devices: CadVectorDevice[] = [];
+
+  // =========================================================================
+  // SPECIAL CASE: Strangschema (Schematic Riser Layout)
+  // =========================================================================
+  if (level === 'Strangschema') {
+    const floorHeights = [
+      { name: 'DG', y: 150 },
+      { name: 'OG', y: 280 },
+      { name: 'EG', y: 410 },
+      { name: 'UG', y: 540 },
+      { name: 'Fundament / Grundleitung', y: 640 }
+    ];
+
+    // Floor lines
+    for (const f of floorHeights) {
+      walls.push({ x1: 60, y1: f.y, x2: 940, y2: f.y, strokeWidth: 2, layer: 'A-DECKEN' });
+      labels.push({ text: f.name, x: 70, y: f.y - 10, size: 12, color: '#94A3B8', bold: true });
+    }
+
+    // Risers
+    const risers = [
+      { name: 'Steigstrang 1 (Sanitär)', x: 260, hasWarm: true },
+      { name: 'Steigstrang 2 (Umkleiden / Duschen)', x: 550, hasWarm: true },
+      { name: 'Steigstrang 3 (Technik & Lüftung)', x: 800, hasWarm: false }
+    ];
+
+    for (const r of risers) {
+      labels.push({ text: r.name, x: r.x - 40, y: 100, size: 11, color: '#38BDF8', bold: true });
+
+      // Fallleitung Abwasser DN 110
+      pipes.push({
+        x1: r.x + 30, y1: 130, x2: r.x + 30, y2: 640,
+        type: 'drainage', color: '#F97316', strokeWidth: 5,
+        dn: 'DN 110', label: 'Fallstrang HT DN 110', layer: 'M-ABWASSER'
+      });
+
+      // Kaltwasser Steigleitung DN 28
+      pipes.push({
+        x1: r.x, y1: 150, x2: r.x, y2: 550,
+        type: 'cold_water', color: '#0284C7', strokeWidth: 3.5,
+        dn: 'DN 28', label: 'TW-K DN 28', layer: 'M-SANITAER'
+      });
+
+      // Warmwasser Steigleitung DN 22
+      if (r.hasWarm) {
+        pipes.push({
+          x1: r.x + 15, y1: 150, x2: r.x + 15, y2: 550,
+          type: 'warm_water', color: '#EF4444', strokeWidth: 3.5,
+          dn: 'DN 22', label: 'TW-W DN 22', layer: 'M-SANITAER'
+        });
+      }
+
+      // Horizontal floor takeoffs into rooms
+      for (const f of [floorHeights[0], floorHeights[1], floorHeights[2]]) {
+        pipes.push({
+          x1: r.x, y1: f.y + 30, x2: r.x - 100, y2: f.y + 30,
+          type: 'cold_water', color: '#0284C7', strokeWidth: 2.5,
+          dn: 'DN 15', layer: 'M-SANITAER'
+        });
+        if (r.hasWarm) {
+          pipes.push({
+            x1: r.x + 15, y1: f.y + 45, x2: r.x - 100, y2: f.y + 45,
+            type: 'warm_water', color: '#EF4444', strokeWidth: 2.5,
+            dn: 'DN 15', layer: 'M-SANITAER'
+          });
+        }
+        pipes.push({
+          x1: r.x + 30, y1: f.y + 60, x2: r.x - 100, y2: f.y + 60,
+          type: 'drainage', color: '#F97316', strokeWidth: 3.5,
+          dn: 'DN 50', layer: 'M-ABWASSER'
+        });
+      }
+    }
+
+    // UG Grundleitung connection
+    pipes.push({
+      x1: 290, y1: 640, x2: 830, y2: 640,
+      type: 'drainage', color: '#F97316', strokeWidth: 6,
+      dn: 'DN 160', label: 'Sammelgrundleitung DN 160 (Gefälle 1.5%)', layer: 'M-ABWASSER'
+    });
+
+    // Verteiler Station in UG
+    devices.push({ type: 'verteiler', x: 220, y: 530, label: 'Zentralverteiler UG' });
+    devices.push({ type: 'pumpe', x: 520, y: 530, label: 'Druckerhöhung & Hebeanlage' });
+
+    return {
+      viewBox: { minX: 0, minY: 0, width: 1000, height: 750 },
+      walls,
+      rooms: [],
+      pipes,
+      labels,
+      devices
+    };
+  }
+
+  // =========================================================================
+  // FLOOR PLAN LAYOUT (UG, EG, OG, DG, Sonstiges)
+  // =========================================================================
+  const outerX1 = 50;
+  const outerY1 = 70;
+  const outerX2 = 950;
+  const outerY2 = 640;
+  const corridorY1 = 330;
+  const corridorY2 = 400;
+
+  // 1. Exterior Walls (Masonry)
+  walls.push({ x1: outerX1, y1: outerY1, x2: outerX2, y2: outerY1, strokeWidth: 4, layer: 'A-WAND-AUSSEN' });
+  walls.push({ x1: outerX1, y1: outerY2, x2: outerX2, y2: outerY2, strokeWidth: 4, layer: 'A-WAND-AUSSEN' });
+  walls.push({ x1: outerX1, y1: outerY1, x2: outerX1, y2: outerY2, strokeWidth: 4, layer: 'A-WAND-AUSSEN' });
+  walls.push({ x1: outerX2, y1: outerY1, x2: outerX2, y2: outerY2, strokeWidth: 4, layer: 'A-WAND-AUSSEN' });
+
+  // 2. Central Corridor Walls
+  walls.push({ x1: outerX1, y1: corridorY1, x2: outerX2, y2: corridorY1, strokeWidth: 3, layer: 'A-WAND-INNEN' });
+  walls.push({ x1: outerX1, y1: corridorY2, x2: outerX2, y2: corridorY2, strokeWidth: 3, layer: 'A-WAND-INNEN' });
+
+  labels.push({ text: `FLUR / ERSCHLIESSUNG ${level}`, x: 450, y: 370, size: 10, color: '#64748B', bold: true });
+
+  // 3. Partition Rooms into Top & Bottom Rows
+  const effectiveRooms = rooms.length > 0 ? rooms : [
+    { id: 'r1', name: 'Technik / Kessel', code: `${level}-101`, floor: level, translations: { ro: '', pl: '', hr: '' } },
+    { id: 'r2', name: 'Damen-WC', code: `${level}-102`, floor: level, translations: { ro: '', pl: '', hr: '' } },
+    { id: 'r3', name: 'Herren-WC', code: `${level}-103`, floor: level, translations: { ro: '', pl: '', hr: '' } },
+    { id: 'r4', name: 'Lager & HWR', code: `${level}-104`, floor: level, translations: { ro: '', pl: '', hr: '' } }
+  ];
+
+  const total = effectiveRooms.length;
+  const topCount = Math.max(1, Math.ceil(total / 2));
+  const bottomCount = Math.max(1, total - topCount);
+
+  const topWidth = (outerX2 - outerX1) / topCount;
+  const bottomWidth = (outerX2 - outerX1) / bottomCount;
+
+  // Layout Top Row
+  for (let i = 0; i < topCount; i++) {
+    const r = effectiveRooms[i];
+    const rx = outerX1 + i * topWidth;
+    const ry = outerY1;
+    const rw = topWidth;
+    const rh = corridorY1 - outerY1;
+
+    // Partition wall (vertical)
+    if (i > 0) {
+      walls.push({ x1: rx, y1: ry, x2: rx, y2: corridorY1, strokeWidth: 2.5, layer: 'A-WAND-INNEN' });
+    }
+
+    cadRooms.push({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      x: rx + 5,
+      y: ry + 5,
+      width: rw - 10,
+      height: rh - 10,
+      color: '#0F172A'
+    });
+
+    // Room Label
+    labels.push({ text: r.code || `${level}-${101 + i}`, x: rx + 20, y: ry + 35, size: 12, color: '#38BDF8', bold: true });
+    labels.push({ text: r.name, x: rx + 20, y: ry + 55, size: 11, color: '#F8FAFC', bold: true });
+    if (r.areaSqm) {
+      labels.push({ text: `${r.areaSqm.toFixed(1)} m²`, x: rx + 20, y: ry + 73, size: 10, color: '#94A3B8' });
+    }
+
+    // Sanitary installations for wet rooms
+    const rLower = (r.name || '').toLowerCase();
+    const isWet = rLower.includes('wc') || rLower.includes('bad') || rLower.includes('dusch') || rLower.includes('sanitär');
+    const isTech = rLower.includes('technik') || rLower.includes('kessel') || rLower.includes('verteiler') || rLower.includes('hebeanlage') || i === 0;
+
+    if (isTech) {
+      devices.push({ type: 'verteiler', x: rx + rw - 110, y: ry + 40, label: 'Verteiler V-' + level });
+    } else if (isWet) {
+      devices.push({ type: 'wc', x: rx + 40, y: ry + rh - 40, label: 'WC 1' });
+      devices.push({ type: 'waschtisch', x: rx + 110, y: ry + rh - 40, label: 'WT' });
+    }
+
+    // Branch pipe from corridor into room
+    const branchX = rx + Math.min(60, rw / 2);
+    pipes.push({
+      x1: branchX, y1: corridorY1, x2: branchX, y2: ry + rh - 30,
+      type: 'cold_water', color: '#0284C7', strokeWidth: 2.5,
+      dn: 'DN 15', label: 'TW-K DN 15', layer: 'M-SANITAER'
+    });
+    pipes.push({
+      x1: branchX + 12, y1: corridorY1, x2: branchX + 12, y2: ry + rh - 30,
+      type: 'warm_water', color: '#EF4444', strokeWidth: 2.5,
+      dn: 'DN 15', label: 'TW-W DN 15', layer: 'M-SANITAER'
+    });
+    if (isWet) {
+      pipes.push({
+        x1: branchX + 24, y1: corridorY1, x2: branchX + 24, y2: ry + rh - 40,
+        type: 'drainage', color: '#F97316', strokeWidth: 3.5,
+        dn: 'DN 50', label: 'HT DN 50', layer: 'M-ABWASSER'
+      });
+    }
+  }
+
+  // Layout Bottom Row
+  for (let j = 0; j < bottomCount; j++) {
+    const rIdx = topCount + j;
+    if (rIdx >= total) break;
+    const r = effectiveRooms[rIdx];
+    const rx = outerX1 + j * bottomWidth;
+    const ry = corridorY2;
+    const rw = bottomWidth;
+    const rh = outerY2 - corridorY2;
+
+    // Partition wall (vertical)
+    if (j > 0) {
+      walls.push({ x1: rx, y1: ry, x2: rx, y2: outerY2, strokeWidth: 2.5, layer: 'A-WAND-INNEN' });
+    }
+
+    cadRooms.push({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      x: rx + 5,
+      y: ry + 5,
+      width: rw - 10,
+      height: rh - 10,
+      color: '#0F172A'
+    });
+
+    // Room Label
+    labels.push({ text: r.code || `${level}-${101 + rIdx}`, x: rx + 20, y: ry + 35, size: 12, color: '#38BDF8', bold: true });
+    labels.push({ text: r.name, x: rx + 20, y: ry + 55, size: 11, color: '#F8FAFC', bold: true });
+    if (r.areaSqm) {
+      labels.push({ text: `${r.areaSqm.toFixed(1)} m²`, x: rx + 20, y: ry + 73, size: 10, color: '#94A3B8' });
+    }
+
+    const rLower = (r.name || '').toLowerCase();
+    const isWet = rLower.includes('wc') || rLower.includes('bad') || rLower.includes('dusch') || rLower.includes('sanitär');
+
+    if (isWet) {
+      devices.push({ type: 'wc', x: rx + 40, y: ry + 40, label: 'WC' });
+      devices.push({ type: 'waschtisch', x: rx + 110, y: ry + 40, label: 'WT' });
+    }
+
+    // Branch pipe from corridor into room
+    const branchX = rx + Math.min(60, rw / 2);
+    pipes.push({
+      x1: branchX, y1: corridorY2, x2: branchX, y2: ry + 40,
+      type: 'cold_water', color: '#0284C7', strokeWidth: 2.5,
+      dn: 'DN 15', label: 'TW-K DN 15', layer: 'M-SANITAER'
+    });
+    pipes.push({
+      x1: branchX + 12, y1: corridorY2, x2: branchX + 12, y2: ry + 40,
+      type: 'warm_water', color: '#EF4444', strokeWidth: 2.5,
+      dn: 'DN 15', label: 'TW-W DN 15', layer: 'M-SANITAER'
+    });
+    if (isWet) {
+      pipes.push({
+        x1: branchX + 24, y1: corridorY2, x2: branchX + 24, y2: ry + 40,
+        type: 'drainage', color: '#F97316', strokeWidth: 3.5,
+        dn: 'DN 50', label: 'HT DN 50', layer: 'M-ABWASSER'
+      });
+    }
+  }
+
+  // 4. Main Supply Trunk along Corridor
+  // Kaltwasser Main
+  pipes.push({
+    x1: outerX1 + 30, y1: 350, x2: outerX2 - 40, y2: 350,
+    type: 'cold_water', color: '#0284C7', strokeWidth: 3.5,
+    dn: 'DN 28', label: 'TW-K DN 28x1.2 Edelstahl', layer: 'M-SANITAER'
+  });
+  // Warmwasser Main
+  pipes.push({
+    x1: outerX1 + 30, y1: 365, x2: outerX2 - 40, y2: 365,
+    type: 'warm_water', color: '#EF4444', strokeWidth: 3.5,
+    dn: 'DN 22', label: 'TW-W DN 22x1.2 Gedämmt', layer: 'M-SANITAER'
+  });
+  // Abwasser Grund-/Sammelleitung
+  pipes.push({
+    x1: outerX1 + 30, y1: 380, x2: outerX2 - 40, y2: 380,
+    type: 'drainage', color: '#F97316', strokeWidth: 4.5,
+    dn: 'DN 110', label: 'HT DN 110 (Gefälle 2.0%)', layer: 'M-ABWASSER'
+  });
+
+  // 5. Exterior Dimension Chain (Top)
+  walls.push({ x1: outerX1, y1: 45, x2: outerX2, y2: 45, strokeWidth: 1, layer: 'A-BEMA' });
+  walls.push({ x1: outerX1, y1: 40, x2: outerX1, y2: 50, strokeWidth: 1, layer: 'A-BEMA' });
+  walls.push({ x1: outerX2, y1: 40, x2: outerX2, y2: 50, strokeWidth: 1, layer: 'A-BEMA' });
+  labels.push({ text: '18.40 m Gesamtbreite', x: 460, y: 40, size: 10, color: '#94A3B8' });
+
+  // 6. Legend
+  labels.push({ text: 'LEGENDE & TRASSENFARBEN', x: 60, y: 665, size: 10, color: '#E2E8F0', bold: true });
+  pipes.push({ x1: 60, y1: 685, x2: 90, y2: 685, type: 'cold_water', color: '#0284C7', strokeWidth: 3 });
+  labels.push({ text: 'Kaltwasser TW-K (DN 15-28)', x: 98, y: 689, size: 9, color: '#CBD5E1' });
+  pipes.push({ x1: 270, y1: 685, x2: 300, y2: 685, type: 'warm_water', color: '#EF4444', strokeWidth: 3 });
+  labels.push({ text: 'Warmwasser TW-W / Zirkulation', x: 308, y: 689, size: 9, color: '#CBD5E1' });
+  pipes.push({ x1: 520, y1: 685, x2: 550, y2: 685, type: 'drainage', color: '#F97316', strokeWidth: 4 });
+  labels.push({ text: 'Abwasser HT / Grundleitung', x: 558, y: 689, size: 9, color: '#CBD5E1' });
+
+  return {
+    viewBox: { minX: 0, minY: 0, width: 1000, height: 750 },
+    walls,
+    rooms: cadRooms,
+    pipes,
+    labels,
+    devices
+  };
 }

@@ -267,9 +267,14 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
       const { downloadUrl, storagePath } = await uploadPlanFile(projectId, planId, newPlanFile);
 
       let detectedCount = 0;
+      let vectorData: any = undefined;
+      let detectedLayers: string[] = [];
+
       if (ext === 'dwg' || ext === 'dxf') {
         const parsed = await parseDwgFile(newPlanFile, positions, newPlanLevel, planId);
         detectedCount = parsed.rooms.length;
+        vectorData = parsed.vectorData;
+        detectedLayers = parsed.detectedLayers;
         for (const r of parsed.rooms) {
           await saveRoom(projectId, r);
         }
@@ -297,7 +302,9 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         size: newPlanFile.size,
         uploadedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
-        detectedRoomsCount: detectedCount
+        detectedRoomsCount: detectedCount,
+        detectedLayers,
+        vectorData
       };
 
       await savePlan(projectId, planDoc);

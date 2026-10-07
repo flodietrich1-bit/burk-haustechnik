@@ -38,6 +38,8 @@ export interface UploadedPlanItem {
   level: PlanLevel;
   fileType: 'dwg' | 'dxf' | 'pdf' | string;
   detectedRoomsCount: number;
+  vectorData?: any;
+  detectedLayers?: string[];
 }
 
 interface NewProjectModalProps {
@@ -215,12 +217,14 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       setDwgRooms(allRooms);
       setDwgStatus('success');
 
-      // Update detected room counts on individual plans
+      // Update detected room counts and vectorData on individual plans
       setUploadedPlans(prev => prev.map(p => {
         const res = planResults.get(p.id);
         return {
           ...p,
-          detectedRoomsCount: res ? res.rooms.length : 0
+          detectedRoomsCount: res ? res.rooms.length : 0,
+          vectorData: res?.vectorData,
+          detectedLayers: res?.detectedLayers
         };
       }));
 
