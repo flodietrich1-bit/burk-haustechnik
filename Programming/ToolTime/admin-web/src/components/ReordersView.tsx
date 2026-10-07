@@ -29,6 +29,9 @@ export interface RoomDeviation {
   actualQty: number;
   diff: number; // actual - planned
   counts?: boolean; // zählt zur Netto-Abweichung (Mehrverbrauch sofort, Minderverbrauch nur bei fertigem Raum)
+  reason?: string;
+  monteurName?: string;
+  timestamp?: string;
 }
 
 export interface GroupedDeviation {
@@ -99,6 +102,75 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
       rooms: RoomDeviation[];
     }>();
 
+    // Helper to resolve why more material was installed in a specific room
+    const resolveRoomDeviationReason = (room: Room, m: any) => {
+      // 1. Check alerts
+      const matchingAlert = alerts.find(a => {
+        const isRoom = a.roomId === room.id || a.roomId === room.code || (a.roomName && room.name && a.roomName.toLowerCase() === room.name.toLowerCase());
+        if (!isRoom) return false;
+        const isPos = (a.materialPos && a.materialPos === m.posNr) || 
+                      (a.materialId && a.materialId === m.positionId) ||
+                      (a.materialName && m.shortText && a.materialName.toLowerCase() === m.shortText.toLowerCase());
+        return isPos && a.reason;
+      });
+
+      if (matchingAlert && matchingAlert.reason) {
+        return {
+          reason: matchingAlert.reason,
+          monteurName: matchingAlert.monteurName,
+          timestamp: matchingAlert.createdAt
+        };
+      }
+
+      // 2. Check bookings for this room with an explicit reason or note
+      const matchingBooking = bookings.find(b => {
+        const isRoom = b.roomId === room.id || b.roomId === room.code || (b.roomName && room.name && b.roomName.toLowerCase() === room.name.toLowerCase());
+        if (!isRoom) return false;
+        const isPos = (b.positionNr && b.positionNr === m.posNr) || 
+                      (b.itemOz && b.itemOz === m.posNr) ||
+                      (b.positionId && b.positionId === m.positionId) ||
+                      (b.itemId && b.itemId === m.positionId) ||
+                      (b.positionName && m.shortText && b.positionName.toLowerCase() === m.shortText.toLowerCase()) ||
+                      (b.itemText && m.shortText && b.itemText.toLowerCase() === m.shortText.toLowerCase());
+        return isPos && ((b.reason && b.reason.trim().length > 0) || (b.note && b.note.trim().length > 0));
+      });
+
+      if (matchingBooking) {
+        return {
+          reason: (matchingBooking.reason || matchingBooking.note || '').trim(),
+          monteurName: matchingBooking.createdBy,
+          timestamp: matchingBooking.createdAt || matchingBooking.timestamp
+        };
+      }
+
+      // 3. Fallback: check room notes
+      if (m.notes && m.notes.trim().length > 0) {
+        return {
+          reason: m.notes.trim(),
+          monteurName: undefined,
+          timestamp: undefined
+        };
+      }
+
+      // Check any booking to at least get the Monteur's name
+      const anyBooking = bookings.find(b => {
+        const isRoom = b.roomId === room.id || b.roomId === room.code || (b.roomName && room.name && b.roomName.toLowerCase() === room.name.toLowerCase());
+        if (!isRoom) return false;
+        return (b.positionNr && b.positionNr === m.posNr) || 
+               (b.itemOz && b.itemOz === m.posNr) ||
+               (b.positionId && b.positionId === m.positionId) ||
+               (b.itemId && b.itemId === m.positionId) ||
+               (b.positionName && m.shortText && b.positionName.toLowerCase() === m.shortText.toLowerCase()) ||
+               (b.itemText && m.shortText && b.itemText.toLowerCase() === m.shortText.toLowerCase());
+      });
+
+      return {
+        reason: undefined,
+        monteurName: anyBooking?.createdBy,
+        timestamp: anyBooking?.createdAt || anyBooking?.timestamp
+      };
+    };
+
     // 1. Scan all rooms and materials
     rooms.forEach(room => {
       const isExplicitlyUnlocked = room.isCompleted === false || room.status === 'in_progress';
@@ -130,6 +202,8 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
             });
           }
 
+          const devInfo = diff > 0 ? resolveRoomDeviationReason(room, m) : undefined;
+
           map.get(key)!.rooms.push({
             roomId: room.id,
             roomName: room.name,
@@ -139,7 +213,10 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
             plannedQty: planned,
             actualQty: actual,
             diff,
-            counts: countsTowardsNet
+            counts: countsTowardsNet,
+            reason: devInfo?.reason,
+            monteurName: devInfo?.monteurName,
+            timestamp: devInfo?.timestamp
           });
         }
       });
@@ -164,7 +241,10 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
               isRoomCompleted: false,
               plannedQty: a.plannedQty || 0,
               actualQty: a.requestedTotal || a.exceededBy || 0,
-              diff: a.exceededBy || 0
+              diff: a.exceededBy || 0,
+              reason: a.reason,
+              monteurName: a.monteurName,
+              timestamp: a.createdAt
             }]
           });
         }
@@ -288,7 +368,11 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
   // Helper to generate dynamic email body
   const generateMailText = (group: GroupedDeviation, qty: number) => {
     const roomsSummary = group.rooms
-      .map(r => `${r.roomName} (${r.diff > 0 ? '+' : ''}${r.diff} ${group.qu})`)
+      .map(r => {
+        const diffStr = r.diff > 0 ? `+${r.diff}` : `${r.diff}`;
+        const reasonStr = r.reason ? ` [Grund: ${r.reason}${r.monteurName ? ` (${r.monteurName})` : ''}]` : '';
+        return `${r.roomName} (${diffStr} ${group.qu})${reasonStr}`;
+      })
       .join(', ');
 
     return `Hallo ${managerFirstName},
@@ -676,32 +760,60 @@ Projektleitung Burk Haustechnik`;
                     </span>
                     <div className="divide-y divide-slate-200/50">
                       {group.rooms.map(r => (
-                        <div key={r.roomId} className="flex items-center justify-between py-1.5 text-xs">
-                          <div className="flex items-center space-x-1.5">
-                            <MapPin className="w-3.5 h-3.5 text-[#3B82C4] shrink-0" />
-                            <span className="font-semibold text-slate-800">
-                              {r.roomName} ({r.roomCode})
-                            </span>
-                            {r.isRoomCompleted ? (
-                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded">
-                                ✓ 100%
+                        <div key={r.roomId} className="py-2 first:pt-1 last:pb-1 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center space-x-1.5 min-w-0">
+                              <MapPin className="w-3.5 h-3.5 text-[#3B82C4] shrink-0" />
+                              <span className="font-semibold text-slate-800 truncate">
+                                {r.roomName} ({r.roomCode})
                               </span>
-                            ) : (
-                              <span className="text-[9px] font-medium text-amber-700 bg-amber-50 px-1 py-0.2 rounded">
-                                Montage
+                              {r.isRoomCompleted ? (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/70 px-1.5 py-0.2 rounded shrink-0">
+                                  ✓ 100%
+                                </span>
+                              ) : (
+                                <span className="text-[9px] font-medium text-amber-700 bg-amber-50 px-1 py-0.2 rounded shrink-0">
+                                  Montage
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center space-x-2 font-mono text-xs shrink-0">
+                              <span className="text-slate-500">Plan: {r.plannedQty}</span>
+                              <span className="text-slate-800 font-bold">Ist: {r.actualQty}</span>
+                              <span className={`font-black ${
+                                r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : (r.counts === false ? 'text-amber-700 bg-amber-50 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded')
+                              }`}>
+                                {r.counts === false ? `offen ${Math.abs(r.diff)}` : (r.diff > 0 ? `+${r.diff}` : `${r.diff}`)} {group.qu}
                               </span>
-                            )}
+                            </div>
                           </div>
 
-                          <div className="flex items-center space-x-2 font-mono text-xs">
-                            <span className="text-slate-500">Plan: {r.plannedQty}</span>
-                            <span className="text-slate-800 font-bold">Ist: {r.actualQty}</span>
-                            <span className={`font-black ${
-                              r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : (r.counts === false ? 'text-amber-700 bg-amber-50 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded')
-                            }`}>
-                              {r.counts === false ? `offen ${Math.abs(r.diff)}` : (r.diff > 0 ? `+${r.diff}` : `${r.diff}`)} {group.qu}
-                            </span>
-                          </div>
+                          {/* Info direkt unter dem jeweiligen Raum, warum mehr Material verbaut wurde */}
+                          {r.diff > 0 && (
+                            <div className="ml-5 p-2 bg-amber-50/90 border border-amber-200/90 rounded-lg text-xs text-amber-950 flex items-start space-x-2 shadow-2xs">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                              <div className="space-y-0.5 flex-1 min-w-0">
+                                <div className="text-[11px] leading-snug">
+                                  <span className="font-bold text-amber-900 mr-1.5">Grund für Mehrverbrauch:</span>
+                                  <span className="font-semibold text-slate-900 break-words">
+                                    {r.reason || 'Mehrbedarf bei Montage erfasst (ohne gesonderte Notiz)'}
+                                  </span>
+                                </div>
+                                {(r.monteurName || r.timestamp) && (
+                                  <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2">
+                                    {r.monteurName && (
+                                      <span>Erfasst von: <strong className="text-slate-700">{r.monteurName}</strong></span>
+                                    )}
+                                    {r.monteurName && r.timestamp && <span>•</span>}
+                                    {r.timestamp && (
+                                      <span>{new Date(r.timestamp).toLocaleString('de-DE')}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

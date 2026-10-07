@@ -209,9 +209,11 @@ export interface Booking {
   itemOz?: string;
   positionName?: string;
   itemText?: string;
+  roomName?: string;
   quantity: number;
   qu?: string;
   note?: string;
+  reason?: string;
   photoUrls?: string[];
   photoUris?: string[];
   signatureUrl?: string;
