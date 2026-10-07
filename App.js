@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -70,6 +70,17 @@ export default function App() {
   const [sessionPhotos, setSessionPhotos] = useState([]); // [localUri, ...]
   const [unclearItems, setUnclearItems] = useState([]);
   const [lastSummary, setLastSummary] = useState([]);
+
+  // Refs for debounced auto-save & auto-sync
+  const sessionQuantitiesRef = useRef(sessionQuantities);
+  sessionQuantitiesRef.current = sessionQuantities;
+  const selectedRoomRef = useRef(selectedRoom);
+  selectedRoomRef.current = selectedRoom;
+  const sessionPhotosRef = useRef(sessionPhotos);
+  sessionPhotosRef.current = sessionPhotos;
+  const unclearItemsRef = useRef(unclearItems);
+  unclearItemsRef.current = unclearItems;
+  const autoSaveTimerRef = useRef(null);
 
   // 1. Initial App Loading
   useEffect(() => {
@@ -145,6 +156,29 @@ export default function App() {
     return () => unsubscribe();
   }, [appPhase, isSyncing]);
 
+  // 2b. Periodic Silent Background Sync (every 60 seconds)
+  useEffect(() => {
+    if (appPhase !== 'app') return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        const online = await checkOnlineStatus();
+        setIsOnline(online);
+        if (online && !isSyncing) {
+          const pId = project?.id || DEFAULT_PROJECT_ID;
+          const res = await syncBookings({ silent: true, projectId: pId });
+          if (res && res.success) {
+            await refreshData(pId);
+          }
+        }
+      } catch (err) {
+        console.warn('Periodic 60s background sync warning:', err?.message);
+      }
+    }, 60000);
+
+    return () => clearInterval(syncInterval);
+  }, [appPhase, isSyncing, project?.id]);
+
   const refreshData = async (targetProjectId) => {
     const pId = targetProjectId || project?.id;
     const [r, m, delta, pl] = await Promise.all([
@@ -164,17 +198,21 @@ export default function App() {
     if (authenticatedMonteur) {
       setMonteur(authenticatedMonteur);
     }
-    const projectsList = assignedProjects && assignedProjects.length > 0 ? assignedProjects : [DEFAULT_PROJECT];
+    const projectsList = Array.isArray(assignedProjects) ? assignedProjects : [];
     setAvailableProjects(projectsList);
 
     const online = await checkOnlineStatus();
     setIsOnline(online);
 
     const proceedToAppOrSelect = async () => {
-      if (projectsList.length > 1) {
+      if (projectsList.length === 0) {
+        // No project assigned to this user in project settings
+        setProject(null);
+        setAppPhase('project_select');
+      } else if (projectsList.length > 1) {
         setAppPhase('project_select');
       } else {
-        const targetProj = projectsList[0] || DEFAULT_PROJECT;
+        const targetProj = projectsList[0];
         setProject(targetProj);
         // Persist project ID and load its cached data
         if (targetProj?.id) {
@@ -195,7 +233,7 @@ export default function App() {
       }
     };
 
-    if (online) {
+    if (online && projectsList.length > 0) {
       // Show seamless sync overlay
       setSyncProgress({
         visible: true,
@@ -222,7 +260,7 @@ export default function App() {
         }, 600);
       }
     } else {
-      // Offline mode
+      // Offline mode or no assigned projects
       await proceedToAppOrSelect();
     }
   };
@@ -292,16 +330,65 @@ export default function App() {
   };
 
   const handleQuantityChange = (matId, qty) => {
-    setSessionQuantities((prev) => {
-      const updated = {
-        ...prev,
-        [matId]: qty,
-      };
-      if (selectedRoom) {
-        setSelectedRoom((r) => ({ ...r, draftQuantities: updated }));
+    const updated = {
+      ...sessionQuantitiesRef.current,
+      [matId]: qty,
+    };
+    sessionQuantitiesRef.current = updated;
+    setSessionQuantities(updated);
+    if (selectedRoom) {
+      setSelectedRoom((r) => ({ ...r, draftQuantities: updated }));
+    }
+
+    // Debounced Auto-Save & Auto-Push (1.5 Sekunden nach letzter Mengenänderung)
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(async () => {
+      const room = selectedRoomRef.current;
+      if (!room) return;
+
+      try {
+        const pId = project?.id || DEFAULT_PROJECT_ID || 'hallenbad-weingarten';
+        const currentRooms = Array.isArray(rooms) ? rooms : [];
+        const now = new Date().toISOString();
+        const updatedRooms = currentRooms.map((r) => {
+          if (r && r.id === room.id) {
+            const draft = {
+              ...r,
+              draftQuantities: { ...sessionQuantitiesRef.current },
+              photos: [...(sessionPhotosRef.current || [])],
+              draftUnclear: [...(unclearItemsRef.current || [])],
+              lastUpdatedBy: monteur?.name || 'Monteur',
+              lastMonteurLanguage: currentLang || 'de',
+              updatedAt: now,
+            };
+            const pct = computeRoomPercentage(draft, materials);
+            return {
+              ...draft,
+              pct,
+              status: r.isCompleted ? 'completed' : (pct > 0 ? 'in_progress' : 'planned'),
+            };
+          }
+          return r;
+        });
+
+        setRooms(updatedRooms);
+        await saveRooms(updatedRooms, pId, materials);
+        const delta = await getLocalUnsyncedDelta(pId);
+        setPendingCount(delta.totalPendingCount);
+
+        const online = await checkOnlineStatus();
+        setIsOnline(online);
+        if (online) {
+          syncBookings({ silent: true, projectId: pId })
+            .then(() => refreshData(pId))
+            .catch(() => {});
+        }
+      } catch (saveErr) {
+        console.warn('Auto-save debounced sync failed:', saveErr?.message);
       }
-      return updated;
-    });
+    }, 1500);
   };
 
   const handleLeaveRoomDraft = async () => {
@@ -897,6 +984,7 @@ export default function App() {
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSelectProject={handleSelectProject}
+        onLogout={() => setAppPhase('pin')}
       />
     );
   }
@@ -908,9 +996,9 @@ export default function App() {
 
       {/* Persistent Global Header */}
       <Header
-        projectName={project.name || 'Hallenbad Weingarten'}
-        subTitle={`${project.client || 'Stadt Weingarten'} · ${selectedRoom ? selectedRoom.name : 'UG'}`}
-        calendarWeek={project.calendarWeek || 27}
+        projectName={project?.name || 'Hallenbad Weingarten'}
+        subTitle={`${project?.client || 'Stadt Weingarten'} · ${selectedRoom ? selectedRoom.name : 'UG'}`}
+        calendarWeek={project?.calendarWeek || 27}
         isOnline={isOnline}
         pendingCount={pendingCount}
         currentLang={currentLang}
@@ -919,6 +1007,7 @@ export default function App() {
         isSyncing={isSyncing}
         monteurName={monteur?.name || 'Monteur'}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
+        onLockPress={() => setAppPhase('pin')}
       />
 
       {/* Screen Router */}

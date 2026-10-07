@@ -16,8 +16,8 @@ export const SEED_MONTEURS = [
     id: 'user_mont_4',
     name: 'Stefan Maier',
     pin: '5578',
-    assignedProjectIds: ['gemeindehaus-bavendorf', 'hallenbad-weingarten'],
-    projectIds: ['gemeindehaus-bavendorf', 'hallenbad-weingarten'],
+    assignedProjectIds: ['proj_1789997083092', 'einfamilienhaus'],
+    projectIds: ['proj_1789997083092', 'einfamilienhaus'],
     role: 'monteur',
     defaultLanguage: 'de',
   },
@@ -25,17 +25,8 @@ export const SEED_MONTEURS = [
     id: 'user_mont_1',
     name: 'Ion Popescu',
     pin: '1234',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    projectIds: ['hallenbad-weingarten'],
-    role: 'monteur',
-    defaultLanguage: 'ro',
-  },
-  {
-    id: 'monteur_ion_alt',
-    name: 'Ion Popescu',
-    pin: '4321',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    projectIds: ['hallenbad-weingarten'],
+    assignedProjectIds: ['proj_1791403908448', 'hallenbad-weingarten'],
+    projectIds: ['proj_1791403908448', 'hallenbad-weingarten'],
     role: 'monteur',
     defaultLanguage: 'ro',
   },
@@ -43,8 +34,8 @@ export const SEED_MONTEURS = [
     id: 'user_mont_2',
     name: 'Tomasz Novak',
     pin: '4821',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    projectIds: ['hallenbad-weingarten'],
+    assignedProjectIds: [],
+    projectIds: [],
     role: 'monteur',
     defaultLanguage: 'pl',
   },
@@ -52,8 +43,8 @@ export const SEED_MONTEURS = [
     id: 'user_mont_3',
     name: 'Marko Horvat',
     pin: '9012',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    projectIds: ['hallenbad-weingarten'],
+    assignedProjectIds: [],
+    projectIds: [],
     role: 'monteur',
     defaultLanguage: 'hr',
   },
@@ -61,17 +52,8 @@ export const SEED_MONTEURS = [
     id: 'monteur_florian',
     name: 'Florian Dietrich',
     pin: '1234',
-    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg'],
-    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg'],
-    role: 'monteur',
-    defaultLanguage: 'de',
-  },
-  {
-    id: 'monteur_thomas',
-    name: 'Thomas Weber',
-    pin: '9876',
-    assignedProjectIds: ['hallenbad-weingarten', 'schulzentrum-wangen'],
-    projectIds: ['hallenbad-weingarten', 'schulzentrum-wangen'],
+    assignedProjectIds: ['proj_1791403908448', 'hallenbad-weingarten'],
+    projectIds: ['proj_1791403908448', 'hallenbad-weingarten'],
     role: 'monteur',
     defaultLanguage: 'de',
   },
@@ -79,24 +61,41 @@ export const SEED_MONTEURS = [
     id: 'user_bl_1',
     name: 'Florian Buck',
     pin: '9999',
-    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'gemeindehaus-bavendorf'],
-    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'gemeindehaus-bavendorf'],
+    assignedProjectIds: ['proj_1789997083092', 'proj_1791403908448'],
+    projectIds: ['proj_1789997083092', 'proj_1791403908448'],
     role: 'bauleiter',
-    defaultLanguage: 'de',
-  },
-  {
-    id: 'monteur_burk',
-    name: 'Monteur Burk',
-    pin: '0000',
-    assignedProjectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'schulzentrum-wangen', 'gemeindehaus-bavendorf'],
-    projectIds: ['hallenbad-weingarten', 'wohnanlage-ravensburg', 'schulzentrum-wangen', 'gemeindehaus-bavendorf'],
-    role: 'monteur',
     defaultLanguage: 'de',
   },
 ];
 
 // Available construction projects
 export const AVAILABLE_PROJECTS = [
+  {
+    id: 'proj_1789997083092',
+    name: 'Einfamilienhaus',
+    projectNumber: 'EFH-2026-01',
+    client: 'Familie Schneider',
+    location: 'Ravensburg',
+    address: 'Gartenstraße 12, 88212 Ravensburg',
+    trade: 'Sanitär & Heizung',
+    projectManager: 'Florian Buck',
+    assignedMonteurIds: ['user_mont_4'],
+    calendarWeek: 27,
+    totalDeliveredPercentage: 20,
+  },
+  {
+    id: 'proj_1791403908448',
+    name: 'Hallenbad Weingarten',
+    projectNumber: '1638 / 24316-044',
+    client: 'Stadt Weingarten',
+    location: 'Weingarten',
+    address: 'Brechenmacherstraße 11, 88250 Weingarten',
+    trade: 'Sanitärinstallation',
+    projectManager: 'Florian Buck',
+    assignedMonteurIds: ['user_mont_1'],
+    calendarWeek: 27,
+    totalDeliveredPercentage: 42,
+  },
   {
     id: 'hallenbad-weingarten',
     name: 'Hallenbad Weingarten Sanierung',
@@ -106,44 +105,9 @@ export const AVAILABLE_PROJECTS = [
     address: 'Brechenmacherstraße 11, 88250 Weingarten',
     trade: 'Sanitärinstallation',
     projectManager: 'Florian Buck',
+    assignedMonteurIds: ['user_mont_1'],
     calendarWeek: 27,
     totalDeliveredPercentage: 42,
-  },
-  {
-    id: 'gemeindehaus-bavendorf',
-    name: 'Gemeindehaus Bavendorf Sanierung',
-    projectNumber: '1702 / 24320-012',
-    client: 'Gemeinde Bavendorf',
-    location: 'Bavendorf',
-    address: 'Kirchweg 4, 88213 Ravensburg-Bavendorf',
-    trade: 'Heizung & Sanitär',
-    projectManager: 'Florian Buck',
-    calendarWeek: 27,
-    totalDeliveredPercentage: 35,
-  },
-  {
-    id: 'wohnanlage-ravensburg',
-    name: 'Wohnanlage Sonnenhof Ravensburg',
-    projectNumber: '1742 / 24319-012',
-    client: 'Baugenossenschaft RV',
-    location: 'Ravensburg',
-    address: 'Sonnenstraße 14-18, 88212 Ravensburg',
-    trade: 'Heizung & Sanitär',
-    projectManager: 'Markus Burk',
-    calendarWeek: 27,
-    totalDeliveredPercentage: 68,
-  },
-  {
-    id: 'schulzentrum-wangen',
-    name: 'Schulzentrum Wangen Neubau',
-    projectNumber: '1805 / 24322-003',
-    client: 'Landkreis Ravensburg',
-    location: 'Wangen im Allgäu',
-    address: 'Jahnstraße 5, 88239 Wangen',
-    trade: 'Lüftung & Sanitär',
-    projectManager: 'Stefan Eder',
-    calendarWeek: 27,
-    totalDeliveredPercentage: 15,
   },
 ];
 
@@ -205,6 +169,99 @@ export async function resetPinLockout() {
     await AsyncStorage.removeItem(LOCKOUT_KEYS.ATTEMPTS);
     await AsyncStorage.removeItem(LOCKOUT_KEYS.LOCKED_UNTIL);
   } catch (e) {}
+}
+
+/**
+ * Checks whether a user/monteur is authorized to access a project according to Project Settings.
+ */
+export function isUserAssignedToProject(monteur, project) {
+  if (!monteur || !project) return false;
+
+  // 1. Admins have access to all projects
+  if (monteur.role === 'admin') {
+    return true;
+  }
+
+  const monteurId = String(monteur.id || '').trim().toLowerCase();
+  const rawName = String(monteur.name || '').trim();
+  const monteurName = rawName.toLowerCase();
+  const monteurSlug = monteurName.replace(/\s+/g, '-');
+
+  // 2. Check project settings: assignedMonteurIds (managed in ProjectSettingsView in ToolTime admin-web)
+  if (Array.isArray(project.assignedMonteurIds) && project.assignedMonteurIds.length > 0) {
+    const isAssigned = project.assignedMonteurIds.some((assignedId) => {
+      if (!assignedId) return false;
+      const cleanAssigned = String(assignedId).trim().toLowerCase();
+      return (
+        cleanAssigned === monteurId ||
+        cleanAssigned === monteurSlug ||
+        cleanAssigned === monteurName
+      );
+    });
+    if (isAssigned) return true;
+  }
+
+  // 3. Check legacy / alternative project fields (monteurs, assignedUsers)
+  if (Array.isArray(project.monteurs) && project.monteurs.length > 0) {
+    const isAssigned = project.monteurs.some((m) => {
+      if (!m) return false;
+      if (typeof m === 'string') {
+        const str = m.trim().toLowerCase();
+        return str === monteurId || str === monteurSlug || str === monteurName;
+      }
+      if (typeof m === 'object') {
+        return (
+          String(m.id || '').trim().toLowerCase() === monteurId ||
+          String(m.userId || '').trim().toLowerCase() === monteurId ||
+          (m.name && String(m.name).trim().toLowerCase() === monteurName)
+        );
+      }
+      return false;
+    });
+    if (isAssigned) return true;
+  }
+
+  if (Array.isArray(project.assignedUsers) && project.assignedUsers.length > 0) {
+    const isAssigned = project.assignedUsers.some((uId) => {
+      if (!uId) return false;
+      const clean = String(uId).trim().toLowerCase();
+      return clean === monteurId || clean === monteurSlug || clean === monteurName;
+    });
+    if (isAssigned) return true;
+  }
+
+  // 4. Check project manager / commercial manager (for bauleiter / projektleiter)
+  if (
+    monteur.role === 'bauleiter' ||
+    monteur.role === 'projektleiter' ||
+    monteur.role === 'kaufmaennisch'
+  ) {
+    const isLeadOrDeputy =
+      (project.projectManagerId && String(project.projectManagerId).toLowerCase() === monteurId) ||
+      (project.deputyProjectManagerId && String(project.deputyProjectManagerId).toLowerCase() === monteurId) ||
+      (project.commercialManagerId && String(project.commercialManagerId).toLowerCase() === monteurId) ||
+      (project.deputyCommercialManagerId && String(project.deputyCommercialManagerId).toLowerCase() === monteurId) ||
+      (project.projectManager && String(project.projectManager).trim().toLowerCase() === monteurName) ||
+      (project.deputyProjectManager && String(project.deputyProjectManager).trim().toLowerCase() === monteurName) ||
+      (project.commercialManager && String(project.commercialManager).trim().toLowerCase() === monteurName) ||
+      (project.deputyCommercialManager && String(project.deputyCommercialManager).trim().toLowerCase() === monteurName);
+    if (isLeadOrDeputy) return true;
+  }
+
+  // 5. Check if user document itself explicitly has assignedProjectIds or projectIds
+  const userProjectIds = monteur.assignedProjectIds || monteur.projectIds || [];
+  if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
+    const projId = String(project.id || '').trim().toLowerCase();
+    const projNameSlug = String(project.name || '').trim().toLowerCase().replace(/\s+/g, '-');
+    const isMatch = userProjectIds.some((pId) => {
+      if (!pId) return false;
+      const cleanPId = String(pId).trim().toLowerCase();
+      return cleanPId === projId || cleanPId === projNameSlug;
+    });
+    if (isMatch) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -294,35 +351,23 @@ export async function authenticateByPin(enteredPin) {
     };
   }
 
+  // Cache authenticated monteur locally so future offline logins have their exact profile
+  try {
+    const cachedMonteursRaw = await AsyncStorage.getItem('ttapp_known_monteurs');
+    const list = cachedMonteursRaw ? JSON.parse(cachedMonteursRaw) : [];
+    const updated = [
+      monteur,
+      ...list.filter((m) => m.id !== monteur.id && String(m.pin) !== String(monteur.pin)),
+    ];
+    await AsyncStorage.setItem('ttapp_known_monteurs', JSON.stringify(updated));
+  } catch {}
+
   // 4. Successful PIN match!
   await resetPinLockout();
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur));
 
-  // Determine assigned projects for this Monteur (support both assignedProjectIds and projectIds)
-  const userProjectIds = monteur.assignedProjectIds || monteur.projectIds || [];
-  let assignedProjects = [];
-  if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
-    assignedProjects = allProjects.filter((p) => userProjectIds.includes(p.id));
-    if (assignedProjects.length === 0) {
-      // If none of assigned IDs matched, but other non-deleted real projects exist:
-      if (allProjects.length > 0) {
-        assignedProjects = allProjects;
-      } else if (!firestoreProjectsFetched) {
-        assignedProjects = AVAILABLE_PROJECTS;
-      } else {
-        assignedProjects = [];
-      }
-    }
-  } else {
-    // No explicit projectIds assigned → show all non-deleted projects
-    if (allProjects.length > 0) {
-      assignedProjects = allProjects;
-    } else if (!firestoreProjectsFetched) {
-      assignedProjects = AVAILABLE_PROJECTS;
-    } else {
-      assignedProjects = [];
-    }
-  }
+  // Determine assigned projects strictly according to project settings
+  const assignedProjects = allProjects.filter((p) => isUserAssignedToProject(monteur, p));
 
   return {
     success: true,
