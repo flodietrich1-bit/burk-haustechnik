@@ -22,9 +22,12 @@ Every AI agent working on this repository must:
    - **Web Admin Version**: `/home/oem/Programming/ToolTime/admin-web/src/version.ts` (e.g. `v18`, `v19`, ...)
 3. Updating the App does NOT update the Web version, and updating Web does NOT update the App version.
 
-# Git Branching Rules
+# Git Branching & Deployment Rules (MANDATORY)
 - **Monteur App**: Exclusively use branch `Monteur` (do NOT use or recreate `Monteur-App`).
 - **Web Admin**: Exclusively use branch `main` in `/home/oem/Programming/ToolTime/admin-web`.
+- **AUTOMATIC EXPO DEPLOYMENT**: Jedes Mal, wenn Änderungen für die Monteur-App gepusht werden (`git push origin Monteur`), MUSS parallel/automatisch das EAS-Update für Expo veröffentlicht werden:
+  `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive`
+  (Der Nutzer muss das NICHT extra anfordern – das gehört ab sofort fest zum Release-Ablauf dazu!)
 
 # Project Facts (details in HANDOVER.md)
 
