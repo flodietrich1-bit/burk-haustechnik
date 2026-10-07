@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { ref, uploadString, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
 import * as FileSystem from 'expo-file-system';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -21,6 +21,7 @@ import {
   PLANS_DIR,
   getCachedPlans,
   saveCachedPlans,
+  clearProjectCache,
 } from './storageService';
 import { getActiveMonteur, syncMonteurToFirebase } from './authService';
 import { DEFAULT_PROJECT_ID } from '../constants/initialData';
@@ -167,6 +168,22 @@ export async function syncBookings(options = {}) {
     // Sync monteur profile if present
     if (monteur) {
       await syncMonteurToFirebase(monteur);
+    }
+
+    // Check if project was deleted in Firestore
+    try {
+      const projSnap = await getDoc(doc(db, 'projects', projectId));
+      if (!projSnap.exists() || projSnap.data()?.status === 'deleted' || projSnap.data()?.isDeleted) {
+        console.warn(`Project ${projectId} was deleted in Firestore. Clearing local cache.`);
+        await clearProjectCache(projectId);
+        return {
+          success: false,
+          isDeleted: true,
+          reason: 'project_deleted'
+        };
+      }
+    } catch (projErr) {
+      console.warn('Project existence check error in sync:', projErr.message);
     }
 
     let pushedCount = 0;

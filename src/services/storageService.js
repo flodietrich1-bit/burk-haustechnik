@@ -546,3 +546,24 @@ export async function getLocalUnsyncedDelta(projectId) {
   };
 }
 
+export async function clearProjectCache(projectId) {
+  try {
+    const pId = projectId || DEFAULT_PROJECT_ID;
+    await AsyncStorage.removeItem(`${KEYS.ROOMS}_${pId}`);
+    await AsyncStorage.removeItem(`${KEYS.MATERIALS}_${pId}`);
+    await AsyncStorage.removeItem(`${KEYS.PROJECT}_${pId}`);
+    await AsyncStorage.removeItem(`${KEYS.PLANS}_${pId}`);
+    await AsyncStorage.removeItem(`${KEYS.LAST_SYNCED_AT}_${pId}`);
+
+    const allRaw = await AsyncStorage.getItem('ttapp_all_projects');
+    if (allRaw) {
+      const all = JSON.parse(allRaw);
+      const filtered = all.filter((p) => p.id !== pId);
+      await AsyncStorage.setItem('ttapp_all_projects', JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Error clearing project cache:', e);
+  }
+}
+
+

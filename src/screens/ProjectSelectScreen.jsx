@@ -78,60 +78,70 @@ export default function ProjectSelectScreen({
           <Text style={styles.sectionSub}>{t('selectProjectSub', currentLang)}</Text>
         </View>
 
-        {projects.map((proj) => (
-          <TouchableOpacity
-            key={proj.id}
-            style={styles.projectCard}
-            onPress={() => onSelectProject(proj)}
-            activeOpacity={0.75}
-          >
-            <View style={styles.cardHeader}>
-              <View style={styles.projectNumberChip}>
-                <Text style={styles.projectNumberText}>
-                  {proj.projectNumber
-                    ? t('projectNumberLabel', currentLang, { num: proj.projectNumber })
-                    : t('projectSingle', currentLang)}
-                </Text>
-              </View>
-              {proj.calendarWeek ? (
-                <View style={styles.kwBadge}>
-                  <Text style={styles.kwText}>{t('kw', currentLang)} {proj.calendarWeek}</Text>
-                </View>
-              ) : null}
-            </View>
-
-            <Text style={styles.projectTitle}>{proj.name}</Text>
-
-            {proj.client ? (
-              <Text style={styles.clientText}>🏛️ {proj.client}</Text>
-            ) : null}
-
-            {proj.address || proj.location ? (
-              <Text style={styles.locationText}>
-                📍 {proj.address || proj.location}
-              </Text>
-            ) : null}
-
-            <View style={styles.divider} />
-
-            <View style={styles.cardFooter}>
-              <View style={styles.footerInfo}>
-                {proj.projectManager ? (
-                  <Text style={styles.pmText}>
-                    👷 {t('siteManager', currentLang)}: <Text style={styles.pmBold}>{proj.projectManager}</Text>
+        {projects.length === 0 ? (
+          <View style={styles.emptyStateBox}>
+            <Text style={styles.emptyStateIcon}>📋</Text>
+            <Text style={styles.emptyStateTitle}>Keine Bauvorhaben verfügbar</Text>
+            <Text style={styles.emptyStateSub}>
+              Aktuell sind dir keine aktiven Projekte zugeordnet oder das Projekt wurde im Admin-Cockpit gelöscht.
+            </Text>
+          </View>
+        ) : (
+          projects.map((proj) => (
+            <TouchableOpacity
+              key={proj.id}
+              style={styles.projectCard}
+              onPress={() => onSelectProject(proj)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.cardHeader}>
+                <View style={styles.projectNumberChip}>
+                  <Text style={styles.projectNumberText}>
+                    {proj.projectNumber
+                      ? t('projectNumberLabel', currentLang, { num: proj.projectNumber })
+                      : t('projectSingle', currentLang)}
                   </Text>
-                ) : null}
-                {proj.trade ? (
-                  <Text style={styles.tradeText}>🔧 {proj.trade}</Text>
+                </View>
+                {proj.calendarWeek ? (
+                  <View style={styles.kwBadge}>
+                    <Text style={styles.kwText}>{t('kw', currentLang)} {proj.calendarWeek}</Text>
+                  </View>
                 ) : null}
               </View>
 
-              <View style={styles.actionBtn}>
-                <Text style={styles.actionBtnText}>{t('openProjectBtn', currentLang)}</Text>
+              <Text style={styles.projectTitle}>{proj.name}</Text>
+
+              {proj.client ? (
+                <Text style={styles.clientText}>🏛️ {proj.client}</Text>
+              ) : null}
+
+              {proj.address || proj.location ? (
+                <Text style={styles.locationText}>
+                  📍 {proj.address || proj.location}
+                </Text>
+              ) : null}
+
+              <View style={styles.divider} />
+
+              <View style={styles.cardFooter}>
+                <View style={styles.footerInfo}>
+                  {proj.projectManager ? (
+                    <Text style={styles.pmText}>
+                      👷 {t('siteManager', currentLang)}: <Text style={styles.pmBold}>{proj.projectManager}</Text>
+                    </Text>
+                  ) : null}
+                  {proj.trade ? (
+                    <Text style={styles.tradeText}>🔧 {proj.trade}</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.actionBtn}>
+                  <Text style={styles.actionBtnText}>{t('openProjectBtn', currentLang)}</Text>
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+            </TouchableOpacity>
+          ))
+        )}
 
         {/* App Version Footer */}
         <View style={styles.footerVersionBox}>
@@ -370,5 +380,37 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.muted,
     letterSpacing: 0.5,
+  },
+  emptyStateBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  emptyStateIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.ink,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emptyStateSub: {
+    fontSize: 12.5,
+    color: COLORS.muted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

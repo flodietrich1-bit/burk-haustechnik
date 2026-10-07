@@ -229,6 +229,7 @@ export async function authenticateByPin(enteredPin) {
 
   let monteur = null;
   let allProjects = [];
+  let firestoreProjectsFetched = false;
 
   // 1. Try Firestore Online Lookup
   try {
@@ -254,12 +255,13 @@ export async function authenticateByPin(enteredPin) {
         monteur = { id: snapUser.docs[0].id, ...snapUser.docs[0].data() };
       }
 
-      // Fetch projects
+      // Fetch projects from Firestore
       const snapProj = await getDocs(collection(db, 'projects'));
-      if (!snapProj.empty) {
-        allProjects = snapProj.docs.map((d) => ({ id: d.id, ...d.data() }));
-        await AsyncStorage.setItem('ttapp_all_projects', JSON.stringify(allProjects));
-      }
+      firestoreProjectsFetched = true;
+      allProjects = snapProj.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((p) => p.status !== 'deleted' && !p.isDeleted);
+      await AsyncStorage.setItem('ttapp_all_projects', JSON.stringify(allProjects));
     }
   } catch (err) {
     console.warn('Firestore PIN lookup error, using local/seed fallback:', err.message);
@@ -272,9 +274,13 @@ export async function authenticateByPin(enteredPin) {
     monteur = knownList.find((m) => String(m.pin) === cleanPin);
   }
 
-  if (allProjects.length === 0) {
+  if (!firestoreProjectsFetched && allProjects.length === 0) {
     const cachedProjectsRaw = await AsyncStorage.getItem('ttapp_all_projects');
-    allProjects = cachedProjectsRaw ? JSON.parse(cachedProjectsRaw) : AVAILABLE_PROJECTS;
+    const cachedList = cachedProjectsRaw ? JSON.parse(cachedProjectsRaw) : [];
+    allProjects = cachedList.filter((p) => p.status !== 'deleted' && !p.isDeleted);
+    if (allProjects.length === 0) {
+      allProjects = AVAILABLE_PROJECTS;
+    }
   }
 
   // 3. If PIN does not match any registered Monteur
@@ -298,18 +304,24 @@ export async function authenticateByPin(enteredPin) {
   if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
     assignedProjects = allProjects.filter((p) => userProjectIds.includes(p.id));
     if (assignedProjects.length === 0) {
-      // Assigned IDs not found in Firestore → show ALL real projects instead of fake placeholders
-      // This handles the case where the admin panel uses different project IDs than the seeds
+      // If none of assigned IDs matched, but other non-deleted real projects exist:
       if (allProjects.length > 0) {
         assignedProjects = allProjects;
-      } else {
-        // Absolute last resort: only now use AVAILABLE_PROJECTS seed
+      } else if (!firestoreProjectsFetched) {
         assignedProjects = AVAILABLE_PROJECTS;
+      } else {
+        assignedProjects = [];
       }
     }
   } else {
-    // No explicit projectIds assigned → show all available real projects
-    assignedProjects = allProjects.length > 0 ? allProjects : AVAILABLE_PROJECTS;
+    // No explicit projectIds assigned → show all non-deleted projects
+    if (allProjects.length > 0) {
+      assignedProjects = allProjects;
+    } else if (!firestoreProjectsFetched) {
+      assignedProjects = AVAILABLE_PROJECTS;
+    } else {
+      assignedProjects = [];
+    }
   }
 
   return {
