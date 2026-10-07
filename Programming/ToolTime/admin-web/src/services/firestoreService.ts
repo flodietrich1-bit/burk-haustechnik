@@ -17,6 +17,12 @@ const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 const LOCAL_STORAGE_PLANS_PREFIX = 'burk_tooltime_plans_';
 
+/** Helper to sanitize objects before sending to Firestore (Firestore rejects undefined fields) */
+export function cleanForFirestore<T>(data: T): T {
+  if (data === undefined) return null as unknown as T;
+  return JSON.parse(JSON.stringify(data));
+}
+
 export function getLocalProjects(): Project[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
@@ -814,7 +820,7 @@ export async function createProject(
   // Attempt Firestore sync
   try {
     const projectRef = doc(db, 'projects', project.id);
-    await setDoc(projectRef, updatedProject, { merge: true });
+    await setDoc(projectRef, cleanForFirestore(updatedProject), { merge: true });
 
     // High-speed Chunked Batch-Write to both /positions AND /items (max 500 ops per batch)
     const POS_CHUNK = 200; // 200 pos * 2 refs = 400 operations
@@ -825,8 +831,8 @@ export async function createProject(
         if (!pos.id) continue;
         const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
         const iRef = doc(db, 'projects', project.id, 'items', pos.id);
-        batch.set(pRef, pos, { merge: true });
-        batch.set(iRef, {
+        batch.set(pRef, cleanForFirestore(pos), { merge: true });
+        batch.set(iRef, cleanForFirestore({
           id: pos.id,
           oz: pos.posNr,
           posNr: pos.posNr,
@@ -839,7 +845,7 @@ export async function createProject(
           unitPrice: pos.unitPrice || 0,
           group: pos.group,
           updatedAt: pos.updatedAt || new Date().toISOString()
-        }, { merge: true });
+        }), { merge: true });
       }
       await batch.commit();
     }
@@ -849,11 +855,11 @@ export async function createProject(
       const roomPlanBatch = writeBatch(db);
       for (const r of rooms) {
         const rRef = doc(db, 'projects', project.id, 'rooms', r.id);
-        roomPlanBatch.set(rRef, r, { merge: true });
+        roomPlanBatch.set(rRef, cleanForFirestore(r), { merge: true });
       }
       for (const plan of plans) {
         const planRef = doc(db, 'projects', project.id, 'plans', plan.id);
-        roomPlanBatch.set(planRef, plan, { merge: true });
+        roomPlanBatch.set(planRef, cleanForFirestore(plan), { merge: true });
       }
       await roomPlanBatch.commit();
     }
@@ -1549,10 +1555,10 @@ export async function updateProjectDetails(projectId: string, partial: Partial<P
 
   try {
     const ref = doc(db, 'projects', projectId);
-    await setDoc(ref, {
+    await setDoc(ref, cleanForFirestore({
       ...partial,
       updatedAt: new Date().toISOString()
-    }, { merge: true });
+    }), { merge: true });
   } catch (err: any) {
     console.warn('Firestore updateProjectDetails error:', err.message);
   }

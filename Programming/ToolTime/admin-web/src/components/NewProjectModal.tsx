@@ -122,6 +122,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const bauleiterList = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmList = users.filter(u => u.role === 'kaufmaennisch' || u.role === 'admin');
 
+  // Filter out the selected lead from the deputy lists (same person cannot be deputy of themselves)
+  const deputyBauleiterList = bauleiterList.filter(u => u.id !== projectManagerId && u.name !== projectManager);
+  const deputyKfmList = kfmList.filter(u => u.id !== commercialManagerId && u.name !== commercialManager);
+
   // Deduplicate monteurs strictly by person name
   const monteurList = useMemo(() => {
     const rawMonteurs = users.filter(u => u.role === 'monteur');
@@ -146,6 +150,12 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     if (found) {
       setProjectManager(found.name);
       setProjectManagerEmail(found.email || '');
+      // If the selected lead is currently set as deputy, clear the deputy
+      if (deputyProjectManagerId === userId || deputyProjectManager === found.name) {
+        setDeputyProjectManagerId('');
+        setDeputyProjectManager('');
+        setDeputyProjectManagerEmail('');
+      }
     }
   };
 
@@ -167,6 +177,12 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     if (found) {
       setCommercialManager(found.name);
       setCommercialManagerEmail(found.email || '');
+      // If the selected lead is currently set as deputy, clear the deputy
+      if (deputyCommercialManagerId === userId || deputyCommercialManager === found.name) {
+        setDeputyCommercialManagerId('');
+        setDeputyCommercialManager('');
+        setDeputyCommercialManagerEmail('');
+      }
     }
   };
 
@@ -446,28 +462,28 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         projectNumber: projectNumber.trim() || 'P-' + Math.floor(1000 + Math.random() * 9000),
         client: client.trim() || 'Direktkunde',
         location: location.trim() || 'Vor Ort',
-        address: address.trim() || undefined,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
+        address: address.trim() || '',
+        startDate: startDate || '',
+        endDate: endDate || '',
         trade: trade || 'Sanitärinstallation',
-        projectManagerId: projectManagerId || undefined,
+        projectManagerId: projectManagerId || '',
         projectManager: projectManager || 'Florian Buck',
-        projectManagerEmail: projectManagerEmail || undefined,
-        deputyProjectManagerId: deputyProjectManagerId || undefined,
-        deputyProjectManager: deputyProjectManager || undefined,
-        deputyProjectManagerEmail: deputyProjectManagerEmail || undefined,
-        commercialManagerId: commercialManagerId || undefined,
+        projectManagerEmail: projectManagerEmail || '',
+        deputyProjectManagerId: deputyProjectManagerId || '',
+        deputyProjectManager: deputyProjectManager || '',
+        deputyProjectManagerEmail: deputyProjectManagerEmail || '',
+        commercialManagerId: commercialManagerId || '',
         commercialManager: commercialManager || 'Sabine Müller',
-        commercialManagerEmail: commercialManagerEmail || undefined,
-        deputyCommercialManagerId: deputyCommercialManagerId || undefined,
-        deputyCommercialManager: deputyCommercialManager || undefined,
-        deputyCommercialManagerEmail: deputyCommercialManagerEmail || undefined,
+        commercialManagerEmail: commercialManagerEmail || '',
+        deputyCommercialManagerId: deputyCommercialManagerId || '',
+        deputyCommercialManager: deputyCommercialManager || '',
+        deputyCommercialManagerEmail: deputyCommercialManagerEmail || '',
         assignedMonteurIds: assignedMonteurIds,
         status: derivedStatus,
         currency: 'EUR',
         totalPositions: parsedPositions.length,
         hasDwg: uploadedPlans.length > 0,
-        dwgFileName: uploadedPlans[0]?.name || undefined,
+        dwgFileName: uploadedPlans[0]?.name || '',
         plansCount: planDocuments.length,
         plans: planDocuments,
         createdAt: new Date().toISOString()
@@ -742,7 +758,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                   >
                     <option value="">-- Keine Vertretung hinterlegt --</option>
-                    {bauleiterList.map(u => (
+                    {deputyBauleiterList.map(u => (
                       <option key={u.id} value={u.id}>
                         {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
                       </option>
@@ -794,7 +810,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                   >
                     <option value="">-- Keine Vertretung hinterlegt --</option>
-                    {kfmList.map(u => (
+                    {deputyKfmList.map(u => (
                       <option key={u.id} value={u.id}>
                         {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
                       </option>

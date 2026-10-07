@@ -65,17 +65,6 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
     }
   }, [project, users]);
 
-  if (!project) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
-        Kein aktives Projekt ausgewählt.
-      </div>
-    );
-  }
-
-  const bauleiterUsers = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
-  const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || (u.role as string) === 'kaufmännisch' || u.role === 'admin');
-
   // Deduplicate monteurs strictly by person name so each monteur appears exactly once
   const monteurUsers = useMemo(() => {
     const rawMonteurs = users.filter(u => u.role === 'monteur');
@@ -93,14 +82,37 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
     return deduped;
   }, [users]);
 
+  if (!project) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
+        Kein aktives Projekt ausgewählt.
+      </div>
+    );
+  }
+
+  const bauleiterUsers = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
+  const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || (u.role as string) === 'kaufmännisch' || u.role === 'admin');
+
+  // Filter out the selected lead from the deputy lists (same person cannot be deputy of themselves)
+  const deputyBauleiterUsers = bauleiterUsers.filter(u => u.id !== form.projectManagerId && u.name !== form.projectManager);
+  const deputyKfmUsers = kfmUsers.filter(u => u.id !== form.commercialManagerId && u.name !== form.commercialManager);
+
   const handleBauleiterChange = (userId: string) => {
     const selected = users.find(u => u.id === userId);
-    setForm(prev => ({
-      ...prev,
-      projectManagerId: userId,
-      projectManager: selected?.name || '',
-      projectManagerEmail: selected?.email || ''
-    }));
+    setForm(prev => {
+      const isSameAsDeputy = prev.deputyProjectManagerId === userId || prev.deputyProjectManager === selected?.name;
+      return {
+        ...prev,
+        projectManagerId: userId,
+        projectManager: selected?.name || '',
+        projectManagerEmail: selected?.email || '',
+        ...(isSameAsDeputy ? {
+          deputyProjectManagerId: '',
+          deputyProjectManager: '',
+          deputyProjectManagerEmail: ''
+        } : {})
+      };
+    });
   };
 
   const handleDeputyBauleiterChange = (userId: string) => {
@@ -115,12 +127,20 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
 
   const handleKfmChange = (userId: string) => {
     const selected = users.find(u => u.id === userId);
-    setForm(prev => ({
-      ...prev,
-      commercialManagerId: userId,
-      commercialManager: selected?.name || '',
-      commercialManagerEmail: selected?.email || ''
-    }));
+    setForm(prev => {
+      const isSameAsDeputy = prev.deputyCommercialManagerId === userId || prev.deputyCommercialManager === selected?.name;
+      return {
+        ...prev,
+        commercialManagerId: userId,
+        commercialManager: selected?.name || '',
+        commercialManagerEmail: selected?.email || '',
+        ...(isSameAsDeputy ? {
+          deputyCommercialManagerId: '',
+          deputyCommercialManager: '',
+          deputyCommercialManagerEmail: ''
+        } : {})
+      };
+    });
   };
 
   const handleDeputyKfmChange = (userId: string) => {
@@ -374,7 +394,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 }`}
               >
                 <option value="">-- Keine Vertretung hinterlegt --</option>
-                {bauleiterUsers.map(u => (
+                {deputyBauleiterUsers.map(u => (
                   <option key={u.id} value={u.id}>
                     {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
                   </option>
@@ -432,7 +452,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 }`}
               >
                 <option value="">-- Keine Vertretung hinterlegt --</option>
-                {kfmUsers.map(u => (
+                {deputyKfmUsers.map(u => (
                   <option key={u.id} value={u.id}>
                     {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
                   </option>
