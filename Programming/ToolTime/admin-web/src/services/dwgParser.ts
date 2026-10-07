@@ -1032,8 +1032,19 @@ export function generateCadVectorFromRooms(
     if (isTech) {
       devices.push({ type: 'verteiler', x: rx + rw - 110, y: ry + 40, label: 'Verteiler V-' + level });
     } else if (isWet) {
-      devices.push({ type: 'wc', x: rx + 40, y: ry + rh - 40, label: 'WC 1' });
-      devices.push({ type: 'waschtisch', x: rx + 110, y: ry + rh - 40, label: 'WT' });
+      // Pre-wall installation
+      walls.push({ x1: rx + 25, y1: ry + rh - 48, x2: rx + 175, y2: ry + rh - 48, strokeWidth: 2, layer: 'A-WAND-VORWAND' });
+      labels.push({ text: 'GIS Vorwand 120cm', x: rx + 30, y: ry + rh - 53, size: 8, color: '#38BDF8' });
+
+      devices.push({ type: 'wc', x: rx + 45, y: ry + rh - 30, label: 'WC Geberit Duofix' });
+      devices.push({ type: 'waschtisch', x: rx + 120, y: ry + rh - 30, label: 'WT 60cm' });
+
+      if (rLower.includes('dusch') || rLower.includes('bad') || rLower.includes('umkleide')) {
+        devices.push({ type: 'dusche', x: rx + rw - 65, y: ry + 45, label: 'Dusche 90x90 / Rinne' });
+      }
+      if (rLower.includes('bad') && !rLower.includes('dusch')) {
+        devices.push({ type: 'badewanne', x: rx + rw - 70, y: ry + rh - 50, label: 'Badewanne 170x75' });
+      }
     }
 
     // Branch pipe from corridor into room
@@ -1094,8 +1105,19 @@ export function generateCadVectorFromRooms(
     const isWet = rLower.includes('wc') || rLower.includes('bad') || rLower.includes('dusch') || rLower.includes('sanitär');
 
     if (isWet) {
-      devices.push({ type: 'wc', x: rx + 40, y: ry + 40, label: 'WC' });
-      devices.push({ type: 'waschtisch', x: rx + 110, y: ry + 40, label: 'WT' });
+      // Pre-wall installation
+      walls.push({ x1: rx + 25, y1: ry + 55, x2: rx + 175, y2: ry + 55, strokeWidth: 2, layer: 'A-WAND-VORWAND' });
+      labels.push({ text: 'GIS Vorwand 120cm', x: rx + 30, y: ry + 48, size: 8, color: '#38BDF8' });
+
+      devices.push({ type: 'wc', x: rx + 45, y: ry + 35, label: 'WC Geberit Duofix' });
+      devices.push({ type: 'waschtisch', x: rx + 120, y: ry + 35, label: 'WT 60cm' });
+
+      if (rLower.includes('dusch') || rLower.includes('bad') || rLower.includes('umkleide')) {
+        devices.push({ type: 'dusche', x: rx + rw - 65, y: ry + rh - 45, label: 'Dusche 90x90 / Rinne' });
+      }
+      if (rLower.includes('bad') && !rLower.includes('dusch')) {
+        devices.push({ type: 'badewanne', x: rx + rw - 70, y: ry + 50, label: 'Badewanne 170x75' });
+      }
     }
 
     // Branch pipe from corridor into room
