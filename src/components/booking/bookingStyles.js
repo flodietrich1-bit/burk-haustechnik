@@ -19,7 +19,33 @@ export const styles = StyleSheet.create({
     color: COLORS.muted,
   },
   headerRowClean: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 10,
+    gap: 10,
+  },
+  planHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    gap: 6,
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  planHeaderBtnIcon: {
+    fontSize: 14,
+  },
+  planHeaderBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   roomTitle: {
     fontSize: 20,

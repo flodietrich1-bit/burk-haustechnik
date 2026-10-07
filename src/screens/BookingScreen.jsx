@@ -14,17 +14,22 @@ import {
   resolveMat,
   getRoomPlannedItem,
   getMaterialDisplayName,
+  getRoomDisplayName,
 } from '../components/booking/bookingHelpers';
 import MaterialBookingCard from '../components/booking/MaterialBookingCard';
 import NachtragModal from '../components/booking/NachtragModal';
 import UnplannedInstallModal from '../components/booking/UnplannedInstallModal';
 import OverConsumptionModal from '../components/booking/OverConsumptionModal';
 import CompleteRoomModal from '../components/booking/CompleteRoomModal';
+import PlanViewerModal from '../components/PlanViewerModal';
+import { getRoomFloor } from '../services/storageService';
 import { styles } from '../components/booking/bookingStyles';
 
 export default function BookingScreen({
   room,
   materials = [],
+  plans = [],
+  project,
   monteur,
   currentLang = 'de',
   sessionQuantities = {},
@@ -40,6 +45,19 @@ export default function BookingScreen({
   onOverConsumptionAlert,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [showPlanModal, setShowPlanModal] = useState(false);
+
+  const floor = useMemo(() => getRoomFloor(room), [room]);
+  const floorPlan = useMemo(() => {
+    if (!Array.isArray(plans) || plans.length === 0) return null;
+    return (
+      plans.find(
+        (p) =>
+          (p.floor && p.floor.toUpperCase() === floor.toUpperCase()) ||
+          (p.level && p.level.toUpperCase() === floor.toUpperCase())
+      ) || plans[0]
+    );
+  }, [plans, floor]);
 
   const getInitialMaterialIds = () => {
     if (Array.isArray(room.materials) && room.materials.length > 0) {
@@ -180,50 +198,16 @@ export default function BookingScreen({
     const totalInstalledAcrossSite = Number(mat.installedQty || 0) + currentDelta;
     const siteStockAvailable = Math.max(0, delivered - totalInstalledAcrossSite);
 
-    // If delivered is 0 or nothing left in stock across the project
-    if (delivered === 0 || siteStockAvailable <= 0 || stepDelta > siteStockAvailable) {
-      Alert.alert(
-        t('outOfStockTitle', currentLang),
-        t('outOfStockMsg', currentLang)
-      );
-      return;
-    }
-
     const nextDelta = currentDelta + stepDelta;
     const nextTotalVerb = installedBefore + nextDelta;
 
     // If stepping UP and exceeding planned quantity (only for planned items)
     if (!isUnplannedMat && planned > 0 && nextTotalVerb > planned) {
-      // 1. Overall cap: Cannot exceed delivered quantity of the project
-      if (nextTotalVerb > delivered) {
-        Alert.alert(
-          t('outOfStockTitle', currentLang),
-          t('outOfStockMsg', currentLang)
-        );
-        return;
-      }
-
-      // 2. Mehrverbrauch check
-      if (delivered <= planned) {
-        Alert.alert(
-          t('noOverPossible', currentLang),
-          t('noOverPossibleMsg', currentLang, {
-            delivered,
-            planned,
-            qu: formatUnit(mat.qu, currentLang),
-          })
-        );
-        return;
-      }
-
       // Trigger Mehrverbrauch explanation if not yet explained
       if (!overExplanations[matId]) {
         const exceeded = Math.max(1, nextTotalVerb - planned);
-        const maxPossibleExtra = Math.min(
-          siteStockAvailable,
-          Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore))
-        );
-        const initialExtra = Math.min(exceeded, maxPossibleExtra);
+        const maxPossibleExtra = Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore));
+        const initialExtra = Math.max(1, exceeded);
 
         setPendingOverMat({
           mat,
@@ -232,10 +216,19 @@ export default function BookingScreen({
           planned,
           installedBefore,
           delivered,
-          maxPossibleExtra,
+          maxPossibleExtra: maxPossibleExtra > 0 ? maxPossibleExtra : 9999,
           qu: formatUnit(mat.qu, currentLang),
         });
         setShowOverModal(true);
+        return;
+      }
+    } else {
+      // Normal booking within planned quantity or unplanned item: verify stock availability
+      if (delivered === 0 || siteStockAvailable <= 0 || stepDelta > siteStockAvailable) {
+        Alert.alert(
+          t('outOfStockTitle', currentLang),
+          t('outOfStockMsg', currentLang)
+        );
         return;
       }
     }
@@ -462,10 +455,22 @@ export default function BookingScreen({
 
         {/* Room Header */}
         <View style={styles.headerRowClean}>
-          <Text style={styles.roomTitle}>{room.name}</Text>
-          <Text style={styles.roomSubtitle}>
-            {t('bookHead', currentLang)} · {t('kw', currentLang)} 27
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.roomTitle}>{getRoomDisplayName(room, currentLang)}</Text>
+            <Text style={styles.roomSubtitle}>
+              {t('bookHead', currentLang)} · {t('kw', currentLang)} 27 · Geschoss {floor}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.planHeaderBtn}
+            onPress={() => setShowPlanModal(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.planHeaderBtnIcon}>📐</Text>
+            <Text style={styles.planHeaderBtnText}>
+              {t('openPlan', currentLang)}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Locked Room Status Banner */}
@@ -667,6 +672,16 @@ export default function BookingScreen({
         deltaSummary={deltaSummary}
         onClose={() => setShowCompleteModal(false)}
         onConfirm={handleConfirmCompleteRoom}
+      />
+
+      {/* MODAL 5: PLAN VIEWER MIT PINCH-TO-ZOOM */}
+      <PlanViewerModal
+        visible={showPlanModal}
+        plan={floorPlan}
+        floor={floor}
+        room={room}
+        currentLang={currentLang}
+        onClose={() => setShowPlanModal(false)}
       />
     </View>
   );

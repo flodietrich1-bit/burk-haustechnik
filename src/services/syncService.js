@@ -17,6 +17,10 @@ import {
   setLastSyncedAt,
   getLocalUnsyncedDelta,
   updateAddendumStatus,
+  ensurePlansDir,
+  PLANS_DIR,
+  getCachedPlans,
+  saveCachedPlans,
 } from './storageService';
 import { getActiveMonteur, syncMonteurToFirebase } from './authService';
 import { DEFAULT_PROJECT_ID } from '../constants/initialData';
@@ -225,6 +229,35 @@ export async function syncBookings(options = {}) {
 
           const globalBookingRef = doc(db, 'bookings', booking.id);
           await setDoc(globalBookingRef, finalBookingData, { merge: true });
+
+          // Replicate over_consumption_alert to projects/{projectId}/alerts collection for admin banner
+          if (booking.type === 'over_consumption_alert' || booking.isAlert) {
+            try {
+              const alertDocData = {
+                id: booking.id,
+                projectId: booking.projectId,
+                roomId: booking.roomId || '',
+                roomName: booking.roomName || '',
+                materialId: booking.itemId || '',
+                materialPos: booking.itemOz || '',
+                materialName: booking.itemText || '',
+                plannedQty: Number(booking.plannedQty) || 0,
+                requestedTotal: Number(booking.requestedTotal) || 0,
+                exceededBy: Number(booking.quantity) || 0,
+                qu: booking.qu || 'Stk',
+                reason: booking.reason || '',
+                monteurName: booking.createdBy || 'Monteur',
+                status: 'open',
+                needsReorder: true,
+                createdAt: booking.createdAt || now,
+                updatedAt: now,
+              };
+              const alertRef = doc(db, 'projects', booking.projectId, 'alerts', booking.id);
+              await setDoc(alertRef, alertDocData, { merge: true });
+            } catch (alertErr) {
+              console.warn('Could not replicate alert to project alerts collection:', alertErr?.message);
+            }
+          }
 
           await updateBookingStatus(booking.id, 'synced', {
             photoUrls: uploadedUrls,
@@ -554,6 +587,59 @@ export async function syncBookings(options = {}) {
     }
 
     // -------------------------------------------------------------
+    // 2c. Fetch plans & download PDFs locally for offline use
+    // -------------------------------------------------------------
+    try {
+      if (onProgress) {
+        onProgress(t('syncDownloading', currentLang), 0.88);
+      }
+      await ensurePlansDir();
+      const plansColRef = collection(db, 'projects', projectId, 'plans');
+      const plansSnap = await getDocs(plansColRef);
+      const cachedPlans = await getCachedPlans(projectId);
+
+      if (!plansSnap.empty) {
+        const remotePlans = plansSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const processedPlans = [];
+
+        for (const plan of remotePlans) {
+          const downloadUrl = plan.pdfUrl || plan.downloadUrl;
+          let localUri = plan.localUri || null;
+
+          if (
+            downloadUrl &&
+            typeof downloadUrl === 'string' &&
+            (downloadUrl.startsWith('http://') || downloadUrl.startsWith('https://'))
+          ) {
+            try {
+              const targetPath = `${PLANS_DIR}${projectId}_${plan.id}.pdf`;
+              const fileInfo = await FileSystem.getInfoAsync(targetPath);
+              if (!fileInfo.exists || fileInfo.size === 0) {
+                const downloadRes = await FileSystem.downloadAsync(downloadUrl, targetPath);
+                localUri = downloadRes.uri;
+              } else {
+                localUri = targetPath;
+              }
+            } catch (dlErr) {
+              console.warn(`Could not download plan PDF for ${plan.id}:`, dlErr?.message);
+              const existing = cachedPlans.find((cp) => cp.id === plan.id);
+              if (existing?.localUri) localUri = existing.localUri;
+            }
+          }
+
+          processedPlans.push({
+            ...plan,
+            localUri,
+          });
+        }
+
+        await saveCachedPlans(processedPlans, projectId);
+      }
+    } catch (planErr) {
+      console.warn('Could not sync plans:', planErr?.message);
+    }
+
+    // -------------------------------------------------------------
     // Save New Sync Timestamp (Scoped per Project)
     // -------------------------------------------------------------
     const newSyncTimestamp = new Date().toISOString();
@@ -584,7 +670,11 @@ export async function syncBookings(options = {}) {
   } catch (error) {
     console.error('Delta sync error:', error);
     if (!silent) {
-      Alert.alert('Sync Error', error.message || 'Synchronisation fehlgeschlagen.', [{ text: t('ok', currentLang) }]);
+      Alert.alert(
+        t('syncErrorTitle', currentLang),
+        error.message || t('syncErrorFallback', currentLang),
+        [{ text: t('ok', currentLang) }]
+      );
     }
     return { success: false, error: error.message };
   }

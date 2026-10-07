@@ -17,6 +17,7 @@ import * as FileSystem from 'expo-file-system';
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import { persistPhotoLocally } from '../services/storageService';
+import { getRoomDisplayName } from '../components/booking/bookingHelpers';
 
 const MAX_BYTES = 1000 * 1024; // 1000 KB
 
@@ -172,7 +173,9 @@ export default function PhotoCaptureScreen({
 
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>📸 {t('photoTitle', currentLang)}</Text>
-            <Text style={styles.headerRoom} numberOfLines={1}>{room?.name || 'Raum'}</Text>
+            <Text style={styles.headerRoom} numberOfLines={1}>
+              {getRoomDisplayName(room, currentLang) || t('roomFallback', currentLang)}
+            </Text>
           </View>
         </View>
 

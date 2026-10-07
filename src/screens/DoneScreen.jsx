@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { COLORS } from '../constants/theme';
-import { t } from '../locales/i18n';
+import { t, formatUnit } from '../locales/i18n';
+import { getRoomDisplayName } from '../components/booking/bookingHelpers';
 
 export default function DoneScreen({
   room,
@@ -10,6 +11,9 @@ export default function DoneScreen({
   onBackToRooms,
   currentLang = 'de',
 }) {
+  const roomName = getRoomDisplayName(room, currentLang) || room?.name;
+  const photoLabel = photoCount === 1 ? t('photosSingle', currentLang) : t('photosPlural', currentLang);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Check Icon */}
@@ -19,7 +23,7 @@ export default function DoneScreen({
 
       <Text style={styles.title}>{t('doneTitle', currentLang)}</Text>
       <Text style={styles.sub}>
-        {room?.name} · {photoCount} {photoCount === 1 ? 'Foto' : 'Fotos'}
+        {roomName} · {photoCount} {photoLabel}
       </Text>
       <Text style={styles.hint}>{t('doneSub', currentLang)}</Text>
 
@@ -32,13 +36,13 @@ export default function DoneScreen({
                 {item.name}
               </Text>
               <Text style={styles.rowQty}>
-                +{item.quantity} {item.qu}
+                +{item.quantity} {formatUnit(item.qu, currentLang)}
               </Text>
             </View>
           ))
         ) : (
           <View style={styles.summaryRow}>
-            <Text style={styles.rowName}>Keine Materialmengen (nur Beleg)</Text>
+            <Text style={styles.rowName}>{t('doneOnlyProofSummary', currentLang)}</Text>
             <Text style={styles.rowQty}>-</Text>
           </View>
         )}

@@ -13,6 +13,7 @@ import {
 import { COLORS } from '../../constants/theme';
 import { t } from '../../locales/i18n';
 import SignaturePad from '../SignaturePad';
+import { getRoomDisplayName } from './bookingHelpers';
 import { styles } from './nachtragStyles';
 
 export default function NachtragModal({
@@ -149,7 +150,7 @@ export default function NachtragModal({
               📋 {t('btnNeedMaterialTime', currentLang) || '+ Material/Zeit benötigt'}
             </Text>
             <Text style={styles.modalSubTitle}>
-              {room.name} · {t('nachtragSub', currentLang)}
+              {getRoomDisplayName(room, currentLang)} · {t('nachtragSub', currentLang)}
             </Text>
           </View>
           <TouchableOpacity

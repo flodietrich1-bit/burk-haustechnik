@@ -65,7 +65,7 @@ export default function ProjectSelectScreen({
           </View>
           <View style={styles.projectCountBadge}>
             <Text style={styles.projectCountText}>
-              {projects.length} {projects.length === 1 ? 'Projekt' : 'Projekte'}
+              {projects.length} {projects.length === 1 ? t('projectSingle', currentLang) : t('projectPlural', currentLang)}
             </Text>
           </View>
         </View>
@@ -88,7 +88,9 @@ export default function ProjectSelectScreen({
             <View style={styles.cardHeader}>
               <View style={styles.projectNumberChip}>
                 <Text style={styles.projectNumberText}>
-                  {proj.projectNumber ? `Nr. ${proj.projectNumber}` : 'Projekt'}
+                  {proj.projectNumber
+                    ? t('projectNumberLabel', currentLang, { num: proj.projectNumber })
+                    : t('projectSingle', currentLang)}
                 </Text>
               </View>
               {proj.calendarWeek ? (
@@ -116,7 +118,7 @@ export default function ProjectSelectScreen({
               <View style={styles.footerInfo}>
                 {proj.projectManager ? (
                   <Text style={styles.pmText}>
-                    👷 Bauleitung: <Text style={styles.pmBold}>{proj.projectManager}</Text>
+                    👷 {t('siteManager', currentLang)}: <Text style={styles.pmBold}>{proj.projectManager}</Text>
                   </Text>
                 ) : null}
                 {proj.trade ? (

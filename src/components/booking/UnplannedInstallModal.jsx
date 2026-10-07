@@ -13,7 +13,7 @@ import {
 import { COLORS } from '../../constants/theme';
 import { t } from '../../locales/i18n';
 import SignaturePad from '../SignaturePad';
-import { getMaterialDisplayName } from './bookingHelpers';
+import { getMaterialDisplayName, getRoomDisplayName } from './bookingHelpers';
 import { styles } from './unplannedStyles';
 
 export default function UnplannedInstallModal({
@@ -111,7 +111,7 @@ export default function UnplannedInstallModal({
           <View style={styles.modalTitleBox}>
             <Text style={styles.modalMainTitle}>📋 {t('unclearTitle', currentLang)}</Text>
             <Text style={styles.modalSubTitle}>
-              {room.name} · {t('unplannedBadge', currentLang)}
+              {getRoomDisplayName(room, currentLang)} · {t('unplannedBadge', currentLang)}
             </Text>
           </View>
           <TouchableOpacity

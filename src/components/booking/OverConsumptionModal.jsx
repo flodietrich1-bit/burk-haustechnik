@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { COLORS } from '../../constants/theme';
 import { t, formatUnit } from '../../locales/i18n';
-import { getMaterialDisplayName, getRoomPlannedItem } from './bookingHelpers';
+import { getMaterialDisplayName, getRoomPlannedItem, getRoomDisplayName } from './bookingHelpers';
 import { styles } from './overConsumptionStyles';
 
 export default function OverConsumptionModal({
@@ -77,7 +77,7 @@ export default function OverConsumptionModal({
           <View style={styles.modalTitleBox}>
             <Text style={styles.modalMainTitle}>⚠️ {t('overTitle', currentLang)}</Text>
             <Text style={styles.modalSubTitle}>
-              {room?.name} ({room?.code}) · Pos {pendingOverMat.mat?.pos}
+              {getRoomDisplayName(room, currentLang) || room?.name} ({room?.code}) · Pos {pendingOverMat.mat?.pos}
             </Text>
           </View>
           <TouchableOpacity

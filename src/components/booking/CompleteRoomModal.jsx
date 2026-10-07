@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
 import { t, formatUnit } from '../../locales/i18n';
+import { getRoomDisplayName } from './bookingHelpers';
 import { styles } from './completeRoomStyles';
 
 export default function CompleteRoomModal({
@@ -30,7 +31,7 @@ export default function CompleteRoomModal({
           </View>
 
           <Text style={styles.completeModalSub}>
-            {room.name} ({room.code}) · {t('completeModalSub', currentLang)}
+            {getRoomDisplayName(room, currentLang)} ({room.code}) · {t('completeModalSub', currentLang)}
           </Text>
 
           <Text style={styles.completeNoticeText}>

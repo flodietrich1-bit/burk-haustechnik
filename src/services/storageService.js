@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
-import { INITIAL_ROOMS, INITIAL_MATERIALS, DEFAULT_PROJECT, DEFAULT_PROJECT_ID } from '../constants/initialData';
+import { INITIAL_ROOMS, INITIAL_MATERIALS, DEFAULT_PROJECT, DEFAULT_PROJECT_ID, INITIAL_PLANS } from '../constants/initialData';
 
 // Storage keys
 const KEYS = {
@@ -8,6 +8,7 @@ const KEYS = {
   ROOMS: 'ttapp_cached_rooms',
   MATERIALS: 'ttapp_cached_materials',
   PROJECT: 'ttapp_cached_project',
+  PLANS: 'ttapp_cached_plans',
   BOOKINGS: 'ttapp_outbox_bookings',
   ADDENDUMS: 'ttapp_outbox_addendums',
   UNCLEAR: 'ttapp_outbox_unclear',
@@ -15,8 +16,9 @@ const KEYS = {
   LAST_SYNCED_AT: 'ttapp_last_synced_at',
 };
 
-// Ensure local proof photos directory exists
+// Ensure local proof photos & plans directories exist
 const PROOFS_DIR = `${FileSystem.documentDirectory || ''}proofs/`;
+export const PLANS_DIR = `${FileSystem.documentDirectory || ''}plans/`;
 
 async function ensureProofsDir() {
   try {
@@ -27,6 +29,18 @@ async function ensureProofsDir() {
     }
   } catch (e) {
     console.warn('Could not create proofs directory:', e);
+  }
+}
+
+export async function ensurePlansDir() {
+  try {
+    if (!FileSystem.documentDirectory) return;
+    const dirInfo = await FileSystem.getInfoAsync(PLANS_DIR);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(PLANS_DIR, { intermediates: true });
+    }
+  } catch (e) {
+    console.warn('Could not create plans directory:', e);
   }
 }
 
@@ -225,6 +239,58 @@ export async function saveProjectInfo(project, projectId) {
     console.warn('Error saving project info:', e);
   }
 }
+
+// -------------------------------------------------------------
+// 2b. Plans Caching & Floor Detection
+// -------------------------------------------------------------
+export function getRoomFloor(room) {
+  if (!room) return 'Sonstiges';
+  if (room.floor && typeof room.floor === 'string') {
+    const f = room.floor.trim().toUpperCase();
+    if (f === 'UG' || f.includes('UNTERGESCHOSS') || f.includes('KELLER') || f.startsWith('UG')) return 'UG';
+    if (f === 'EG' || f.includes('ERDGESCHOSS') || f.startsWith('EG')) return 'EG';
+    if (f === 'OG' || f.includes('OBERGESCHOSS') || f.startsWith('OG')) return 'OG';
+    if (f === 'DG' || f.includes('DACHGESCHOSS') || f.startsWith('DG')) return 'DG';
+    if (f.includes('STRANG') || f.includes('SCHEMA')) return 'Strangschema';
+    return room.floor;
+  }
+  const codeOrName = ((room.code || '') + ' ' + (room.name || '')).trim().toUpperCase();
+  if (codeOrName.startsWith('UG') || codeOrName.includes(' UG') || codeOrName.includes('UNTERGESCHOSS')) return 'UG';
+  if (codeOrName.startsWith('EG') || codeOrName.includes(' EG') || codeOrName.includes('ERDGESCHOSS')) return 'EG';
+  if (codeOrName.startsWith('OG') || codeOrName.includes(' OG') || codeOrName.includes('OBERGESCHOSS')) return 'OG';
+  if (codeOrName.startsWith('DG') || codeOrName.includes(' DG') || codeOrName.includes('DACHGESCHOSS')) return 'DG';
+  if (codeOrName.includes('STRANG') || codeOrName.includes('SCHEMA')) return 'Strangschema';
+  return 'Sonstiges';
+}
+
+export async function getCachedPlans(projectId) {
+  try {
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.PLANS}_${pId}`;
+    const data = await AsyncStorage.getItem(key);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    if (pId === DEFAULT_PROJECT_ID) {
+      return INITIAL_PLANS;
+    }
+  } catch (e) {
+    console.warn('Error reading cached plans:', e);
+  }
+  return [];
+}
+
+export async function saveCachedPlans(plans, projectId) {
+  try {
+    const pId = await resolveProjectId(projectId);
+    const key = `${KEYS.PLANS}_${pId}`;
+    await AsyncStorage.setItem(key, JSON.stringify(plans || []));
+  } catch (e) {
+    console.warn('Error saving cached plans:', e);
+  }
+}
+
 
 // -------------------------------------------------------------
 // 3. Persistent Local Images

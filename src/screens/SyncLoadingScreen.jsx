@@ -2,11 +2,13 @@ import React from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, Modal } from 'react-native';
 import { COLORS } from '../constants/theme';
 import ProgressBar from '../components/ProgressBar';
+import { t } from '../locales/i18n';
 
 export default function SyncLoadingScreen({
   visible = false,
-  statusText = 'Baustelle wird synchronisiert...',
+  statusText = '',
   progress = 0.5,
+  currentLang = 'de',
 }) {
   if (!visible) return null;
 
@@ -18,8 +20,10 @@ export default function SyncLoadingScreen({
             <Text style={styles.syncIcon}>🔄</Text>
           </View>
 
-          <Text style={styles.title}>Synchronisation läuft</Text>
-          <Text style={styles.status}>{statusText}</Text>
+          <Text style={styles.title}>{t('syncInProgressTitle', currentLang)}</Text>
+          <Text style={styles.status}>
+            {statusText || t('syncConnectingInit', currentLang)}
+          </Text>
 
           <View style={styles.progressWrap}>
             <ProgressBar progress={Math.round(progress * 100)} height={8} />
@@ -27,7 +31,7 @@ export default function SyncLoadingScreen({
 
           <View style={styles.spinnerRow}>
             <ActivityIndicator size="small" color={COLORS.amber} />
-            <Text style={styles.hint}>Daten werden abgeglichen...</Text>
+            <Text style={styles.hint}>{t('syncMatchingData', currentLang)}</Text>
           </View>
         </View>
       </View>

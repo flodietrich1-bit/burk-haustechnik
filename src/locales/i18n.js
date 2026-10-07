@@ -333,6 +333,55 @@ export const TRANSLATIONS = {
   // Group Categories
   groupGeneral: { de: 'Allgemein', ro: 'General', pl: 'Ogólne', hr: 'Opće' },
   groupUnplanned: { de: 'Zusatz / Außerplanmäßig', ro: 'Suplimentar / Neplanificat', pl: 'Dodatkowe / Pozaplanowe', hr: 'Dodatno / Izvan plana' },
+
+  // General Labels & Headers
+  appSubtitle: { de: 'Materialtracker', ro: 'Materialtracker', pl: 'Materialtracker', hr: 'Materialtracker' },
+  siteManager: { de: 'Bauleitung', ro: 'Conducere șantier', pl: 'Kierownictwo budowy', hr: 'Voditelj gradilišta' },
+  projectSingle: { de: 'Projekt', ro: 'Proiect', pl: 'Projekt', hr: 'Projekt' },
+  projectPlural: { de: 'Projekte', ro: 'Proiecte', pl: 'Projekty', hr: 'Projekti' },
+  projectNumberLabel: { de: 'Nr. {num}', ro: 'Nr. {num}', pl: 'Nr {num}', hr: 'Br. {num}' },
+  roomFallback: { de: 'Raum', ro: 'Încăpere', pl: 'Pomieszczenie', hr: 'Prostorija' },
+  reloadAndCheckUpdates: { de: '🔄 App neu laden / Updates prüfen', ro: '🔄 Reîncarcă aplicația / verifică actualizări', pl: '🔄 Przeładuj aplikację / sprawdź aktualizacje', hr: '🔄 Ponovno učitaj aplikaciju / provjeri ažuriranja' },
+  checkingAppUpdates: { de: 'Prüfe auf App-Updates...', ro: 'Se verifică actualizările...', pl: 'Sprawdzanie aktualizacji...', hr: 'Provjera ažuriranja aplikacije...' },
+  downloadingAppUpdate: { de: 'Lade neuestes Update...', ro: 'Se descarcă cea mai nouă actualizare...', pl: 'Pobieranie najnowszej aktualizacji...', hr: 'Preuzimanje najnovijeg ažuriranja...' },
+  appUpToDateTitle: { de: 'App aktuell', ro: 'Aplicație actualizată', pl: 'Aplikacja aktualna', hr: 'Aplikacija je ažurna' },
+  appUpToDateMsg: { de: 'Die neueste Version ist aktiv. Versuche wurden zurückgesetzt.', ro: 'Cea mai recentă versiune este activă. Încercările au fost resetate.', pl: 'Najnowsza wersja jest aktywna. Liczba prób została zresetowana.', hr: 'Najnovija verzija je aktivna. Pokušaji su poništeni.' },
+  appVersionLabel: { de: 'Version {version}', ro: 'Versiune {version}', pl: 'Wersja {version}', hr: 'Verzija {version}' },
+
+  // Sync Overlay
+  syncInProgressTitle: { de: 'Synchronisation läuft', ro: 'Sincronizare în curs', pl: 'Trwa synchronizacja', hr: 'Sinkronizacija u tijeku' },
+  syncMatchingData: { de: 'Daten werden abgeglichen...', ro: 'Se compară datele...', pl: 'Trwa porównywanie danych...', hr: 'Podaci se usklađuju...' },
+  syncConnectingInit: { de: 'Verbindung hergestellt – Synchronisiere Baustellendaten...', ro: 'Conexiune stabilită – Se sincronizează datele de pe șantier...', pl: 'Połączono – Synchronizacja danych budowy...', hr: 'Veza uspostavljena – Sinkronizacija podataka gradilišta...' },
+
+  // Done Screen & Errors
+  doneOnlyProofSummary: { de: 'Keine Materialmengen (nur Beleg)', ro: 'Fără cantități de material (doar dovadă)', pl: 'Brak ilości materiałów (tylko dowód)', hr: 'Nema količina materijala (samo dokaz)' },
+  errorTitle: { de: 'Fehler', ro: 'Eroare', pl: 'Błąd', hr: 'Pogreška' },
+  errorRoomCompleteFailed: { de: 'Raumabschluss konnte nicht gespeichert werden: {msg}', ro: 'Finalizarea încăperii nu a putut fi salvată: {msg}', pl: 'Nie udało się zapisać zakończenia pomieszczenia: {msg}', hr: 'Završetak prostorije nije se mogao spremiti: {msg}' },
+  errorBookingFailed: { de: 'Buchung konnte nicht gespeichert werden.', ro: 'Înregistrarea nu a putut fi salvată.', pl: 'Nie udało się zapisać wpisu.', hr: 'Unos se nije mogao spremiti.' },
+  syncErrorTitle: { de: 'Sync-Fehler', ro: 'Eroare de sincronizare', pl: 'Błąd synchronizacji', hr: 'Pogreška sinkronizacije' },
+  syncErrorFallback: { de: 'Synchronisation fehlgeschlagen.', ro: 'Sincronizarea a eșuat.', pl: 'Synchronizacja nie powiodła się.', hr: 'Sinkronizacija nije uspjela.' },
+
+  // Floor Filter & Navigation
+  filterAll: { de: 'Alle', ro: 'Toate', pl: 'Wszystkie', hr: 'Sve' },
+  floorUG: { de: 'UG', ro: 'UG', pl: 'UG', hr: 'UG' },
+  floorEG: { de: 'EG', ro: 'EG', pl: 'EG', hr: 'EG' },
+  floorOG: { de: 'OG', ro: 'OG', pl: 'OG', hr: 'OG' },
+  floorDG: { de: 'DG', ro: 'DG', pl: 'DG', hr: 'DG' },
+  floorStrangschema: { de: 'Strangschema', ro: 'Schemă coloane', pl: 'Schemat pionów', hr: 'Shema vertikala' },
+  floorOther: { de: 'Sonstiges', ro: 'Altele', pl: 'Inne', hr: 'Ostalo' },
+  roomsCountFloor: { de: '{n} Räume', ro: '{n} încăperi', pl: '{n} pomieszczeń', hr: '{n} prostorija' },
+
+  // Plan Viewer & Offline Plans
+  openPlan: { de: 'Plan ansehen', ro: 'Vezi plan', pl: 'Zobacz plan', hr: 'Pogledaj plan' },
+  openPlanForFloor: { de: 'Montageplan {floor} öffnen', ro: 'Deschide planul {floor}', pl: 'Otwórz plan {floor}', hr: 'Otvori plan {floor}' },
+  planViewerTitle: { de: 'Montageplan', ro: 'Plan de montaj', pl: 'Plan montażowy', hr: 'Montažni plan' },
+  planOfflineBadge: { de: '🟢 Offline verfügbar', ro: '🟢 Disponibil offline', pl: '🟢 Dostępny offline', hr: '🟢 Dostupno izvan mreže' },
+  planDownloading: { de: 'Lade Plan herunter...', ro: 'Se descarcă planul...', pl: 'Pobieranie planu...', hr: 'Preuzimanje plana...' },
+  planOpenExternal: { de: 'In externer App / PDF öffnen', ro: 'Deschide în aplicație externă / PDF', pl: 'Otwórz w zewn. aplikacji / PDF', hr: 'Otvori u vanjskoj aplikaciji / PDF' },
+  planNoLocalFile: { de: 'Plan noch nicht lokal geladen', ro: 'Planul nu este descărcat local încă', pl: 'Plan nie został jeszcze pobrany lokalnie', hr: 'Plan još nije preuzet lokalno' },
+  planPinchHint: { de: 'Mit 2 Fingern stufenlos zoomen & verschieben', ro: 'Mărește cu 2 degete și deplasează', pl: 'Powiększaj 2 palcami i przesuwaj', hr: 'Povećajte s 2 prsta i pomičite' },
+  planResetZoom: { de: '100% Reset', ro: '100% Reset', pl: '100% Reset', hr: '100% Reset' },
+  noPlanAvailable: { de: 'Kein Plan für dieses Geschoss hinterlegt', ro: 'Niciun plan atașat pentru acest etaj', pl: 'Brak planu dla tego piętra', hr: 'Nema plana za ovu etažu' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)
@@ -366,6 +415,9 @@ export function formatUnit(qu, lang = 'de') {
   }
   if (q === 'm' || q === 'meter' || q === 'lfm' || q === 'mtr') {
     return t('unitMShort', lang);
+  }
+  if (q === 'h' || q === 'std' || q === 'stunde' || q === 'stunden' || q === 'ore' || q === 'godz' || q === 'sati') {
+    return 'h';
   }
   return qu;
 }

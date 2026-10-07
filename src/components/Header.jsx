@@ -95,7 +95,7 @@ export default function Header({
               {isSyncing ? '⟳' : '⇅'}
             </Animated.Text>
             <Text style={styles.syncText}>
-              {isSyncing ? 'Sync...' : t('syncBtn', currentLang)}
+              {isSyncing ? t('syncing', currentLang) : t('syncBtn', currentLang)}
             </Text>
             {pendingCount > 0 && !isSyncing && (
               <View style={styles.syncRedBadge}>

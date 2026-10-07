@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,16 +10,23 @@ import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import ProgressRing from '../components/ProgressRing';
-import { computeRoomPercentage } from '../services/storageService';
+import PlanViewerModal from '../components/PlanViewerModal';
+import { computeRoomPercentage, getRoomFloor } from '../services/storageService';
+
+const FLOOR_PILLS = ['Alle', 'UG', 'EG', 'OG', 'DG', 'Strangschema'];
 
 export default function RoomListScreen({
   rooms = [],
   materials = [],
+  plans = [],
   project = {},
   currentLang = 'de',
   onSelectRoom,
   onSwitchProject = null,
 }) {
+  const [selectedFloor, setSelectedFloor] = useState('Alle');
+  const [activePlanModal, setActivePlanModal] = useState(null); // { plan, floor }
+
   // Calculate total project stats
   const totalDeliveredVal = materials.reduce((acc, m) => acc + (m.deliveredQty * m.unitPrice), 0);
   const totalInstalledVal = materials.reduce((acc, m) => acc + (m.installedQty * m.unitPrice), 0);
@@ -29,97 +36,239 @@ export default function RoomListScreen({
     return Math.round(val).toLocaleString('de-DE') + ' €';
   };
 
+  // Group rooms by floor
+  const { floorCounts, groupedRooms, filteredRooms } = useMemo(() => {
+    const counts = { Alle: rooms.length, UG: 0, EG: 0, OG: 0, DG: 0, Strangschema: 0, Sonstiges: 0 };
+    const groups = { UG: [], EG: [], OG: [], DG: [], Strangschema: [], Sonstiges: [] };
+
+    rooms.forEach((r) => {
+      const fl = getRoomFloor(r);
+      if (counts[fl] !== undefined) {
+        counts[fl]++;
+      } else {
+        counts.Sonstiges++;
+      }
+      if (groups[fl]) {
+        groups[fl].push(r);
+      } else {
+        groups.Sonstiges.push(r);
+      }
+    });
+
+    let filtered = rooms;
+    if (selectedFloor !== 'Alle') {
+      filtered = rooms.filter((r) => getRoomFloor(r) === selectedFloor);
+    }
+
+    return { floorCounts: counts, groupedRooms: groups, filteredRooms: filtered };
+  }, [rooms, selectedFloor]);
+
+  const findPlanForFloor = (fl) => {
+    if (!Array.isArray(plans) || plans.length === 0) return null;
+    return (
+      plans.find(
+        (p) =>
+          (p.floor && p.floor.toUpperCase() === fl.toUpperCase()) ||
+          (p.level && p.level.toUpperCase() === fl.toUpperCase())
+      ) || plans[0]
+    );
+  };
+
+  const handleOpenPlan = (fl) => {
+    const targetFloor = fl === 'Alle' ? 'UG' : fl;
+    const plan = findPlanForFloor(targetFloor);
+    setActivePlanModal({ plan, floor: targetFloor });
+  };
+
+  const renderRoomCard = (room) => {
+    const transName = currentLang !== 'de' && room.translations?.[currentLang];
+    const pct = computeRoomPercentage(room, materials);
+    const isCompleted = room.isCompleted || pct === 100;
+    return (
+      <TouchableOpacity
+        key={room.id}
+        style={styles.roomCard}
+        onPress={() => onSelectRoom(room)}
+        activeOpacity={0.7}
+      >
+        {/* Progress Ring */}
+        <View style={styles.ringWrapper}>
+          <ProgressRing size={46} strokeWidth={5} percentage={pct} />
+        </View>
+
+        {/* Room Texts */}
+        <View style={styles.roomInfo}>
+          <View style={styles.nameRow}>
+            <Text style={styles.roomName}>{room.name}</Text>
+            {isCompleted ? (
+              <View style={styles.completedBadge}>
+                <Text style={styles.completedBadgeText}>✓ 100 %</Text>
+              </View>
+            ) : pct > 0 ? (
+              <View style={styles.inProgressBadge}>
+                <Text style={styles.inProgressBadgeText}>{pct} %</Text>
+              </View>
+            ) : null}
+            {transName ? (
+              <Text style={styles.translatedName}>({transName})</Text>
+            ) : null}
+          </View>
+          <Text style={styles.roomSub} numberOfLines={1}>
+            {room.sub || room.code}
+          </Text>
+        </View>
+
+        {/* Chevron Arrow */}
+        <Text style={styles.chevron}>›</Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Project Banner Card */}
-      <View style={styles.projCard}>
-        <View style={styles.projHeader}>
-          <View style={styles.projTitleRow}>
-            <Text style={styles.p1}>{t('projTitle', currentLang)}</Text>
-            <View style={styles.badgeOverall}>
-              <Text style={styles.badgeText}>{totalProg}%</Text>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {/* Project Banner Card */}
+        <View style={styles.projCard}>
+          <View style={styles.projHeader}>
+            <View style={styles.projTitleRow}>
+              <Text style={styles.p1}>{t('projTitle', currentLang)}</Text>
+              <View style={styles.badgeOverall}>
+                <Text style={styles.badgeText}>{totalProg}%</Text>
+              </View>
+            </View>
+            {onSwitchProject && (
+              <TouchableOpacity
+                style={styles.switchProjectBtn}
+                onPress={onSwitchProject}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Quick KPI stats */}
+          <View style={styles.kpiRow}>
+            <View style={styles.kpiItem}>
+              <Text style={styles.kpiLabel}>{t('installedValue', currentLang)}</Text>
+              <Text style={styles.kpiValue}>{formatEuro(totalInstalledVal)}</Text>
+            </View>
+            <View style={styles.kpiDivider} />
+            <View style={styles.kpiItem}>
+              <Text style={styles.kpiLabel}>{t('deliveredValue', currentLang)}</Text>
+              <Text style={styles.kpiValue}>{formatEuro(totalDeliveredVal)}</Text>
             </View>
           </View>
-          {onSwitchProject && (
+        </View>
+
+        {/* 2. Horizontal Floor Filter Pills Bar */}
+        <View style={styles.filterSection}>
+          <Text style={styles.sectTitle}>{t('roomsSect', currentLang)}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterPillsScroll}
+          >
+            {FLOOR_PILLS.map((pill) => {
+              const count = floorCounts[pill] || 0;
+              const isSelected = selectedFloor === pill;
+              if (pill !== 'Alle' && count === 0 && !FLOOR_PILLS.slice(0, 4).includes(pill)) {
+                return null;
+              }
+              return (
+                <TouchableOpacity
+                  key={pill}
+                  style={[styles.filterPill, isSelected && styles.filterPillActive]}
+                  onPress={() => setSelectedFloor(pill)}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}
+                  >
+                    {pill === 'Alle' ? t('filterAll', currentLang) : pill}
+                    {count > 0 ? ` (${count})` : ''}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Floor Montageplan Quick Action Button */}
+        {selectedFloor !== 'Alle' && (
+          <View style={styles.floorPlanBanner}>
+            <View style={styles.floorPlanInfo}>
+              <Text style={styles.floorPlanTitle}>
+                📐 {t('openPlanForFloor', currentLang, { floor: selectedFloor })}
+              </Text>
+              <Text style={styles.floorPlanSub}>
+                Trassen, Leitungsmaße & CAD-Modell
+              </Text>
+            </View>
             <TouchableOpacity
-              style={styles.switchProjectBtn}
-              onPress={onSwitchProject}
-              activeOpacity={0.7}
+              style={styles.openPlanBtn}
+              onPress={() => handleOpenPlan(selectedFloor)}
+              activeOpacity={0.8}
             >
-              <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
+              <Text style={styles.openPlanBtnText}>{t('openPlan', currentLang)} ›</Text>
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* 3. Rooms List grouped or filtered */}
+        <View style={styles.roomList}>
+          {selectedFloor === 'Alle' ? (
+            // Grouped by Floor
+            Object.entries(groupedRooms).map(([fl, fRooms]) => {
+              if (!fRooms || fRooms.length === 0) return null;
+              return (
+                <View key={fl} style={styles.floorGroup}>
+                  <View style={styles.floorGroupHeader}>
+                    <View style={styles.floorGroupTitleRow}>
+                      <View style={styles.floorBadgeMini}>
+                        <Text style={styles.floorBadgeMiniText}>{fl}</Text>
+                      </View>
+                      <Text style={styles.floorGroupTitle}>
+                        {t('roomsCountFloor', currentLang, { n: fRooms.length })}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.floorGroupPlanBtn}
+                      onPress={() => handleOpenPlan(fl)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.floorGroupPlanText}>📐 Plan {fl}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.floorCardsWrap}>
+                    {fRooms.map(renderRoomCard)}
+                  </View>
+                </View>
+              );
+            })
+          ) : (
+            // Filtered Rooms for Single Floor
+            filteredRooms.map(renderRoomCard)
           )}
         </View>
 
-        {/* Quick KPI stats */}
-        <View style={styles.kpiRow}>
-          <View style={styles.kpiItem}>
-            <Text style={styles.kpiLabel}>{t('installedValue', currentLang)}</Text>
-            <Text style={styles.kpiValue}>{formatEuro(totalInstalledVal)}</Text>
-          </View>
-          <View style={styles.kpiDivider} />
-          <View style={styles.kpiItem}>
-            <Text style={styles.kpiLabel}>{t('deliveredValue', currentLang)}</Text>
-            <Text style={styles.kpiValue}>{formatEuro(totalDeliveredVal)}</Text>
-          </View>
+        {/* App Version Footer */}
+        <View style={styles.footerVersionBox}>
+          <Text style={styles.footerVersionText}>TTApp {APP_VERSION}</Text>
         </View>
-      </View>
+      </ScrollView>
 
-      {/* Section Title */}
-      <Text style={styles.sectTitle}>{t('roomsSect', currentLang)}</Text>
-
-      {/* Rooms List */}
-      <View style={styles.roomList}>
-        {rooms.map((room) => {
-          const transName = currentLang !== 'de' && room.translations?.[currentLang];
-          const pct = computeRoomPercentage(room, materials);
-          const isCompleted = room.isCompleted || pct === 100;
-          return (
-            <TouchableOpacity
-              key={room.id}
-              style={styles.roomCard}
-              onPress={() => onSelectRoom(room)}
-              activeOpacity={0.7}
-            >
-              {/* Progress Ring */}
-              <View style={styles.ringWrapper}>
-                <ProgressRing size={46} strokeWidth={5} percentage={pct} />
-              </View>
-
-              {/* Room Texts */}
-              <View style={styles.roomInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.roomName}>{room.name}</Text>
-                  {isCompleted ? (
-                    <View style={styles.completedBadge}>
-                      <Text style={styles.completedBadgeText}>✓ 100 %</Text>
-                    </View>
-                  ) : pct > 0 ? (
-                    <View style={styles.inProgressBadge}>
-                      <Text style={styles.inProgressBadgeText}>{pct} %</Text>
-                    </View>
-                  ) : null}
-                  {transName ? (
-                    <Text style={styles.translatedName}>({transName})</Text>
-                  ) : null}
-                </View>
-                <Text style={styles.roomSub} numberOfLines={1}>
-                  {room.sub || room.code}
-                </Text>
-              </View>
-
-              {/* Chevron Arrow */}
-              <Text style={styles.chevron}>›</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* App Version Footer */}
-      <View style={styles.footerVersionBox}>
-        <Text style={styles.footerVersionText}>TTApp {APP_VERSION}</Text>
-      </View>
-    </ScrollView>
+      {/* Plan Viewer Modal */}
+      {activePlanModal && (
+        <PlanViewerModal
+          visible={Boolean(activePlanModal)}
+          plan={activePlanModal.plan}
+          floor={activePlanModal.floor}
+          currentLang={currentLang}
+          onClose={() => setActivePlanModal(null)}
+        />
+      )}
+    </View>
   );
 }
 
@@ -212,6 +361,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  filterSection: {
+    marginBottom: 10,
+  },
   sectTitle: {
     fontSize: 12,
     letterSpacing: 0.8,
@@ -219,11 +371,127 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontWeight: '800',
     marginHorizontal: 2,
-    marginBottom: 10,
+    marginBottom: 8,
     marginTop: 4,
+  },
+  filterPillsScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterPillActive: {
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filterPillText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+  filterPillTextActive: {
+    color: '#FFFFFF',
+  },
+  floorPlanBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  floorPlanInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  floorPlanTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0369A1',
+  },
+  floorPlanSub: {
+    fontSize: 11,
+    color: '#0284C7',
+    marginTop: 2,
+  },
+  openPlanBtn: {
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  openPlanBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
   roomList: {
     gap: 10,
+  },
+  floorGroup: {
+    marginBottom: 12,
+  },
+  floorGroupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginBottom: 6,
+  },
+  floorGroupTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  floorBadgeMini: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  floorBadgeMiniText: {
+    color: '#38BDF8',
+    fontWeight: '800',
+    fontSize: 11,
+  },
+  floorGroupTitle: {
+    fontSize: 12,
+    color: COLORS.muted,
+    fontWeight: '700',
+  },
+  floorGroupPlanBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#E0F2FE',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  floorGroupPlanText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  floorCardsWrap: {
+    gap: 8,
   },
   roomCard: {
     flexDirection: 'row',

@@ -23,8 +23,10 @@ import {
   enqueueAddendum,
   getLocalUnsyncedDelta,
   computeRoomPercentage,
+  getCachedPlans,
 } from './src/services/storageService';
 import { syncBookings, checkOnlineStatus } from './src/services/syncService';
+import { t } from './src/locales/i18n';
 
 // Components
 import Header from './src/components/Header';
@@ -52,6 +54,7 @@ export default function App() {
   // Master Data & Project
   const [rooms, setRooms] = useState([]);
   const [materials, setMaterials] = useState([]);
+  const [plans, setPlans] = useState([]);
   const [project, setProject] = useState({});
   const [availableProjects, setAvailableProjects] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
@@ -72,18 +75,20 @@ export default function App() {
   useEffect(() => {
     async function initApp() {
       try {
-        const [savedLang, activeUser, cachedRooms, cachedMats, proj, delta] = await Promise.all([
+        const [savedLang, activeUser, cachedRooms, cachedMats, proj, delta, cachedPlans] = await Promise.all([
           getLanguage(),
           getActiveMonteur(),
           getRooms(),
           getMaterials(),
           getProjectInfo(),
           getLocalUnsyncedDelta(),
+          getCachedPlans(),
         ]);
 
         setCurrentLang(savedLang);
         setRooms(cachedRooms);
         setMaterials(cachedMats);
+        if (Array.isArray(cachedPlans)) setPlans(cachedPlans);
         setProject(proj);
         setPendingCount(delta.totalPendingCount);
 
@@ -142,14 +147,16 @@ export default function App() {
 
   const refreshData = async (targetProjectId) => {
     const pId = targetProjectId || project?.id;
-    const [r, m, delta] = await Promise.all([
+    const [r, m, delta, pl] = await Promise.all([
       getRooms(pId),
       getMaterials(pId),
       getLocalUnsyncedDelta(pId),
+      getCachedPlans(pId),
     ]);
     setRooms(r);
     setMaterials(m);
     setPendingCount(delta.totalPendingCount);
+    if (Array.isArray(pl)) setPlans(pl);
   };
 
   // 3. PIN Unlock, Sync & Multi-Project Routing
@@ -172,14 +179,16 @@ export default function App() {
         // Persist project ID and load its cached data
         if (targetProj?.id) {
           await setActiveProjectId(targetProj.id);
-          const [r, m, delta] = await Promise.all([
+          const [r, m, delta, pl] = await Promise.all([
             getRooms(targetProj.id),
             getMaterials(targetProj.id),
             getLocalUnsyncedDelta(targetProj.id),
+            getCachedPlans(targetProj.id),
           ]);
           setRooms(r);
           setMaterials(m);
           setPendingCount(delta.totalPendingCount);
+          if (Array.isArray(pl)) setPlans(pl);
         }
         setAppPhase('app');
         setCurrentScreen('rooms');
@@ -190,7 +199,7 @@ export default function App() {
       // Show seamless sync overlay
       setSyncProgress({
         visible: true,
-        text: 'Verbindung hergestellt – Synchronisiere Baustellendaten...',
+        text: t('syncConnectingInit', currentLang),
         progress: 0.1,
       });
 
@@ -713,7 +722,10 @@ export default function App() {
       setCurrentScreen('done');
     } catch (e) {
       console.warn('Error completing room:', e);
-      Alert.alert('Fehler', `Raumabschluss konnte nicht gespeichert werden: ${e?.message || e}`);
+      Alert.alert(
+        t('errorTitle', currentLang),
+        t('errorRoomCompleteFailed', currentLang, { msg: e?.message || e })
+      );
     }
   };
 
@@ -843,7 +855,7 @@ export default function App() {
       await refreshData();
       setCurrentScreen('done');
     } catch (error) {
-      Alert.alert('Fehler', 'Buchung konnte nicht gespeichert werden.');
+      Alert.alert(t('errorTitle', currentLang), t('errorBookingFailed', currentLang));
     }
   };
 
@@ -871,6 +883,7 @@ export default function App() {
           visible={syncProgress.visible}
           statusText={syncProgress.text}
           progress={syncProgress.progress}
+          currentLang={currentLang}
         />
       </SafeAreaView>
     );
@@ -914,6 +927,7 @@ export default function App() {
           <RoomListScreen
             rooms={rooms}
             materials={materials}
+            plans={plans}
             project={project}
             currentLang={currentLang}
             onSelectRoom={handleSelectRoom}
@@ -925,6 +939,8 @@ export default function App() {
           <BookingScreen
             room={selectedRoom}
             materials={materials}
+            plans={plans}
+            project={project}
             monteur={monteur}
             currentLang={currentLang}
             sessionQuantities={sessionQuantities}
@@ -972,6 +988,7 @@ export default function App() {
         visible={syncProgress.visible}
         statusText={syncProgress.text}
         progress={syncProgress.progress}
+        currentLang={currentLang}
       />
     </SafeAreaView>
   );

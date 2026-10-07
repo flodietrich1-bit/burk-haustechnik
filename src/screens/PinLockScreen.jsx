@@ -93,10 +93,10 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
       setErrorMsg('');
 
       if (!__DEV__ && Updates.isEnabled) {
-        setErrorMsg('Prüfe auf App-Updates...');
+        setErrorMsg(t('checkingAppUpdates', currentLang));
         const check = await Updates.checkForUpdateAsync();
         if (check.isAvailable) {
-          setErrorMsg('Lade neuestes Update...');
+          setErrorMsg(t('downloadingAppUpdate', currentLang));
           await Updates.fetchUpdateAsync();
           await Updates.reloadAsync();
           return;
@@ -106,7 +106,7 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
       if (Updates.reloadAsync) {
         await Updates.reloadAsync();
       } else {
-        Alert.alert('App aktuell', 'Die neueste Version ist aktiv. Versuche wurden zurückgesetzt.');
+        Alert.alert(t('appUpToDateTitle', currentLang), t('appUpToDateMsg', currentLang));
       }
     } catch (e) {
       console.warn('Reload notice:', e);
@@ -175,11 +175,13 @@ export default function PinLockScreen({ onUnlockSuccess, currentLang = 'de' }) {
           onPress={handleManualReload}
           activeOpacity={0.7}
         >
-          <Text style={styles.reloadText}>🔄 App neu laden / Updates prüfen</Text>
+          <Text style={styles.reloadText}>{t('reloadAndCheckUpdates', currentLang)}</Text>
         </TouchableOpacity>
 
         {/* App Version Badge */}
-        <Text style={styles.versionBadgeText}>Version {APP_VERSION}</Text>
+        <Text style={styles.versionBadgeText}>
+          {t('appVersionLabel', currentLang, { version: APP_VERSION })}
+        </Text>
       </View>
     </SafeAreaView>
   );

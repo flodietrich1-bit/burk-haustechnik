@@ -6,6 +6,14 @@ export const formatQty = (val) => {
   return num % 1 === 0 ? String(num) : num.toFixed(1);
 };
 
+export const getRoomDisplayName = (room, currentLang = 'de') => {
+  if (!room) return '';
+  if (currentLang && currentLang !== 'de' && room.translations?.[currentLang]) {
+    return `${room.name} (${room.translations[currentLang]})`;
+  }
+  return room.name || '';
+};
+
 export const getRoomPlannedItem = (matId, room) => {
   if (!room) return null;
   if (room.plannedItems && room.plannedItems[matId]) {
