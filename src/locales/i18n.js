@@ -383,6 +383,7 @@ export const TRANSLATIONS = {
   planResetZoom: { de: '100% Reset', ro: '100% Reset', pl: '100% Reset', hr: '100% Reset' },
   noPlanAvailable: { de: 'Kein Plan für dieses Geschoss hinterlegt', ro: 'Niciun plan atașat pentru acest etaj', pl: 'Brak planu dla tego piętra', hr: 'Nema plana za ovu etažu' },
   floorPrefix: { de: 'Geschoss {floor}', ro: 'Etaj {floor}', pl: 'Piętro {floor}', hr: 'Etaža {floor}' },
+  planCurrentRoomMarker: { de: 'Aktiver Raum', ro: 'Cameră activă', pl: 'Aktywne pomieszczenie', hr: 'Aktivna prostorija' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)

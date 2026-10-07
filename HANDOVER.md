@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.14` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.15` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, interactive CAD Plan-Viewer modal with continuous pinch-to-zoom (1x–6x) and pan, offline plan sync with local PDF storage (`expo-file-system`), unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -143,6 +143,11 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-07 v2.15: Dynamischer CAD-Vektorplan (DWG/DXF -> JSON) & Raum-Highlighting:
+  - Admin-Web (`ToolTime`): Parser (`dwgParser.ts`) erzeugt nun beim Upload von DWG/DXF-Plänen strukturierte Vektordaten (`vectorData`: Wände, Rohrtrassen für Kaltwasser/Warmwasser/Abwasser/Heizung, Raumgrenzen, Geräte und Beschriftungen).
+  - Monteur-App (`TTApp`): `PlanViewerModal.jsx` rendert `plan.vectorData` dynamisch via SVG mit stufenlosem Pinch-to-Zoom (1x–6x) und Pan.
+  - Intelligente Raum-Hervorhebung: Der Raum, aus dem der Monteur den Plan aufgerufen hat, wird im Plan mit Akzentfarbe (`#38BDF8`), Kontur und `★ Aktiver Raum`-Badge markiert.
+  - Fallback: Bleibt erhalten, falls ein Plan keine Vektordaten besitzt.
 - 2026-10-07 v2.14: i18n & Glossar-Korrekturen:
   - Übersetzung von Materialgruppen (`translateGroup` in `i18n.js` und Nutzung in `MaterialBookingCard.jsx`), inklusive "Verteiler & Armaturen", "Sanitär", "Trinkwasser", "Abwasser", "Dämmung", "Befestigung", "Heizung", "Lüftung" für RO, PL, HR.
   - Behebung fehlerhafter Glossar-Tags (`getForeignGloss` in `bookingHelpers.js`): Intelligente Stichwort-Erkennung (Armatur, Kugelhahn, Ventil, Verteiler, Bogen, Sanitär etc.) und Beseitigung des falschen Fallbacks zu `Țeavă` (Rohr).
@@ -191,5 +196,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-07 — v2.14 Update: Übersetzung von Materialgruppen ("Verteiler & Armaturen" etc. via `translateGroup`), Behebung von falschen Glossar-Tags (`getForeignGloss` ohne `Țeavă`-Fallback), Lokalisierung des Geschoss-Präfixes (`floorPrefix`) im Header.
+2026-10-07 — v2.15 Update: Dynamischer CAD-Vektorplan (DWG/DXF -> JSON) und Raum-Highlighting in `PlanViewerModal.jsx`. Parser in Admin-Web erzeugt `vectorData`.
 
