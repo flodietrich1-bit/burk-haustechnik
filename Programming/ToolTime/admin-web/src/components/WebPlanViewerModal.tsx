@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import type { PlanDocument, Room } from '../types';
+import type { PlanDocument, Room, PlanLevel } from '../types';
 import { 
   X, 
   Maximize2, 
@@ -7,6 +7,7 @@ import {
   FileText, 
   Compass
 } from 'lucide-react';
+import { generateCadVectorFromRooms } from '../services/dwgParser';
 
 interface WebPlanViewerModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface WebPlanViewerModalProps {
   plan: PlanDocument | null;
   initialRoom?: Room | null;
   projectName?: string;
+  rooms?: Room[];
 }
 
 const CANVAS_WIDTH = 1000;
@@ -24,7 +26,8 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
   onClose,
   plan,
   initialRoom = null,
-  projectName = 'Bauvorhaben'
+  projectName = 'Bauvorhaben',
+  rooms = []
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState<number>(1);
@@ -32,8 +35,23 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number; panX: number; panY: number }>({ x: 0, y: 0, panX: 0, panY: 0 });
 
-  const vectorData = plan?.vectorData;
-  const floorLabel = plan?.floor || plan?.level || 'EG';
+  const vectorData = useMemo(() => {
+    if (plan?.vectorData && Array.isArray(plan.vectorData.rooms) && plan.vectorData.rooms.length > 0) {
+      return plan.vectorData;
+    }
+    // Fallback: Generate live CAD vector from current project rooms for this floor
+    const floorLabel = (plan?.floor || plan?.level || initialRoom?.floor || 'EG') as PlanLevel;
+    const matchingRooms = rooms && rooms.length > 0
+      ? rooms.filter(r => (r.floor || 'EG') === floorLabel)
+      : (initialRoom ? [initialRoom] : []);
+    
+    return generateCadVectorFromRooms(
+      matchingRooms.length > 0 ? matchingRooms : rooms,
+      floorLabel
+    );
+  }, [plan, rooms, initialRoom]);
+
+  const floorLabel = plan?.floor || plan?.level || initialRoom?.floor || 'EG';
 
   // Find target room in vectorData
   const targetVectorRoom = useMemo(() => {

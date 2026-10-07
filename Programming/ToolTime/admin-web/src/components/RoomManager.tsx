@@ -1094,6 +1094,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         plan={activePlanForViewer}
         initialRoom={activeRoomForViewer}
         projectName={projectName || 'Bauvorhaben'}
+        rooms={rooms}
       />
 
       {/* Lightbox / Fullscreen Gallery Modal */}
