@@ -20,7 +20,8 @@ import {
   FileText,
   Trash2,
   UploadCloud,
-  Filter
+  Filter,
+  Map
 } from 'lucide-react';
 import { 
   saveRoom, 
@@ -32,6 +33,7 @@ import {
   deletePlan 
 } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
+import { WebPlanViewerModal } from './WebPlanViewerModal';
 import { CircularProgress } from './CircularProgress';
 import { generateTranslations, parseDwgFile, detectLevelFromFilename } from '../services/dwgParser';
 
@@ -54,6 +56,34 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<string | null>(null);
+
+  // CAD / Ausführungsplan Modal State
+  const [isPlanViewerOpen, setIsPlanViewerOpen] = useState<boolean>(false);
+  const [activePlanForViewer, setActivePlanForViewer] = useState<PlanDocument | null>(null);
+  const [activeRoomForViewer, setActiveRoomForViewer] = useState<Room | null>(null);
+
+  const handleOpenPlanForRoom = (room: Room) => {
+    // 1. Suche nach Plan für dieselbe Etage (z. B. 'EG', 'OG', 'UG')
+    const roomFloor = room.floor || 'EG';
+    let matchingPlan = plans.find(p => (p.floor || p.level) === roomFloor);
+    // 2. Falls nicht exakt matcht, nimm den ersten verfügbaren Plan
+    if (!matchingPlan && plans.length > 0) {
+      matchingPlan = plans[0];
+    }
+    setActivePlanForViewer(matchingPlan || null);
+    setActiveRoomForViewer(room);
+    setIsPlanViewerOpen(true);
+  };
+
+  const handleOpenPlanForFloor = (floor: string) => {
+    let matchingPlan = floor !== 'all' ? plans.find(p => (p.floor || p.level) === floor) : null;
+    if (!matchingPlan && plans.length > 0) {
+      matchingPlan = plans[0];
+    }
+    setActivePlanForViewer(matchingPlan || null);
+    setActiveRoomForViewer(null);
+    setIsPlanViewerOpen(true);
+  };
 
   useEffect(() => {
     if (!projectId) return;
@@ -563,41 +593,61 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         </div>
       </div>
 
-      {/* Floor / Level Filter Bar */}
-      {availableFloors.length > 1 && (
-        <div className="flex items-center space-x-2 overflow-x-auto pb-1 text-xs">
-          <span className="font-bold text-slate-500 flex items-center space-x-1 shrink-0">
-            <Filter className="w-3.5 h-3.5" />
-            <span>Etage / Ebene filtern:</span>
-          </span>
-          <button
-            type="button"
-            onClick={() => setSelectedLevelFilter('all')}
-            className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
-              selectedLevelFilter === 'all'
-                ? 'bg-[#3B82C4] text-white shadow-xs'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            Alle ({rooms.length})
-          </button>
-          {availableFloors.map(floor => {
-            const count = rooms.filter(r => r.floor === floor).length;
-            return (
+      {/* Floor / Level Filter Bar & CAD Plan Trigger */}
+      {(availableFloors.length > 1 || plans.length > 0) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-1 text-xs">
+          <div className="flex items-center space-x-2 overflow-x-auto">
+            {availableFloors.length > 1 && (
+              <>
+                <span className="font-bold text-slate-500 flex items-center space-x-1 shrink-0">
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Etage / Ebene filtern:</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLevelFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+                    selectedLevelFilter === 'all'
+                      ? 'bg-[#3B82C4] text-white shadow-xs'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  Alle ({rooms.length})
+                </button>
+                {availableFloors.map(floor => {
+                  const count = rooms.filter(r => r.floor === floor).length;
+                  return (
+                    <button
+                      key={floor}
+                      type="button"
+                      onClick={() => setSelectedLevelFilter(floor)}
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+                        selectedLevelFilter === floor
+                          ? 'bg-[#3B82C4] text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {floor} ({count})
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+
+          {plans.length > 0 && (
+            <div className="shrink-0 ml-auto">
               <button
-                key={floor}
                 type="button"
-                onClick={() => setSelectedLevelFilter(floor)}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
-                  selectedLevelFilter === floor
-                    ? 'bg-[#3B82C4] text-white shadow-xs'
-                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
+                onClick={() => handleOpenPlanForFloor(selectedLevelFilter)}
+                className="px-3 py-1.5 rounded-lg font-bold transition-all flex items-center space-x-1.5 bg-blue-50 border border-blue-200 text-[#3B82C4] hover:bg-blue-100 hover:border-[#3B82C4]/40 shadow-xs cursor-pointer"
+                title="Ausführungsplan im interaktiven CAD-Viewer öffnen"
               >
-                {floor} ({count})
+                <Map className="w-3.5 h-3.5 text-[#3B82C4]" />
+                <span>{selectedLevelFilter === 'all' ? 'CAD-Plan öffnen' : `Plan ${selectedLevelFilter} öffnen`}</span>
               </button>
-            );
-          })}
+            </div>
+          )}
         </div>
       )}
 
@@ -636,6 +686,14 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                         <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-tight">
                           {room.name}
                         </h3>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPlanForRoom(room)}
+                          className="p-1 text-slate-400 hover:text-[#3B82C4] hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                          title={`CAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
+                        >
+                          <Map className="w-3.5 h-3.5" />
+                        </button>
                         {isCompleted ? (
                           <div className="flex items-center space-x-1.5 shrink-0">
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1">
@@ -805,13 +863,27 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                   </button>
                 )}
 
-                <button
-                  onClick={() => setSelectedRoomIdForDetail(room.id)}
-                  className="w-full flex items-center justify-center space-x-2 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  <BarChart2 className="w-3.5 h-3.5 text-[#3B82C4]" />
-                  <span>Mengen-Delta & VOB-Aufmaß</span>
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPlanForRoom(room)}
+                    className="flex items-center justify-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-[#3B82C4] border border-blue-200/80 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                    title={`CAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
+                  >
+                    <Map className="w-3.5 h-3.5 text-[#3B82C4]" />
+                    <span>Plan ansehen</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRoomIdForDetail(room.id)}
+                    className="flex items-center justify-center space-x-1.5 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                    title="Mengen-Delta & VOB-Aufmaß ansehen"
+                  >
+                    <BarChart2 className="w-3.5 h-3.5 text-[#3B82C4]" />
+                    <span>Aufmaß / Delta</span>
+                  </button>
+                </div>
 
                 <button
                   onClick={() => handleOpenAssignModal(room)}
@@ -1009,6 +1081,19 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         photos={selectedRoomForDetail ? getRoomPhotos(selectedRoomForDetail) : []}
         isOpen={!!selectedRoomForDetail}
         onClose={() => setSelectedRoomIdForDetail(null)}
+      />
+
+      {/* CAD / Ausführungsplan Viewer Modal */}
+      <WebPlanViewerModal
+        isOpen={isPlanViewerOpen}
+        onClose={() => {
+          setIsPlanViewerOpen(false);
+          setActiveRoomForViewer(null);
+          setActivePlanForViewer(null);
+        }}
+        plan={activePlanForViewer}
+        initialRoom={activeRoomForViewer}
+        projectName={projectName || 'Bauvorhaben'}
       />
 
       {/* Lightbox / Fullscreen Gallery Modal */}
