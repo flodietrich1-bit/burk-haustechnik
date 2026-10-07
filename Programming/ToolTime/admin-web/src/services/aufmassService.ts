@@ -17,6 +17,7 @@ import { getMaterialActualQty } from './firestoreService';
 const LOCAL_STORAGE_AUFMASS_PREFIX = 'burk_tooltime_aufmasse_';
 
 function getLocalAufmasse(projectId: string): AufmassDocument[] {
+  if (typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_AUFMASS_PREFIX + projectId);
     if (raw) {
@@ -30,6 +31,7 @@ function getLocalAufmasse(projectId: string): AufmassDocument[] {
 }
 
 function saveLocalAufmasse(projectId: string, aufmasse: AufmassDocument[]) {
+  if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(LOCAL_STORAGE_AUFMASS_PREFIX + projectId, JSON.stringify(aufmasse));
   } catch (e) {
@@ -54,14 +56,9 @@ export function listenToAufmasse(projectId: string, callback: (aufmasse: Aufmass
     const q = query(colRef, orderBy('createdAt', 'desc'));
 
     const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as AufmassDocument);
-        saveLocalAufmasse(projectId, list);
-        callback(list);
-      } else {
-        const local = getLocalAufmasse(projectId);
-        callback(local);
-      }
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as AufmassDocument);
+      saveLocalAufmasse(projectId, list);
+      callback(list);
     }, (err) => {
       console.warn('Firestore listenToAufmasse fallback to localStorage:', err.message);
       callback(getLocalAufmasse(projectId));
@@ -78,15 +75,18 @@ export function listenToAufmasse(projectId: string, callback: (aufmasse: Aufmass
  * Persists an immutable Aufmass snapshot document
  */
 export async function saveAufmassDocument(projectId: string, aufmass: AufmassDocument): Promise<void> {
+  // Strip any undefined fields before persisting to Firestore
+  const cleaned: AufmassDocument = JSON.parse(JSON.stringify(aufmass));
   const current = getLocalAufmasse(projectId);
-  const updated = [aufmass, ...current.filter(a => a.id !== aufmass.id)];
+  const updated = [cleaned, ...current.filter(a => a.id !== cleaned.id)];
   saveLocalAufmasse(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'aufmasse', aufmass.id);
-    await setDoc(ref, aufmass, { merge: true });
+    const ref = doc(db, 'projects', projectId, 'aufmasse', cleaned.id);
+    await setDoc(ref, cleaned);
   } catch (err: any) {
-    console.warn('Firestore saveAufmassDocument error:', err.message);
+    console.error('Firestore saveAufmassDocument error:', err);
+    throw err;
   }
 }
 
@@ -102,7 +102,8 @@ export async function deleteAufmassDocument(projectId: string, aufmassId: string
     const ref = doc(db, 'projects', projectId, 'aufmasse', aufmassId);
     await deleteDoc(ref);
   } catch (err: any) {
-    console.warn('Firestore deleteAufmassDocument error:', err.message);
+    console.error('Firestore deleteAufmassDocument error:', err);
+    throw err;
   }
 }
 
@@ -119,7 +120,8 @@ export function calculateAufmassSnapshot(
   dateFrom: string, // YYYY-MM-DD
   dateTo: string,   // YYYY-MM-DD (Stichtag)
   creatorName: string = 'Florian Burk',
-  notes: string = ''
+  notes: string = '',
+  previousAufmass?: AufmassDocument | null
 ): AufmassDocument {
   const projectId = project?.id || 'default_project';
   const projectName = project?.name || 'Bauvorhaben';
@@ -191,15 +193,24 @@ export function calculateAufmassSnapshot(
       // Total installed in room up to dateTo
       const totalInstalledToDate = getMaterialActualQty(m, room, bookingsUpToDate);
 
-      // Installed in room before dateFrom
-      const bookingsBeforePeriod = bookingsUpToDate.filter(b => {
-        const t = b.createdAt || b.timestamp;
-        if (!t) return false;
-        return new Date(t).getTime() < fromDateStartTimestamp;
-      });
-      const installedBeforePeriod = getMaterialActualQty(m, room, bookingsBeforePeriod);
+      // Quantity installed prior to this Aufmaß (from previous Aufmaß if available, else bookings before period)
+      let installedBeforePeriod = 0;
+      if (previousAufmass) {
+        const prevRoom = previousAufmass.roomsData?.find(r => r.roomId === room.id);
+        const prevPos = prevRoom?.positions?.find(p => p.posNr === m.posNr || p.positionId === (m.positionId || pos?.id));
+        if (prevPos) {
+          installedBeforePeriod = Number(prevPos.totalInstalledToDate) || 0;
+        }
+      } else {
+        const bookingsBeforePeriod = bookingsUpToDate.filter(b => {
+          const t = b.createdAt || b.timestamp;
+          if (!t) return false;
+          return new Date(t).getTime() < fromDateStartTimestamp;
+        });
+        installedBeforePeriod = getMaterialActualQty(m, room, bookingsBeforePeriod);
+      }
 
-      // Period Delta = what was installed within [dateFrom, dateTo]
+      // Period Delta = what was installed within this Aufmaß period
       const installedInPeriod = Math.max(0, totalInstalledToDate - installedBeforePeriod);
 
       // Overconsumption check:
@@ -211,7 +222,7 @@ export function calculateAufmassSnapshot(
       // Reason lookup
       const reasonKey = `${room.id}_${m.posNr}`;
       const reasonKeyName = `${room.id}_${(m.shortText || '').toLowerCase()}`;
-      const reason = reasonMap.get(reasonKey) || reasonMap.get(reasonKeyName);
+      const reason = reasonMap.get(reasonKey) || reasonMap.get(reasonKeyName) || '';
 
       roomPositions.push({
         positionId: m.positionId || pos?.id || `pos_${m.posNr}`,
@@ -317,10 +328,10 @@ export function calculateAufmassSnapshot(
   positions.forEach(pos => {
     summaryMap.set(pos.posNr || pos.id, {
       positionId: pos.id,
-      posNr: pos.posNr,
-      shortText: pos.shortText,
-      group: pos.group,
-      qu: pos.qu,
+      posNr: pos.posNr || '–',
+      shortText: pos.shortText || 'Material',
+      group: pos.group || '',
+      qu: pos.qu || 'Stk',
       unitPrice: pos.unitPrice || 0,
       plannedQty: Number(pos.qty) || 0,
       totalInstalledUpToDate: 0,
@@ -336,12 +347,12 @@ export function calculateAufmassSnapshot(
       if (!summaryMap.has(key)) {
         summaryMap.set(key, {
           positionId: p.positionId,
-          posNr: p.posNr,
-          shortText: p.shortText,
-          group: p.group,
-          qu: p.qu,
-          unitPrice: p.unitPrice,
-          plannedQty: p.plannedQty,
+          posNr: p.posNr || '–',
+          shortText: p.shortText || 'Material',
+          group: p.group || '',
+          qu: p.qu || 'Stk',
+          unitPrice: p.unitPrice || 0,
+          plannedQty: p.plannedQty || 0,
           totalInstalledUpToDate: 0,
           periodInstalledQty: 0,
           totalCost: 0,

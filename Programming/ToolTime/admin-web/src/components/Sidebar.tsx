@@ -11,7 +11,8 @@ import {
   ShoppingCart,
   Building2,
   UserCheck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Trash2
 } from 'lucide-react';
 
 import type { User } from '../types';
@@ -37,6 +38,8 @@ interface SidebarProps {
   reordersCount?: number;
   currentUser: User | null;
   onExport: () => void;
+  onDeleteProject?: () => void;
+  hasActiveProject?: boolean;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -47,7 +50,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalRoomsCount,
   reordersCount = 0,
   currentUser,
-  onExport
+  onExport,
+  onDeleteProject,
+  hasActiveProject = false
 }) => {
   const projectItems = [
     {
@@ -161,6 +166,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             </button>
           </div>
+
+          {/* Action: Projekt löschen am Ende vom Projekt */}
+          {hasActiveProject && onDeleteProject && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={onDeleteProject}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-600/20 border border-rose-500/30 transition-all group cursor-pointer"
+                title="Aktives Bauvorhaben komplett löschen"
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Trash2 className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform" />
+                  <span>Projekt löschen</span>
+                </div>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* BLOCK 2: ACCOUNT (Admin Only) */}

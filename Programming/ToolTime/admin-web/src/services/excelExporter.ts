@@ -434,7 +434,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
 
 /**
  * PDF-Export: druckfertiges Aufmaß (Browser-Druckdialog -> "Als PDF speichern").
- * Enthält kumulierte Menge bis Stichtag UND Delta seit dem vorigen Aufmaß.
+ * Enthält kumulierte Menge bis Stichtag UND Delta seit dem vorigen Aufmaß mit festen Spaltenbreiten.
  */
 export function exportAufmassToPdf(aufmass: AufmassDocument) {
   const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -442,45 +442,120 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
   const d = (s: string) => new Date(s).toLocaleDateString('de-DE');
 
   const summaryRows = aufmass.summaryItems.map(i => `<tr>
-    <td>${esc(i.posNr)}</td><td>${esc(i.shortText)}</td>
+    <td class="b" style="color: #1e40af;">${esc(i.posNr)}</td>
+    <td style="word-break: break-word;">${esc(i.shortText)}</td>
     <td class="r">${i.plannedQty}</td>
     <td class="r b">${i.totalInstalledUpToDate}</td>
-    <td class="r b">${i.periodInstalledQty}</td>
-    <td>${esc(i.qu)}</td>
+    <td class="r b" style="color: #2563eb;">${i.periodInstalledQty}</td>
+    <td class="c">${esc(i.qu)}</td>
     <td class="r">${i.unitPrice ? i.unitPrice.toFixed(2) : '-'}</td>
     <td class="r b">${i.totalCost ? i.totalCost.toFixed(2) : '-'}</td></tr>`).join('');
 
   const roomBlocks = aufmass.roomsData.map(r => `
-    <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) ${r.isCompleted ? '✓ abgeschlossen' : '(in Montage)'}</h3>
-    <table><thead><tr><th>Pos</th><th>Material</th><th class="r">Plan</th><th class="r">Kumuliert bis Stichtag</th><th class="r">Delta seit vorigem Aufmaß</th><th>Hinweis</th></tr></thead><tbody>
-    ${r.positions.map(p => `<tr><td>${esc(p.posNr)}</td><td>${esc(p.shortText)}</td><td class="r">${p.plannedQty} ${esc(p.qu)}</td><td class="r b">${p.totalInstalledToDate}</td><td class="r b">${p.installedInPeriod}</td><td>${p.isOverconsumption ? `+${p.excessQty} ${esc(p.qu)} ` : ''}${esc(p.reason || '')}</td></tr>`).join('')}
-    </tbody></table>`).join('');
+    <div class="room-block">
+      <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) ${r.isCompleted ? '✓ abgeschlossen' : '(in Montage)'}</h3>
+      <table>
+        <colgroup>
+          <col style="width: 11%;">
+          <col style="width: 33%;">
+          <col style="width: 9%;">
+          <col style="width: 12%;">
+          <col style="width: 12%;">
+          <col style="width: 23%;">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Pos</th>
+            <th>Material / Beschreibung</th>
+            <th class="r">Plan</th>
+            <th class="r">Kumuliert bis Stichtag</th>
+            <th class="r">Delta seit vorigem Aufmaß</th>
+            <th>Hinweis / Begründung</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${r.positions.map(p => `<tr>
+            <td class="b" style="color: #1e40af;">${esc(p.posNr)}</td>
+            <td style="word-break: break-word;">${esc(p.shortText)}</td>
+            <td class="r">${p.plannedQty} ${esc(p.qu)}</td>
+            <td class="r b">${p.totalInstalledToDate}</td>
+            <td class="r b" style="color: #2563eb;">${p.installedInPeriod}</td>
+            <td style="word-break: break-word;">${p.isOverconsumption ? `<b style="color: #b91c1c;">+${p.excessQty} ${esc(p.qu)} </b>` : ''}${esc(p.reason || '')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
 
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(aufmass.aufmassNumber)}</title>
   <style>
-    body{font-family:Arial,sans-serif;font-size:11px;color:#111;margin:24px}
-    h1{font-size:18px;margin:0}h3{font-size:12px;margin:16px 0 4px}
-    .brand{color:#3B82C4;font-weight:bold;font-size:12px}
-    table{width:100%;border-collapse:collapse;margin-top:6px}
-    th,td{border:1px solid #ccc;padding:4px 6px;text-align:left}
-    th{background:#eef2f7}.r{text-align:right}.b{font-weight:bold}
-    .meta td{border:none;padding:1px 6px 1px 0}
-    .sig{display:flex;gap:60px;margin-top:50px}.sig div{border-top:1px solid #000;width:240px;padding-top:4px}
-    @media print{.pb{page-break-before:always}}
+    @page { size: A4 landscape; margin: 12mm 14mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; color: #0f172a; margin: 16px; }
+    h1 { font-size: 18px; margin: 2px 0 6px; }
+    h2 { font-size: 14px; margin: 16px 0 6px; border-bottom: 2px solid #3B82C4; padding-bottom: 4px; }
+    h3 { font-size: 11px; margin: 10px 0 4px; background: #f1f5f9; padding: 4px 8px; border-left: 3px solid #3B82C4; }
+    .brand { color: #3B82C4; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; }
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; }
+    th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; hyphens: auto; }
+    th { background: #e2e8f0; font-weight: 700; color: #334155; font-size: 9.5px; }
+    .r { text-align: right; }
+    .b { font-weight: bold; }
+    .c { text-align: center; }
+    .meta { width: auto; margin: 8px 0; border: none; table-layout: auto; }
+    .meta td { border: none; padding: 2px 10px 2px 0; font-size: 10.5px; }
+    .room-block { page-break-inside: avoid; margin-bottom: 12px; }
+    .sig { display: flex; gap: 80px; margin-top: 36px; page-break-inside: avoid; }
+    .sig div { border-top: 1px solid #334155; width: 240px; padding-top: 4px; font-size: 10px; color: #475569; }
+    @media print {
+      body { margin: 0; }
+      .pb { page-break-before: always; }
+    }
   </style></head><body>
   <div class="brand">BURK Haustechnik</div>
   <h1>Aufmaß ${esc(aufmass.aufmassNumber)}</h1>
-  <table class="meta"><tr><td>Projekt:</td><td><b>${esc(aufmass.projectName)}</b></td></tr>
-  <tr><td>Stichtag der Abrechnung:</td><td><b>${d(aufmass.dateTo)}</b></td></tr>
-  <tr><td>Delta-Zeitraum (seit vorigem Aufmaß):</td><td>${d(aufmass.dateFrom)} bis ${d(aufmass.dateTo)}</td></tr>
-  <tr><td>Erstellt:</td><td>${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${esc(aufmass.createdBy)}</td></tr>
-  <tr><td>Abrechnungsvolumen (Delta):</td><td><b>${eur(aufmass.totalPeriodVolume)}</b></td></tr></table>
-  ${aufmass.notes ? `<p>Bemerkung: ${esc(aufmass.notes)}</p>` : ''}
-  <h3>Gesamtübersicht</h3>
-  <table><thead><tr><th>Pos</th><th>Material / Leistung</th><th class="r">Plan</th><th class="r">Kumuliert bis Stichtag</th><th class="r">Delta seit vorigem Aufmaß</th><th>Einheit</th><th class="r">EP (€)</th><th class="r">Betrag Delta (€)</th></tr></thead><tbody>${summaryRows}</tbody></table>
+  <table class="meta">
+    <tr><td>Projekt:</td><td><b>${esc(aufmass.projectName)}</b></td></tr>
+    <tr><td>Stichtag der Abrechnung:</td><td><b>${d(aufmass.dateTo)}</b></td></tr>
+    <tr><td>Delta-Zeitraum (seit vorigem Aufmaß):</td><td>${d(aufmass.dateFrom)} bis ${d(aufmass.dateTo)}</td></tr>
+    <tr><td>Erstellt:</td><td>${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${esc(aufmass.createdBy)}</td></tr>
+    <tr><td>Abrechnungsvolumen (Delta):</td><td><b>${eur(aufmass.totalPeriodVolume)}</b></td></tr>
+  </table>
+  ${aufmass.notes ? `<p style="margin: 6px 0; font-style: italic; color: #475569;">Bemerkung: ${esc(aufmass.notes)}</p>` : ''}
+  
+  <h2>Gesamtübersicht (Kumuliert)</h2>
+  <table>
+    <colgroup>
+      <col style="width: 10%;">
+      <col style="width: 32%;">
+      <col style="width: 8%;">
+      <col style="width: 11%;">
+      <col style="width: 11%;">
+      <col style="width: 7%;">
+      <col style="width: 9%;">
+      <col style="width: 12%;">
+    </colgroup>
+    <thead>
+      <tr>
+        <th>Pos</th>
+        <th>Material / Leistung</th>
+        <th class="r">Plan</th>
+        <th class="r">Kumuliert bis Stichtag</th>
+        <th class="r">Delta seit vorigem Aufmaß</th>
+        <th class="c">Einheit</th>
+        <th class="r">EP (€)</th>
+        <th class="r">Betrag Delta (€)</th>
+      </tr>
+    </thead>
+    <tbody>${summaryRows}</tbody>
+  </table>
+
   <div class="pb"></div>
-  <h2>Raumaufstellung</h2>${roomBlocks}
-  <div class="sig"><div>Datum / Auftragnehmer</div><div>Datum / Auftraggeber</div></div>
+  <h2>Raumaufstellung (Aufgeschlüsselt)</h2>
+  ${roomBlocks}
+  
+  <div class="sig">
+    <div>Datum / Auftragnehmer</div>
+    <div>Datum / Auftraggeber</div>
+  </div>
   <script>window.onload=function(){window.focus();window.print();}<\/script>
   </body></html>`;
 

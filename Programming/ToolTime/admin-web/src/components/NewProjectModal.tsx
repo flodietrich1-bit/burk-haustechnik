@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   UploadCloud, 
@@ -17,7 +17,9 @@ import {
   Trash2,
   Layers,
   FileText,
-  Loader2
+  Loader2,
+  UserCheck,
+  Phone
 } from 'lucide-react';
 import { parseLvFile } from '../services/gaebParser';
 import { 
@@ -62,14 +64,22 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
-  // Step 2: Beteiligte & Leitung
+  // Step 2: Beteiligte & Leitung (inkl. Vertretung)
   const [client, setClient] = useState<string>('');
   const [projectManagerId, setProjectManagerId] = useState<string>('');
   const [projectManager, setProjectManager] = useState<string>('Florian Buck');
   const [projectManagerEmail, setProjectManagerEmail] = useState<string>('f.buck@burk-haustechnik.de');
+  const [deputyProjectManagerId, setDeputyProjectManagerId] = useState<string>('');
+  const [deputyProjectManager, setDeputyProjectManager] = useState<string>('');
+  const [deputyProjectManagerEmail, setDeputyProjectManagerEmail] = useState<string>('');
+
   const [commercialManagerId, setCommercialManagerId] = useState<string>('');
   const [commercialManager, setCommercialManager] = useState<string>('Sabine Müller');
   const [commercialManagerEmail, setCommercialManagerEmail] = useState<string>('s.mueller@burk-haustechnik.de');
+  const [deputyCommercialManagerId, setDeputyCommercialManagerId] = useState<string>('');
+  const [deputyCommercialManager, setDeputyCommercialManager] = useState<string>('');
+  const [deputyCommercialManagerEmail, setDeputyCommercialManagerEmail] = useState<string>('');
+
   const [assignedMonteurIds, setAssignedMonteurIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -111,7 +121,22 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   const bauleiterList = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmList = users.filter(u => u.role === 'kaufmaennisch' || u.role === 'admin');
-  const monteurList = users.filter(u => u.role === 'monteur');
+
+  // Deduplicate monteurs strictly by person name
+  const monteurList = useMemo(() => {
+    const rawMonteurs = users.filter(u => u.role === 'monteur');
+    const seen = new Set<string>();
+    const deduped: User[] = [];
+    for (const m of rawMonteurs) {
+      if (!m.name) continue;
+      const key = m.name.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(m);
+      }
+    }
+    return deduped;
+  }, [users]);
 
   const handleSelectBauleiter = (userId: string) => {
     setProjectManagerId(userId);
@@ -119,6 +144,18 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     if (found) {
       setProjectManager(found.name);
       setProjectManagerEmail(found.email || '');
+    }
+  };
+
+  const handleSelectDeputyBauleiter = (userId: string) => {
+    setDeputyProjectManagerId(userId);
+    const found = users.find(u => u.id === userId);
+    if (found) {
+      setDeputyProjectManager(found.name);
+      setDeputyProjectManagerEmail(found.email || '');
+    } else {
+      setDeputyProjectManager('');
+      setDeputyProjectManagerEmail('');
     }
   };
 
@@ -131,10 +168,28 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     }
   };
 
-  const handleToggleMonteur = (monteurId: string) => {
-    setAssignedMonteurIds(prev => 
-      prev.includes(monteurId) ? prev.filter(id => id !== monteurId) : [...prev, monteurId]
-    );
+  const handleSelectDeputyKfm = (userId: string) => {
+    setDeputyCommercialManagerId(userId);
+    const found = users.find(u => u.id === userId);
+    if (found) {
+      setDeputyCommercialManager(found.name);
+      setDeputyCommercialManagerEmail(found.email || '');
+    } else {
+      setDeputyCommercialManager('');
+      setDeputyCommercialManagerEmail('');
+    }
+  };
+
+  const handleToggleMonteur = (monteur: User) => {
+    const slugId = monteur.name.toLowerCase().replace(/\s+/g, '-');
+    setAssignedMonteurIds(prev => {
+      const isSelected = prev.includes(monteur.id) || prev.includes(slugId);
+      if (isSelected) {
+        return prev.filter(id => id !== monteur.id && id !== slugId);
+      } else {
+        return [...prev.filter(id => id !== slugId), monteur.id];
+      }
+    });
   };
 
   // Helper to re-synthesize rooms across all uploaded CAD plans with positions
@@ -392,9 +447,15 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         projectManagerId: projectManagerId || undefined,
         projectManager: projectManager || 'Florian Buck',
         projectManagerEmail: projectManagerEmail || undefined,
+        deputyProjectManagerId: deputyProjectManagerId || undefined,
+        deputyProjectManager: deputyProjectManager || undefined,
+        deputyProjectManagerEmail: deputyProjectManagerEmail || undefined,
         commercialManagerId: commercialManagerId || undefined,
         commercialManager: commercialManager || 'Sabine Müller',
         commercialManagerEmail: commercialManagerEmail || undefined,
+        deputyCommercialManagerId: deputyCommercialManagerId || undefined,
+        deputyCommercialManager: deputyCommercialManager || undefined,
+        deputyCommercialManagerEmail: deputyCommercialManagerEmail || undefined,
         assignedMonteurIds: assignedMonteurIds,
         status: derivedStatus,
         currency: 'EUR',
@@ -637,7 +698,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   />
                 </div>
 
-                {/* Projektleiter Dropdown */}
+                {/* ZEILE 1, LINKS: Zuständiger Projektleiter */}
                 <div className="space-y-1">
                   <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                     <HardHat className="w-3.5 h-3.5 text-blue-600" />
@@ -663,11 +724,37 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   )}
                 </div>
 
-                {/* Kaufmännischer Leiter Dropdown */}
+                {/* ZEILE 1, RECHTS: Zuständige Vertretung (Projektleiter) */}
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Zuständige Vertretung (Projektleiter im Urlaub/Ausfall)</span>
+                  </label>
+                  <select
+                    value={deputyProjectManagerId}
+                    onChange={(e) => handleSelectDeputyBauleiter(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  >
+                    <option value="">-- Keine Vertretung hinterlegt --</option>
+                    {bauleiterList.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
+                      </option>
+                    ))}
+                  </select>
+                  {deputyProjectManagerEmail && (
+                    <div className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
+                      <Mail className="w-3 h-3 text-slate-400" />
+                      <span>Vertretung E-Mail: {deputyProjectManagerEmail}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ZEILE 2, LINKS: Zuständiger Kaufmann / Kauffrau */}
                 <div className="space-y-1">
                   <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                     <Briefcase className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Kaufmann / Kauffrau (Nachbestellungen & Freigaben) *</span>
+                    <span>Zuständiger Kaufmann / Kauffrau *</span>
                   </label>
                   <select
                     value={commercialManagerId}
@@ -684,7 +771,33 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   {commercialManagerEmail && (
                     <div className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
                       <Mail className="w-3 h-3 text-slate-400" />
-                      <span>E-Mail: {commercialManagerEmail}</span>
+                      <span>E-Mail für Freigaben: {commercialManagerEmail}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ZEILE 2, RECHTS: Zuständige Vertretung (Kaufmann / Kauffrau) */}
+                <div className="space-y-1">
+                  <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Zuständige Vertretung (Kaufmann / Kauffrau im Urlaub/Ausfall)</span>
+                  </label>
+                  <select
+                    value={deputyCommercialManagerId}
+                    onChange={(e) => handleSelectDeputyKfm(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  >
+                    <option value="">-- Keine Vertretung hinterlegt --</option>
+                    {kfmList.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
+                      </option>
+                    ))}
+                  </select>
+                  {deputyCommercialManagerEmail && (
+                    <div className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
+                      <Mail className="w-3 h-3 text-slate-400" />
+                      <span>Vertretung E-Mail: {deputyCommercialManagerEmail}</span>
                     </div>
                   )}
                 </div>
@@ -704,15 +817,16 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                   {monteurList.map(monteur => {
-                    const isSelected = assignedMonteurIds.includes(monteur.id);
+                    const slugId = monteur.name.toLowerCase().replace(/\s+/g, '-');
+                    const isSelected = assignedMonteurIds.includes(monteur.id) || assignedMonteurIds.includes(slugId);
 
                     return (
                       <div
                         key={monteur.id}
-                        onClick={() => handleToggleMonteur(monteur.id)}
+                        onClick={() => handleToggleMonteur(monteur)}
                         className={`p-2.5 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                           isSelected
-                            ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200'
+                            ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200 shadow-xs'
                             : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
                         }`}
                       >
@@ -720,11 +834,25 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                           <span className="font-bold text-xs text-slate-900 block truncate">
                             {monteur.name}
                           </span>
-                          <span className="text-[10px] text-slate-500 block">
-                            PIN: {monteur.pin || '1234'}
-                          </span>
+                          <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span>PIN: {monteur.pin || '1234'}</span>
+                            {monteur.email ? (
+                              <span className="text-slate-600 font-medium flex items-center space-x-0.5">
+                                <Mail className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
+                                <span>{monteur.email}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Keine Mail</span>
+                            )}
+                            {monteur.phone ? (
+                              <span className="text-slate-600 font-medium flex items-center space-x-0.5">
+                                <Phone className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
+                                <span>{monteur.phone}</span>
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all ${
+                        <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all shrink-0 ${
                           isSelected ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
                         }`}>
                           {isSelected && <Check className="w-3 h-3" />}

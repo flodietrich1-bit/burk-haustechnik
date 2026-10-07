@@ -1,5 +1,5 @@
 import { 
-  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch
+  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -173,13 +173,17 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
   const colRef = collection(db, 'projects');
   const unsubFirestore = onSnapshot(colRef, async (snap) => {
     if (!snap.empty) {
-      // Firestore has data → use it as source of truth
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Project);
+      // Firestore has data → use it as source of truth, ignoring deleted projects
+      const list = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }) as Project)
+        .filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
       saveLocalProjects(list);
     } else {
-      // Firestore is empty → migrate localStorage projects to Firestore (one-time)
+      // Firestore is empty
       const localProjects = getLocalProjects();
-      if (localProjects.length > 0) {
+      const hasInitialMigrationRun = sessionStorage.getItem('burk_migrated_to_firestore');
+      if (localProjects.length > 0 && !hasInitialMigrationRun) {
+        sessionStorage.setItem('burk_migrated_to_firestore', 'true');
         console.log(`Migrating ${localProjects.length} local project(s) to Firestore...`);
         for (const project of localProjects) {
           try {
@@ -209,6 +213,8 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
             console.warn(`Failed to migrate project ${project.id}:`, err.message);
           }
         }
+      } else {
+        saveLocalProjects([]);
       }
     }
   }, () => {
@@ -501,17 +507,116 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
   };
 }
 
-// Delete a single project and clean all associated local data & collections
+// Delete a single project and clean all associated local data, users & Firestore subcollections
 export async function deleteProject(projectId: string): Promise<void> {
   const current = getLocalProjects().filter(p => p.id !== projectId);
   saveLocalProjects(current);
   localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
   localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+  localStorage.removeItem('burk_tooltime_aufmasse_' + projectId);
+
+  const activeSavedId = localStorage.getItem('burk_tooltime_active_project_id');
+  if (activeSavedId === projectId) {
+    if (current.length > 0) {
+      localStorage.setItem('burk_tooltime_active_project_id', current[0].id);
+    } else {
+      localStorage.removeItem('burk_tooltime_active_project_id');
+    }
+  }
+
+  // Notify memory subscribers for subcollections
+  notifyPositionsSubscribers(projectId, []);
+  notifyRoomsSubscribers(projectId, []);
+  notifyAlertsSubscribers(projectId, []);
+  notifyPlansSubscribers(projectId, []);
 
   try {
-    const ref = doc(db, 'projects', projectId);
-    await deleteDoc(ref);
+    const projectRef = doc(db, 'projects', projectId);
+
+    // 1. Mark as deleted first so any active real-time queries immediately filter it out
+    try {
+      await updateDoc(projectRef, {
+        status: 'deleted',
+        isDeleted: true,
+        deletedAt: new Date().toISOString()
+      });
+    } catch {
+      // Document might be offline or not exist yet
+    }
+
+    // 2. Wipe all subcollection documents in Firestore
+    const subcollections = [
+      'positions',
+      'items',
+      'rooms',
+      'bookings',
+      'addendums',
+      'alerts',
+      'plans',
+      'aufmasse',
+      'aufmass',
+      'monteurs'
+    ];
+
+    for (const sub of subcollections) {
+      try {
+        const subSnap = await getDocs(collection(db, 'projects', projectId, sub));
+        if (!subSnap.empty) {
+          const chunkSize = 200;
+          for (let i = 0; i < subSnap.docs.length; i += chunkSize) {
+            const batch = writeBatch(db);
+            const slice = subSnap.docs.slice(i, i + chunkSize);
+            slice.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+          }
+        }
+      } catch (subErr) {
+        console.warn(`Error wiping subcollection ${sub} for project ${projectId}:`, subErr);
+      }
+    }
+
+    // 3. Remove projectId from assignedProjectIds of all users
+    try {
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (!usersSnap.empty) {
+        for (const uDoc of usersSnap.docs) {
+          const uData = uDoc.data();
+          if (Array.isArray(uData.assignedProjectIds) && uData.assignedProjectIds.includes(projectId)) {
+            const updated = uData.assignedProjectIds.filter((id: string) => id !== projectId);
+            await updateDoc(uDoc.ref, { assignedProjectIds: updated });
+          }
+        }
+      }
+    } catch (userErr) {
+      console.warn('Error clearing project from users:', userErr);
+    }
+
+    // Also update local users cache
+    try {
+      const localUsers = getLocalUsers();
+      let usersChanged = false;
+      const updatedLocalUsers = localUsers.map(u => {
+        if (Array.isArray(u.assignedProjectIds) && u.assignedProjectIds.includes(projectId)) {
+          usersChanged = true;
+          return {
+            ...u,
+            assignedProjectIds: u.assignedProjectIds.filter(id => id !== projectId)
+          };
+        }
+        return u;
+      });
+      if (usersChanged) {
+        localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updatedLocalUsers));
+      }
+    } catch {
+      // ignore
+    }
+
+    // 4. Finally delete the project root document
+    await deleteDoc(projectRef);
+    console.log(`✅ Project ${projectId} completely deleted from Firestore and caches.`);
   } catch (err: any) {
     console.warn('Firestore deleteProject error:', err.message);
   }
@@ -525,12 +630,14 @@ export async function clearAllProjects(): Promise<void> {
     localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + p.id);
     localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + p.id);
     localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + p.id);
+    localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + p.id);
     try {
       await deleteDoc(doc(db, 'projects', p.id));
     } catch {
       // ignore
     }
   }
+  localStorage.removeItem('burk_tooltime_active_project_id');
 }
 
 export async function uploadPlanFile(
@@ -1296,22 +1403,65 @@ export const MOCK_USERS: User[] = [
 
 const LOCAL_STORAGE_USERS_KEY = 'burk_tooltime_users';
 
+/**
+ * Normalizes and deduplicates user lists by canonical person identity (normalized name).
+ * Combines richer information (email, phone, pin, role, project assignments) and ensures
+ * each person appears exactly once in the entire application.
+ */
+export function normalizeAndDeduplicateUsers(users: User[]): User[] {
+  const byName = new Map<string, User>();
+
+  for (const user of users) {
+    if (!user || !user.name) continue;
+    const key = user.name.trim().toLowerCase();
+    const existing = byName.get(key);
+
+    if (!existing) {
+      byName.set(key, { ...user });
+    } else {
+      const mergedAssignments = Array.from(new Set([
+        ...(existing.assignedProjectIds || []),
+        ...(user.assignedProjectIds || [])
+      ]));
+
+      // Keep standard prefixed ID if available (e.g. user_mont_1 over slug)
+      const keepExistingId = Boolean(existing.id && existing.id.startsWith('user_'));
+      const finalId = keepExistingId ? existing.id : (user.id || existing.id);
+
+      const merged: User = {
+        ...existing,
+        ...user,
+        id: finalId,
+        name: existing.name || user.name,
+        role: existing.role || user.role,
+        email: existing.email || user.email || '',
+        phone: existing.phone || user.phone || '',
+        pin: existing.pin || user.pin,
+        defaultLanguage: existing.defaultLanguage || user.defaultLanguage || 'de',
+        assignedProjectIds: mergedAssignments,
+        status: existing.status || user.status || 'active'
+      };
+
+      byName.set(key, merged);
+    }
+  }
+
+  return Array.from(byName.values());
+}
+
 export function getLocalUsers(): User[] {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const map = new Map<string, User>();
-        MOCK_USERS.forEach(u => map.set(u.id, u));
-        parsed.forEach(u => map.set(u.id, { ...map.get(u.id), ...u }));
-        return Array.from(map.values());
+        return normalizeAndDeduplicateUsers([...MOCK_USERS, ...parsed]);
       }
     }
   } catch (e) {
     console.warn('Error reading users from localStorage:', e);
   }
-  return MOCK_USERS;
+  return normalizeAndDeduplicateUsers(MOCK_USERS);
 }
 
 export function listenToUsers(callback: (users: User[]) => void) {
@@ -1322,10 +1472,7 @@ export function listenToUsers(callback: (users: User[]) => void) {
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as User);
-      const map = new Map<string, User>();
-      MOCK_USERS.forEach(u => map.set(u.id, u));
-      list.forEach(u => map.set(u.id, { ...map.get(u.id), ...u }));
-      const merged = Array.from(map.values());
+      const merged = normalizeAndDeduplicateUsers([...MOCK_USERS, ...list]);
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(merged));
       callback(merged);
     } else {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { Project, User } from '../types';
 import { 
   Settings, 
@@ -10,7 +10,9 @@ import {
   CheckCircle2, 
   Mail, 
   Check,
-  Trash2
+  Trash2,
+  UserCheck,
+  Phone
 } from 'lucide-react';
 import { updateProjectDetails, deleteProject } from '../services/firestoreService';
 
@@ -35,16 +37,30 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
         (project.projectManager && u.name.toLowerCase() === project.projectManager.toLowerCase())
       )?.id || '';
 
+      // Auto-resolve deputyProjectManagerId if empty
+      const depPmId = project.deputyProjectManagerId || users.find(u => 
+        (project.deputyProjectManagerEmail && u.email?.toLowerCase() === project.deputyProjectManagerEmail.toLowerCase()) ||
+        (project.deputyProjectManager && u.name.toLowerCase() === project.deputyProjectManager.toLowerCase())
+      )?.id || '';
+
       // Auto-resolve commercialManagerId if empty
       const cmId = project.commercialManagerId || users.find(u => 
         (project.commercialManagerEmail && u.email?.toLowerCase() === project.commercialManagerEmail.toLowerCase()) ||
         (project.commercialManager && u.name.toLowerCase() === project.commercialManager.toLowerCase())
       )?.id || '';
 
+      // Auto-resolve deputyCommercialManagerId if empty
+      const depCmId = project.deputyCommercialManagerId || users.find(u => 
+        (project.deputyCommercialManagerEmail && u.email?.toLowerCase() === project.deputyCommercialManagerEmail.toLowerCase()) ||
+        (project.deputyCommercialManager && u.name.toLowerCase() === project.deputyCommercialManager.toLowerCase())
+      )?.id || '';
+
       setForm({
         ...project,
         projectManagerId: pmId || project.projectManagerId || '',
-        commercialManagerId: cmId || project.commercialManagerId || ''
+        deputyProjectManagerId: depPmId || project.deputyProjectManagerId || '',
+        commercialManagerId: cmId || project.commercialManagerId || '',
+        deputyCommercialManagerId: depCmId || project.deputyCommercialManagerId || ''
       });
     }
   }, [project, users]);
@@ -59,7 +75,23 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
 
   const bauleiterUsers = users.filter(u => u.role === 'projektleiter' || u.role === 'bauleiter' || u.role === 'admin');
   const kfmUsers = users.filter(u => u.role === 'kaufmaennisch' || (u.role as string) === 'kaufmännisch' || u.role === 'admin');
-  const monteurUsers = users.filter(u => u.role === 'monteur');
+
+  // Deduplicate monteurs strictly by person name so each monteur appears exactly once
+  const monteurUsers = useMemo(() => {
+    const rawMonteurs = users.filter(u => u.role === 'monteur');
+    const seenNames = new Set<string>();
+    const deduped: User[] = [];
+
+    for (const m of rawMonteurs) {
+      if (!m.name) continue;
+      const key = m.name.trim().toLowerCase();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        deduped.push(m);
+      }
+    }
+    return deduped;
+  }, [users]);
 
   const handleBauleiterChange = (userId: string) => {
     const selected = users.find(u => u.id === userId);
@@ -68,6 +100,16 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
       projectManagerId: userId,
       projectManager: selected?.name || '',
       projectManagerEmail: selected?.email || ''
+    }));
+  };
+
+  const handleDeputyBauleiterChange = (userId: string) => {
+    const selected = users.find(u => u.id === userId);
+    setForm(prev => ({
+      ...prev,
+      deputyProjectManagerId: userId,
+      deputyProjectManager: selected?.name || '',
+      deputyProjectManagerEmail: selected?.email || ''
     }));
   };
 
@@ -81,12 +123,27 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
     }));
   };
 
-  const handleToggleMonteur = (monteurId: string) => {
+  const handleDeputyKfmChange = (userId: string) => {
+    const selected = users.find(u => u.id === userId);
+    setForm(prev => ({
+      ...prev,
+      deputyCommercialManagerId: userId,
+      deputyCommercialManager: selected?.name || '',
+      deputyCommercialManagerEmail: selected?.email || ''
+    }));
+  };
+
+  const handleToggleMonteur = (monteur: User) => {
     const current = form.assignedMonteurIds || [];
-    const exists = current.includes(monteurId);
-    const updated = exists 
-      ? current.filter(id => id !== monteurId) 
-      : [...current, monteurId];
+    const slugId = monteur.name.toLowerCase().replace(/\s+/g, '-');
+    const isAssigned = current.includes(monteur.id) || current.includes(slugId);
+    
+    let updated: string[];
+    if (isAssigned) {
+      updated = current.filter(id => id !== monteur.id && id !== slugId);
+    } else {
+      updated = [...current.filter(id => id !== slugId), monteur.id];
+    }
     
     setForm(prev => ({ ...prev, assignedMonteurIds: updated }));
   };
@@ -273,11 +330,11 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               />
             </div>
 
-            {/* Zuständiger Projektleiter Dropdown */}
+            {/* ZEILE 1, LINKS: Zuständiger Projektleiter */}
             <div className="space-y-1">
               <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                 <HardHat className="w-3.5 h-3.5 text-blue-600" />
-                <span>Zuständiger Projektleiter * (nur Admin)</span>
+                <span>Zuständiger Projektleiter *</span>
               </label>
               <select
                 disabled={isBauleiter}
@@ -302,11 +359,40 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
               )}
             </div>
 
-            {/* Kaufmännischer Leiter Dropdown */}
+            {/* ZEILE 1, RECHTS: Zuständige Vertretung (Projektleiter) */}
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                <span>Zuständige Vertretung (Projektleiter im Urlaub/Ausfall)</span>
+              </label>
+              <select
+                disabled={isBauleiter}
+                value={form.deputyProjectManagerId || ''}
+                onChange={(e) => handleDeputyBauleiterChange(e.target.value)}
+                className={`w-full px-3 py-2 border rounded-xl font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
+              >
+                <option value="">-- Keine Vertretung hinterlegt --</option>
+                {bauleiterUsers.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Projektleiter'})
+                  </option>
+                ))}
+              </select>
+              {form.deputyProjectManagerEmail && (
+                <div className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
+                  <Mail className="w-3 h-3 text-slate-400" />
+                  <span>Vertretung E-Mail: {form.deputyProjectManagerEmail}</span>
+                </div>
+              )}
+            </div>
+
+            {/* ZEILE 2, LINKS: Zuständiger Kaufmann / Kauffrau */}
             <div className="space-y-1">
               <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
                 <Briefcase className="w-3.5 h-3.5 text-amber-600" />
-                <span>Kaufmann / Kauffrau (Nachbestellungen & Abrechnung) * (nur Admin)</span>
+                <span>Zuständiger Kaufmann / Kauffrau *</span>
               </label>
               <select
                 disabled={isBauleiter}
@@ -330,6 +416,35 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 </div>
               )}
             </div>
+
+            {/* ZEILE 2, RECHTS: Zuständige Vertretung (Kaufmann / Kauffrau) */}
+            <div className="space-y-1">
+              <label className="block font-bold text-slate-700 flex items-center space-x-1.5">
+                <UserCheck className="w-3.5 h-3.5 text-amber-500" />
+                <span>Zuständige Vertretung (Kaufmann / Kauffrau im Urlaub/Ausfall)</span>
+              </label>
+              <select
+                disabled={isBauleiter}
+                value={form.deputyCommercialManagerId || ''}
+                onChange={(e) => handleDeputyKfmChange(e.target.value)}
+                className={`w-full px-3 py-2 border rounded-xl font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4] ${
+                  isBauleiter ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
+              >
+                <option value="">-- Keine Vertretung hinterlegt --</option>
+                {kfmUsers.map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.role === 'admin' ? 'Eigentümer/Admin' : 'Kaufmann / Kauffrau'})
+                  </option>
+                ))}
+              </select>
+              {form.deputyCommercialManagerEmail && (
+                <div className="text-[11px] text-slate-500 flex items-center space-x-1 pt-0.5">
+                  <Mail className="w-3 h-3 text-slate-400" />
+                  <span>Vertretung E-Mail: {form.deputyCommercialManagerEmail}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -347,7 +462,10 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
                 </span>
               )}
               <span className="text-xs font-semibold text-[#3B82C4] bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
-                {(form.assignedMonteurIds || []).length} Monteure zugeordnet
+                {monteurUsers.filter(m => {
+                  const slugId = m.name.toLowerCase().replace(/\s+/g, '-');
+                  return (form.assignedMonteurIds || []).includes(m.id) || (form.assignedMonteurIds || []).includes(slugId);
+                }).length} Monteure zugeordnet
               </span>
             </div>
           </div>
@@ -358,28 +476,43 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
             {monteurUsers.map(monteur => {
-              const isAssigned = (form.assignedMonteurIds || []).includes(monteur.id);
+              const slugId = monteur.name.toLowerCase().replace(/\s+/g, '-');
+              const isAssigned = (form.assignedMonteurIds || []).includes(monteur.id) || (form.assignedMonteurIds || []).includes(slugId);
 
               return (
                 <div
                   key={monteur.id}
-                  onClick={() => handleToggleMonteur(monteur.id)}
+                  onClick={() => handleToggleMonteur(monteur)}
                   className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                     isAssigned
-                      ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200'
+                      ? 'bg-emerald-50 border-emerald-300 ring-1 ring-emerald-200 shadow-xs'
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
                   }`}
                 >
-                  <div className="space-y-0.5 truncate mr-2">
+                  <div className="space-y-1 truncate mr-2">
                     <span className="font-bold text-xs text-slate-900 block truncate">
                       {monteur.name}
                     </span>
-                    <span className="text-[10px] text-slate-500 block">
-                      PIN: {monteur.pin || '1234'} • {monteur.email || 'Keine Mail'}
-                    </span>
+                    <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>PIN: {monteur.pin || '1234'}</span>
+                      {monteur.email ? (
+                        <span className="text-slate-600 font-medium flex items-center space-x-0.5">
+                          <Mail className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
+                          <span>{monteur.email}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Keine Mail</span>
+                      )}
+                      {monteur.phone ? (
+                        <span className="text-slate-600 font-medium flex items-center space-x-0.5">
+                          <Phone className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
+                          <span>{monteur.phone}</span>
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
-                  <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                  <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
                     isAssigned ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
                   }`}>
                     {isAssigned && <Check className="w-3.5 h-3.5" />}
@@ -416,7 +549,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
             <button
               type="button"
               onClick={async () => {
-                if (window.confirm(`Möchten Sie das Projekt "${project.name}" wirklich unwiderruflich löschen?`)) {
+                if (window.confirm(`Bist du sicher, dass du dieses Projekt komplett löschen willst?\n\nProjekt: "${project.name}"`)) {
                   await deleteProject(project.id);
                 }
               }}

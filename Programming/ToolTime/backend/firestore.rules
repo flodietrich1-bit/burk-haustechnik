@@ -1,20 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Projects collection and subcollections
+    // Projects collection and all subcollections
     match /projects/{projectId} {
       allow read, write: if true;
       
-      match /positions/{positionId} {
-        allow read, write: if true;
-      }
-      match /items/{itemId} {
-        allow read, write: if true;
-      }
-      match /rooms/{roomId} {
-        allow read, write: if true;
-      }
-      match /plans/{planId} {
+      match /{allChildren=**} {
         allow read, write: if true;
       }
     }

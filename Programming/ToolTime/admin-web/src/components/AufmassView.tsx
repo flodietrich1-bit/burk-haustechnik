@@ -24,7 +24,8 @@ import {
   Info, 
   Eye, 
   Search,
-  Check
+  Check,
+  UserCheck
 } from 'lucide-react';
 import { 
   listenToAufmasse, 
@@ -59,6 +60,11 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [selectedAufmass, setSelectedAufmass] = useState<AufmassDocument | null>(null);
   const [detailTab, setDetailTab] = useState<'summary' | 'rooms'>('summary');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
+
+  // Discard Confirmation Modal State
+  const [discardTarget, setDiscardTarget] = useState<AufmassDocument | null>(null);
+  const [isDiscarding, setIsDiscarding] = useState(false);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -71,9 +77,12 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   // 1. Listen to Aufmasse from Firestore (neueste Stichtage zuerst)
   useEffect(() => {
     if (!projectId) return;
-    const unsub = listenToAufmasse(projectId, (list) =>
-      setAufmasse([...list].sort((a, b) => b.dateTo.localeCompare(a.dateTo) || b.createdAt.localeCompare(a.createdAt)))
-    );
+    const unsub = listenToAufmasse(projectId, (list) => {
+      const sorted = [...list].sort((a, b) => 
+        b.dateTo.localeCompare(a.dateTo) || b.createdAt.localeCompare(a.createdAt)
+      );
+      setAufmasse(sorted);
+    });
     return () => unsub();
   }, [projectId]);
 
@@ -81,17 +90,21 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   useEffect(() => {
     if (selectedAufmass) {
       const fresh = aufmasse.find(a => a.id === selectedAufmass.id);
-      if (fresh) setSelectedAufmass(fresh);
+      if (fresh) {
+        setSelectedAufmass(fresh);
+      }
     }
   }, [aufmasse, selectedAufmass]);
 
   // 2. Automatically derive dateFrom:
   // Bis-Datum des letzten Aufmaßes, oder Startdatum des Projekts / früheste Buchung
+  const latestSavedAufmass = useMemo(() => {
+    return aufmasse.length > 0 ? aufmasse[0] : null;
+  }, [aufmasse]);
+
   const derivedDateFrom = useMemo(() => {
-    if (aufmasse.length > 0) {
-      // Sort by dateTo descending
-      const sorted = [...aufmasse].sort((a, b) => b.dateTo.localeCompare(a.dateTo));
-      return sorted[0].dateTo;
+    if (latestSavedAufmass) {
+      return latestSavedAufmass.dateTo;
     }
     if (project?.startDate) {
       return project.startDate;
@@ -109,7 +122,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     const d = new Date();
     d.setDate(d.getDate() - 30);
     return d.toISOString().slice(0, 10);
-  }, [aufmasse, project?.startDate, bookings]);
+  }, [latestSavedAufmass, project?.startDate, bookings]);
 
   // Handle open create modal
   const handleOpenCreateModal = () => {
@@ -137,28 +150,41 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
         customDateFrom,
         dateTo,
         creatorName,
-        notes
+        notes,
+        latestSavedAufmass
       );
 
       await saveAufmassDocument(projectId, snapshot);
+      setAufmasse(prev => [snapshot, ...prev.filter(a => a.id !== snapshot.id)]);
       setIsCreateModalOpen(false);
       setSelectedAufmass(snapshot);
       setDetailTab('summary');
+      setSelectedRoomFilter('all');
     } catch (err: any) {
       console.error('Error creating Aufmass snapshot:', err);
+      alert('Fehler beim Speichern des Aufmaßes: ' + (err.message || err));
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Delete Aufmass
-  const handleDeleteAufmass = async (aufmassId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (window.confirm('Möchten Sie dieses Aufmaß wirklich löschen?')) {
-      if (selectedAufmass?.id === aufmassId) {
+  // Discard Aufmass
+  const handleConfirmDiscard = async () => {
+    if (!discardTarget) return;
+    setIsDiscarding(true);
+    try {
+      const targetId = discardTarget.id;
+      if (selectedAufmass?.id === targetId) {
         setSelectedAufmass(null);
       }
-      await deleteAufmassDocument(projectId, aufmassId);
+      setAufmasse(prev => prev.filter(a => a.id !== targetId));
+      await deleteAufmassDocument(projectId, targetId);
+      setDiscardTarget(null);
+    } catch (err: any) {
+      console.error('Error discarding Aufmass:', err);
+      alert('Fehler beim Verwerfen des Aufmaßes: ' + (err.message || err));
+    } finally {
+      setIsDiscarding(false);
     }
   };
 
@@ -188,15 +214,19 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   // Filtered Rooms in Detail View
   const filteredRoomsData = useMemo(() => {
     if (!selectedAufmass) return [];
-    if (!searchTerm.trim()) return selectedAufmass.roomsData;
+    let list = selectedAufmass.roomsData;
+    if (selectedRoomFilter !== 'all') {
+      list = list.filter(r => r.roomId === selectedRoomFilter);
+    }
+    if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase();
-    return selectedAufmass.roomsData.filter(r => 
+    return list.filter(r => 
       r.roomName.toLowerCase().includes(term) ||
       r.roomCode.toLowerCase().includes(term) ||
       r.floor.toLowerCase().includes(term) ||
       r.positions.some(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term))
     );
-  }, [selectedAufmass, searchTerm]);
+  }, [selectedAufmass, selectedRoomFilter, searchTerm]);
 
   // ---------------------------------------------------------------------------
   // VIEW: DETAIL ANSICHT (Betrachtung eines Aufmaßes)
@@ -210,8 +240,8 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           <div className="flex items-center space-x-3.5">
             <button
               onClick={() => setSelectedAufmass(null)}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-              title="Zurück zur Übersicht"
+              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+              title="Zurück zur Aufmaß-Historie"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -224,7 +254,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                   Aufmaß zum Stichtag {new Date(selectedAufmass.dateTo).toLocaleDateString('de-DE')}
                 </h2>
               </div>
-              <p className="text-xs text-slate-500 mt-1 flex items-center space-x-3">
+              <p className="text-xs text-slate-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="flex items-center space-x-1">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
                   <span>
@@ -242,20 +272,31 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          {/* Action Buttons Top Right: Excel, PDF, Discard */}
+          <div className="flex items-center space-x-2.5">
             <button
               onClick={() => handleExport(selectedAufmass)}
-              className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+              className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              title="Excel-Export (.xlsx) herunterladen"
             >
-              <Download className="w-4 h-4" />
+              <FileSpreadsheet className="w-4 h-4" />
               <span>Excel Export (.xlsx)</span>
             </button>
             <button
               onClick={() => handleExportPdf(selectedAufmass)}
-              className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+              className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+              title="Druckfertiges VOB-Aufmaß (PDF) exportieren"
             >
               <Download className="w-4 h-4" />
               <span>PDF Export</span>
+            </button>
+            <button
+              onClick={() => setDiscardTarget(selectedAufmass)}
+              className="flex items-center space-x-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-3.5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+              title="Aufmaß verwerfen und Deltas für Folgeaufmaß zurücksetzen"
+            >
+              <Trash2 className="w-4 h-4 text-red-600" />
+              <span>Aufmaß verwerfen</span>
             </button>
           </div>
         </div>
@@ -275,7 +316,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           <div className="flex items-center p-1 bg-slate-100 rounded-xl max-w-fit">
             <button
               onClick={() => setDetailTab('summary')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 detailTab === 'summary'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -290,7 +331,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
 
             <button
               onClick={() => setDetailTab('rooms')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 detailTab === 'rooms'
                   ? 'bg-white text-slate-900 shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -320,7 +361,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                   Abrechnungsvolumen
                 </span>
-                <span className="text-sm font-black text-slate-900">
+                <span className="text-sm font-black text-slate-900 font-mono">
                   {selectedAufmass.totalPeriodVolume.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €
                 </span>
               </div>
@@ -328,21 +369,21 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           </div>
         </div>
 
-        {/* TAB 1: GESAMTANSICHT */}
+        {/* TAB 1: GESAMTANSICHT (Feste Breiten & Text-Break) */}
         {detailTab === 'summary' && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full text-left border-collapse text-xs table-fixed min-w-[920px]">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
-                    <th className="py-3 px-4 w-24">Pos-Nr</th>
-                    <th className="py-3 px-4">Material / Leistungsbeschreibung</th>
-                    <th className="py-3 px-4 w-24 text-right">Plan (Gesamt)</th>
-                    <th className="py-3 px-4 w-32 text-right">Verbaut im Zeitraum</th>
-                    <th className="py-3 px-4 w-32 text-right">Kumuliert bis Stichtag</th>
-                    <th className="py-3 px-4 w-20 text-center">Einheit</th>
-                    <th className="py-3 px-4 w-28 text-right">Einzelpreis</th>
-                    <th className="py-3 px-4 w-32 text-right">Abrechnung (€)</th>
+                    <th className="py-3 px-3.5 w-28">Pos-Nr</th>
+                    <th className="py-3 px-3.5 w-[34%] min-w-[240px]">Material / Leistungsbeschreibung</th>
+                    <th className="py-3 px-3.5 w-24 text-right">Plan (Gesamt)</th>
+                    <th className="py-3 px-3.5 w-28 text-right">Verbaut im Zeitraum</th>
+                    <th className="py-3 px-3.5 w-28 text-right">Kumuliert bis Stichtag</th>
+                    <th className="py-3 px-3.5 w-16 text-center">Einheit</th>
+                    <th className="py-3 px-3.5 w-24 text-right">Einzelpreis</th>
+                    <th className="py-3 px-3.5 w-28 text-right">Abrechnung (€)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -355,36 +396,36 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                   ) : (
                     filteredSummaryItems.map((item) => (
                       <tr key={item.positionId} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-[#3B82C4]">
+                        <td className="py-3 px-3.5 font-mono font-bold text-[#3B82C4]">
                           {item.posNr}
                         </td>
-                        <td className="py-3 px-4">
-                          <div className="font-semibold text-slate-900">{item.shortText}</div>
+                        <td className="py-3 px-3.5">
+                          <div className="font-semibold text-slate-900 break-words whitespace-normal leading-snug">
+                            {item.shortText}
+                          </div>
                           {item.group && (
-                            <div className="text-[11px] text-slate-400 mt-0.5">{item.group}</div>
+                            <div className="text-[11px] text-slate-400 mt-0.5 break-words">
+                              {item.group}
+                            </div>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right font-medium text-slate-600">
+                        <td className="py-3 px-3.5 text-right font-medium text-slate-600">
                           {item.plannedQty}
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-blue-600 bg-blue-50/30">
-                          {item.periodInstalledQty > 0 ? (
-                            <span>{item.periodInstalledQty}</span>
-                          ) : (
-                            <span className="text-slate-400 font-normal">–</span>
-                          )}
+                        <td className="py-3 px-3.5 text-right font-bold text-blue-600 bg-blue-50/30">
+                          {item.periodInstalledQty > 0 ? item.periodInstalledQty : <span className="text-slate-400 font-normal">–</span>}
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-slate-900">
+                        <td className="py-3 px-3.5 text-right font-bold text-slate-900">
                           {item.totalInstalledUpToDate}
                         </td>
-                        <td className="py-3 px-4 text-center font-medium text-slate-500">
+                        <td className="py-3 px-3.5 text-center text-slate-500 font-medium">
                           {item.qu}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-600">
-                          {item.unitPrice > 0 ? `${item.unitPrice.toFixed(2)} €` : '-'}
+                        <td className="py-3 px-3.5 text-right text-slate-600 font-mono">
+                          {item.unitPrice ? `${item.unitPrice.toFixed(2)} €` : '–'}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                          {item.totalCost > 0 ? `${item.totalCost.toFixed(2)} €` : '-'}
+                        <td className="py-3 px-3.5 text-right font-bold font-mono text-slate-900">
+                          {item.totalCost ? `${item.totalCost.toFixed(2)} €` : '–'}
                         </td>
                       </tr>
                     ))
@@ -395,9 +436,48 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           </div>
         )}
 
-        {/* TAB 2: RAUMANSICHT */}
+        {/* TAB 2: RAUMANSICHT (Horizontale Raum-Navigation & Feste Breiten) */}
         {detailTab === 'rooms' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
+            
+            {/* Horizontal Room Selector Bar */}
+            <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex items-center gap-2 overflow-x-auto">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1 flex items-center space-x-1">
+                <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Räume:</span>
+              </span>
+              <button
+                onClick={() => setSelectedRoomFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                  selectedRoomFilter === 'all'
+                    ? 'bg-[#3B82C4] text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                Alle Räume ({selectedAufmass.roomsData.length})
+              </button>
+              {selectedAufmass.roomsData.map(r => {
+                const isActive = selectedRoomFilter === r.roomId;
+                const hasIssues = r.positions.some(p => p.isOverconsumption);
+                return (
+                  <button
+                    key={r.roomId}
+                    onClick={() => setSelectedRoomFilter(r.roomId)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center space-x-1.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-[#3B82C4] text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span>{r.roomCode} {r.roomName}</span>
+                    {hasIssues && (
+                      <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-amber-300' : 'bg-red-500'}`} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
             {filteredRoomsData.length === 0 ? (
               <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-400">
                 Keine Räume für diesen Filter gefunden.
@@ -448,90 +528,78 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Room Positions Table */}
+                    {/* Room Positions Table with FIXED column widths and break-words */}
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs">
+                      <table className="w-full text-left border-collapse text-xs table-fixed min-w-[950px]">
                         <thead>
                           <tr className="bg-slate-100/70 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
-                            <th className="py-2.5 px-4 w-24">Pos-Nr</th>
-                            <th className="py-2.5 px-4">Materialbezeichnung</th>
-                            <th className="py-2.5 px-4 w-24 text-right">Plan</th>
-                            <th className="py-2.5 px-4 w-32 text-right">Im Zeitraum</th>
-                            <th className="py-2.5 px-4 w-32 text-right">Kumuliert</th>
-                            <th className="py-2.5 px-4 w-28 text-center">Status / Delta</th>
+                            <th className="py-2.5 px-3.5 w-28">Pos-Nr</th>
+                            <th className="py-2.5 px-3.5 w-[30%] min-w-[220px]">Materialbezeichnung</th>
+                            <th className="py-2.5 px-3.5 w-20 text-right">Plan</th>
+                            <th className="py-2.5 px-3.5 w-28 text-right">Im Zeitraum</th>
+                            <th className="py-2.5 px-3.5 w-28 text-right">Kumuliert</th>
+                            <th className="py-2.5 px-3.5 w-28 text-center">Status / Delta</th>
+                            <th className="py-2.5 px-3.5 w-[25%] min-w-[180px]">Hinweis / Begründung</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {room.positions.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="py-4 text-center text-slate-400">
+                              <td colSpan={7} className="py-4 text-center text-slate-400">
                                 Keine Positionen für diesen Raum erfasst.
                               </td>
                             </tr>
                           ) : (
-                            room.positions.map((pos) => {
-                              return (
-                                <React.Fragment key={pos.positionId}>
-                                  <tr className={`hover:bg-slate-50/80 transition-colors ${
-                                    pos.isOverconsumption ? 'bg-red-50/20' : (pos.isExtraPosition ? 'bg-purple-50/20' : '')
-                                  }`}>
-                                    <td className="py-3 px-4 font-mono font-bold text-[#3B82C4]">
-                                      {pos.posNr}
-                                    </td>
-                                    <td className="py-3 px-4">
-                                      <div className="font-semibold text-slate-900 flex items-center space-x-2">
-                                        <span>{pos.shortText}</span>
-                                        {pos.isExtraPosition && (
-                                          <span className="text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded">
-                                            Zusatzposition
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-right font-medium text-slate-600">
-                                      {pos.plannedQty} {pos.qu}
-                                    </td>
-                                    <td className="py-3 px-4 text-right font-bold text-blue-600 bg-blue-50/30">
-                                      {pos.installedInPeriod > 0 ? `${pos.installedInPeriod} ${pos.qu}` : <span className="text-slate-400 font-normal">–</span>}
-                                    </td>
-                                    <td className="py-3 px-4 text-right font-bold text-slate-900">
-                                      {pos.totalInstalledToDate} {pos.qu}
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      {pos.isOverconsumption ? (
-                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200">
-                                          <span>+{pos.excessQty} {pos.qu}</span>
-                                        </span>
-                                      ) : pos.isExtraPosition ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                                          Sonderposten
-                                        </span>
-                                      ) : (
-                                        <span className="text-slate-400 text-[11px]">–</span>
-                                      )}
-                                    </td>
-                                  </tr>
-
-                                  {/* Dedicated Reason Callout Row directly underneath if excess or extra */}
-                                  {(pos.isOverconsumption || pos.isExtraPosition) && (
-                                    <tr className="bg-red-50/30 border-b border-red-100/60">
-                                      <td className="py-1.5 px-4 font-mono text-[10px] text-red-600"></td>
-                                      <td colSpan={5} className="py-1.5 px-4 text-xs text-red-800">
-                                        <div className="flex items-center space-x-2">
-                                          <span className="font-bold text-[11px] uppercase tracking-wider text-red-700 flex items-center space-x-1">
-                                            <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                                            <span>Begründung / Hinweis:</span>
-                                          </span>
-                                          <span className="italic font-medium text-slate-700">
-                                            {pos.reason || 'Mehrbedarf vom Monteur erfasst (ohne gesonderte Notiz)'}
-                                          </span>
-                                        </div>
-                                      </td>
-                                    </tr>
+                            room.positions.map((pos) => (
+                              <tr key={pos.positionId} className={`hover:bg-slate-50/80 transition-colors ${
+                                pos.isOverconsumption ? 'bg-red-50/20' : (pos.isExtraPosition ? 'bg-purple-50/20' : '')
+                              }`}>
+                                <td className="py-3 px-3.5 font-mono font-bold text-[#3B82C4]">
+                                  {pos.posNr}
+                                </td>
+                                <td className="py-3 px-3.5">
+                                  <div className="font-semibold text-slate-900 break-words whitespace-normal leading-snug">
+                                    {pos.shortText}
+                                  </div>
+                                  {pos.isExtraPosition && (
+                                    <span className="inline-block mt-0.5 text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded">
+                                      Zusatzposition
+                                    </span>
                                   )}
-                                </React.Fragment>
-                              );
-                            })
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-medium text-slate-600">
+                                  {pos.plannedQty} {pos.qu}
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-bold text-blue-600 bg-blue-50/30">
+                                  {pos.installedInPeriod > 0 ? `${pos.installedInPeriod} ${pos.qu}` : <span className="text-slate-400 font-normal">–</span>}
+                                </td>
+                                <td className="py-3 px-3.5 text-right font-bold text-slate-900">
+                                  {pos.totalInstalledToDate} {pos.qu}
+                                </td>
+                                <td className="py-3 px-3.5 text-center">
+                                  {pos.isOverconsumption ? (
+                                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                      <span>+{pos.excessQty} {pos.qu}</span>
+                                    </span>
+                                  ) : pos.isExtraPosition ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                      Sonderposten
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px]">–</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3.5 text-slate-700">
+                                  {pos.reason ? (
+                                    <div className="text-[11px] break-words whitespace-normal italic">
+                                      {pos.reason}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-[11px]">–</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))
                           )}
                         </tbody>
                       </table>
@@ -542,12 +610,62 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
             )}
           </div>
         )}
+
+        {/* Modal: Aufmaß verwerfen Confirmation */}
+        {discardTarget && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center space-x-3 text-red-600">
+                <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Aufmaß verwerfen?</h3>
+                  <p className="text-xs text-slate-500 font-mono">{discardTarget.aufmassNumber}</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Möchten Sie dieses Aufmaß zum Stichtag <strong>{new Date(discardTarget.dateTo).toLocaleDateString('de-DE')}</strong> wirklich verwerfen?
+                <br /><br />
+                Alle erfassten Deltas dieses Aufmaßes werden zurückgesetzt. Ein erneutes Aufmaß berechnet die Posten anschließend wieder automatisch ab dem zuvor gespeicherten Aufmaß (oder Projektbeginn).
+              </p>
+
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isDiscarding}
+                  onClick={() => setDiscardTarget(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="button"
+                  disabled={isDiscarding}
+                  onClick={handleConfirmDiscard}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-500/20 transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isDiscarding ? (
+                    <span>Wird verworfen...</span>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Ja, Aufmaß verwerfen</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }
 
   // ---------------------------------------------------------------------------
-  // VIEW: LISTENANSICHT (Historie aller Aufmaße)
+  // VIEW: LISTENANSICHT (Historie aller Aufmaße als Tabelle mit Excel-Export)
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-6">
@@ -591,111 +709,226 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           </div>
           <button
             onClick={handleOpenCreateModal}
-            className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all"
+            className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Jetzt erstes Aufmaß erstellen</span>
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {aufmasse.map((aufmass) => (
-            <div
-              key={aufmass.id}
-              onClick={() => setSelectedAufmass(aufmass)}
-              className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:border-[#3B82C4] hover:shadow-md transition-all cursor-pointer flex flex-col justify-between group"
-            >
-              <div className="space-y-4">
-                {/* Header Badge */}
-                <div className="flex items-start justify-between">
-                  <span className="font-mono text-xs font-bold bg-[#3B82C4] text-white px-2.5 py-0.5 rounded shadow-xs">
-                    {aufmass.aufmassNumber}
-                  </span>
-                  <div className="flex items-center space-x-1">
-                    <button
-                      onClick={(e) => handleExport(aufmass, e)}
-                      className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                      title="Excel-Export (.xlsx)"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => handleExportPdf(aufmass, e)}
-                      className="px-1.5 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                      title="PDF-Export"
-                    >
-                      PDF
-                    </button>
-                    <button
-                      onClick={(e) => handleDeleteAufmass(aufmass.id, e)}
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Aufmaß löschen"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Date Interval */}
-                <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                    Aufmaß-Zeitraum
-                  </span>
-                  <h4 className="text-base font-black text-slate-900 mt-0.5 flex items-center space-x-1.5">
-                    <Calendar className="w-4 h-4 text-[#3B82C4]" />
-                    <span>
-                      {new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} – {new Date(aufmass.dateTo).toLocaleDateString('de-DE')}
-                    </span>
-                  </h4>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-xs">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Positionen</span>
-                    <span className="font-bold text-slate-700">{aufmass.summaryItems.length} erfasst</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block">Räume</span>
-                    <span className="font-bold text-slate-700">{aufmass.roomsData.length} aufgeschlüsselt</span>
-                  </div>
-                </div>
-
-                {aufmass.notes && (
-                  <p className="text-xs text-slate-500 italic line-clamp-2 bg-slate-50 p-2 rounded-lg">
-                    {aufmass.notes}
-                  </p>
-                )}
-              </div>
-
-              {/* Card Footer */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-[11px] text-slate-400">
-                  {new Date(aufmass.createdAt).toLocaleDateString('de-DE')} ({aufmass.createdBy})
-                </span>
-                <span className="text-[#3B82C4] font-bold flex items-center space-x-1 group-hover:translate-x-1 transition-transform">
-                  <span>Öffnen</span>
-                  <Eye className="w-3.5 h-3.5" />
-                </span>
-              </div>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <FileSpreadsheet className="w-5 h-5 text-[#3B82C4]" />
+              <h3 className="font-bold text-slate-900 text-sm">Erstellte Aufmaße ({aufmasse.length})</h3>
             </div>
-          ))}
+            <span className="text-xs text-slate-500">
+              Neueste Aufmaße oben • Excel-Export direkt in jeder Zeile
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
+                  <th className="py-3 px-4 w-36">Aufmaß-Nr</th>
+                  <th className="py-3 px-4 w-44">Zeitraum / Stichtag</th>
+                  <th className="py-3 px-4 w-48">Erfasst von / Wann</th>
+                  <th className="py-3 px-4 w-36 text-right">Umfang</th>
+                  <th className="py-3 px-4 w-36 text-right">Abrechnungsvolumen</th>
+                  <th className="py-3 px-4">Bemerkung</th>
+                  <th className="py-3 px-4 w-60 text-center">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {aufmasse.map((aufmass, idx) => (
+                  <tr 
+                    key={aufmass.id}
+                    onClick={() => setSelectedAufmass(aufmass)}
+                    className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                  >
+                    {/* Aufmaß-Nr */}
+                    <td className="py-3.5 px-4">
+                      <span className="font-mono text-xs font-bold bg-[#3B82C4] text-white px-2.5 py-1 rounded shadow-xs inline-block">
+                        {aufmass.aufmassNumber}
+                      </span>
+                      {idx === 0 && (
+                        <span className="ml-2 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full border border-emerald-200">
+                          Aktuellstes
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Zeitraum / Stichtag */}
+                    <td className="py-3.5 px-4 font-medium text-slate-900">
+                      <div className="flex items-center space-x-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-[#3B82C4] shrink-0" />
+                        <span>Stichtag: <strong>{new Date(aufmass.dateTo).toLocaleDateString('de-DE')}</strong></span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5 pl-5">
+                        {new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} – {new Date(aufmass.dateTo).toLocaleDateString('de-DE')}
+                      </div>
+                    </td>
+
+                    {/* Erfasst von / Wann */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-900 flex items-center space-x-1.5">
+                        <UserCheck className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                        <span>{aufmass.createdBy || 'Florian Burk'}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-1 pl-5">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>{new Date(aufmass.createdAt).toLocaleString('de-DE')}</span>
+                      </div>
+                    </td>
+
+                    {/* Umfang */}
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="font-bold text-slate-800">
+                        {aufmass.summaryItems.length} Positionen
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        in {aufmass.roomsData.length} Räumen
+                      </div>
+                    </td>
+
+                    {/* Abrechnungsvolumen */}
+                    <td className="py-3.5 px-4 text-right">
+                      <span className="font-bold text-slate-900 font-mono text-xs">
+                        {aufmass.totalPeriodVolume > 0 
+                          ? `${aufmass.totalPeriodVolume.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €` 
+                          : '–'}
+                      </span>
+                    </td>
+
+                    {/* Bemerkung */}
+                    <td className="py-3.5 px-4">
+                      {aufmass.notes ? (
+                        <span className="text-slate-600 italic line-clamp-2 text-xs">
+                          {aufmass.notes}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">–</span>
+                      )}
+                    </td>
+
+                    {/* Aktionen (Excel Export in jeder Zeile!) */}
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="flex items-center justify-center space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleExport(aufmass, e)}
+                          className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer"
+                          title="Excel Export (.xlsx) herunterladen"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5" />
+                          <span>Excel</span>
+                        </button>
+
+                        <button
+                          onClick={(e) => handleExportPdf(aufmass, e)}
+                          className="flex items-center space-x-1 bg-slate-800 hover:bg-slate-900 text-white px-2 py-1.5 rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer"
+                          title="PDF drucken / exportieren"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>PDF</span>
+                        </button>
+
+                        <button
+                          onClick={() => setSelectedAufmass(aufmass)}
+                          className="flex items-center space-x-1 bg-blue-50 hover:bg-blue-100 text-[#3B82C4] border border-blue-200 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+                          title="Aufmaß-Details ansehen"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Öffnen</span>
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDiscardTarget(aufmass);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          title="Aufmaß verwerfen"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* MODAL: Neues Aufmaß erstellen */}
+      {/* Modal: Aufmaß verwerfen Confirmation (auch aus Listenansicht) */}
+      {discardTarget && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3 text-red-600">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Aufmaß verwerfen?</h3>
+                <p className="text-xs text-slate-500 font-mono">{discardTarget.aufmassNumber}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Möchten Sie dieses Aufmaß zum Stichtag <strong>{new Date(discardTarget.dateTo).toLocaleDateString('de-DE')}</strong> wirklich verwerfen?
+              <br /><br />
+              Alle erfassten Deltas dieses Aufmaßes werden gelöscht. Ein neues Aufmaß setzt anschließend wieder automatisch am zuvor gespeicherten Stand an.
+            </p>
+
+            <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDiscarding}
+                onClick={() => setDiscardTarget(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                disabled={isDiscarding}
+                onClick={handleConfirmDiscard}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-500/20 transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isDiscarding ? (
+                  <span>Wird verworfen...</span>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Ja, Aufmaß verwerfen</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Neues Aufmaß anlegen */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            
             {/* Modal Header */}
             <div className="bg-[#1C2A3B] text-white p-5 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <FileSpreadsheet className="w-5 h-5 text-[#3B82C4]" />
-                <h3 className="font-bold text-base">Neues Aufmaß erstellen</h3>
+              <div>
+                <span className="text-xs font-bold text-[#3B82C4] uppercase tracking-wider block">
+                  VOB Stichtags-Abrechnung
+                </span>
+                <h3 className="text-lg font-bold text-white mt-0.5">
+                  Neues Aufmaß erstellen
+                </h3>
               </div>
               <button
                 onClick={() => setIsCreateModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors"
+                className="text-slate-400 hover:text-white transition-colors text-lg cursor-pointer"
               >
                 ✕
               </button>
@@ -703,6 +936,21 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
 
             {/* Modal Form */}
             <form onSubmit={handleCreateSubmit} className="p-6 space-y-4 text-xs">
+              
+              {/* Info if follow-up Aufmaß */}
+              {latestSavedAufmass && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-[11px] text-emerald-800 space-y-0.5">
+                  <div className="font-bold flex items-center space-x-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Anschluss-Aufmaß zu {latestSavedAufmass.aufmassNumber}</span>
+                  </div>
+                  <p>
+                    Dieses Aufmaß knüpft nahtlos an das vorherige Aufmaß an (Stichtag: {new Date(latestSavedAufmass.dateTo).toLocaleDateString('de-DE')}). 
+                    Die abgerechneten Deltas werden exakt ab dem vorigen Stand berechnet.
+                  </p>
+                </div>
+              )}
+
               <div className="bg-blue-50 border-2 border-[#3B82C4] rounded-xl p-3">
                 <label className="block font-bold text-[#1C2A3B] mb-1">
                   Stichtag der Abrechnung *
@@ -715,7 +963,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                   onChange={(e) => setDateTo(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-[#3B82C4] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                 />
-                <span className="text-[11px] text-slate-400 mt-1 block">
+                <span className="text-[11px] text-slate-500 mt-1 block">
                   Vorbelegt mit heutigem Datum. Alle bis zu diesem Stichtag verbauten Materialien werden kumuliert abgerechnet.
                 </span>
               </div>
@@ -777,14 +1025,14 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors cursor-pointer"
                 >
                   Abbrechen
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-5 py-2 bg-[#3B82C4] hover:bg-blue-600 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 transition-all flex items-center space-x-2"
+                  className="px-5 py-2 bg-[#3B82C4] hover:bg-blue-600 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 transition-all flex items-center space-x-2 cursor-pointer disabled:opacity-50"
                 >
                   {isSaving ? (
                     <span>Wird berechnet...</span>

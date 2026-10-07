@@ -16,6 +16,7 @@ import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
 import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
+import { DeleteProjectConfirmModal } from './components/DeleteProjectConfirmModal';
 import { exportMaterialReportToExcel } from './services/excelExporter';
 import { 
   DEFAULT_PROJECT_ID,
@@ -31,7 +32,8 @@ import {
   setCurrentAuthUser,
   getLocalUsers,
   getLocalProjects,
-  getMaterialActualQty
+  getMaterialActualQty,
+  deleteProject
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 
@@ -58,6 +60,8 @@ export function App() {
   const [searchTerm] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState<boolean>(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+  const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
 
   // 1. Listen to all projects & users
   useEffect(() => {
@@ -75,15 +79,34 @@ export function App() {
     };
   }, []);
 
-  // Compute accessible projects based on current user role
+  // Compute accessible projects based on current user role (including deputy managers when primary is on leave)
   const accessibleProjects = useMemo(() => {
     if (!currentUser) return [];
     if (currentUser.role === 'admin') return projects;
     return projects.filter(p => {
-      const matchId = p.projectManagerId === currentUser.id;
-      const matchEmail = Boolean(p.projectManagerEmail && currentUser.email && p.projectManagerEmail.toLowerCase() === currentUser.email.toLowerCase());
-      const matchName = Boolean(p.projectManager && currentUser.name && p.projectManager.toLowerCase().includes(currentUser.name.toLowerCase()));
-      return matchId || matchEmail || matchName;
+      // 1. Primary project manager or deputy project manager
+      const matchPmId = p.projectManagerId === currentUser.id || p.deputyProjectManagerId === currentUser.id;
+      const matchPmEmail = Boolean(
+        (p.projectManagerEmail && currentUser.email && p.projectManagerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (p.deputyProjectManagerEmail && currentUser.email && p.deputyProjectManagerEmail.toLowerCase() === currentUser.email.toLowerCase())
+      );
+      const matchPmName = Boolean(
+        (p.projectManager && currentUser.name && p.projectManager.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+        (p.deputyProjectManager && currentUser.name && p.deputyProjectManager.toLowerCase().includes(currentUser.name.toLowerCase()))
+      );
+
+      // 2. Primary commercial manager or deputy commercial manager
+      const matchCmId = p.commercialManagerId === currentUser.id || p.deputyCommercialManagerId === currentUser.id;
+      const matchCmEmail = Boolean(
+        (p.commercialManagerEmail && currentUser.email && p.commercialManagerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
+        (p.deputyCommercialManagerEmail && currentUser.email && p.deputyCommercialManagerEmail.toLowerCase() === currentUser.email.toLowerCase())
+      );
+      const matchCmName = Boolean(
+        (p.commercialManager && currentUser.name && p.commercialManager.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+        (p.deputyCommercialManager && currentUser.name && p.deputyCommercialManager.toLowerCase().includes(currentUser.name.toLowerCase()))
+      );
+
+      return matchPmId || matchPmEmail || matchPmName || matchCmId || matchCmEmail || matchCmName;
     });
   }, [projects, currentUser]);
 
@@ -150,6 +173,34 @@ export function App() {
     );
   };
 
+  const handleRequestDeleteProject = () => {
+    if (!activeProject) return;
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDeleteProject = async () => {
+    if (!activeProject) return;
+    setIsDeletingProject(true);
+    try {
+      const deletedId = activeProject.id;
+      await deleteProject(deletedId);
+      setIsDeleteModalOpen(false);
+
+      const remaining = accessibleProjects.filter(p => p.id !== deletedId);
+      if (remaining.length > 0) {
+        setSelectedProjectId(remaining[0].id);
+      } else {
+        setSelectedProjectId('');
+        setActiveProject(null);
+      }
+    } catch (err: any) {
+      console.error('Fehler beim Löschen des Projekts:', err);
+      alert('Fehler beim Löschen des Projekts: ' + (err?.message || err));
+    } finally {
+      setIsDeletingProject(false);
+    }
+  };
+
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
   
   // Overconsumption count (rooms where actual > planned)
@@ -210,6 +261,8 @@ export function App() {
           reordersCount={reordersCount}
           currentUser={currentUser}
           onExport={handleExport}
+          hasActiveProject={Boolean(activeProject)}
+          onDeleteProject={handleRequestDeleteProject}
         />
 
         {/* Content Area */}
@@ -366,6 +419,15 @@ export function App() {
         isOpen={isChangePasswordOpen}
         onClose={() => setIsChangePasswordOpen(false)}
         currentUser={currentUser}
+      />
+
+      {/* Delete Project Confirmation Modal */}
+      <DeleteProjectConfirmModal
+        isOpen={isDeleteModalOpen}
+        projectName={activeProject?.name || ''}
+        isDeleting={isDeletingProject}
+        onConfirm={handleConfirmDeleteProject}
+        onCancel={() => setIsDeleteModalOpen(false)}
       />
     </div>
   );

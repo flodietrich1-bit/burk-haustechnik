@@ -1,5 +1,64 @@
 export type PlanLevel = 'UG' | 'EG' | 'OG' | 'DG' | 'Strangschema' | 'Sonstiges';
 
+export interface CadVectorWall {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  strokeWidth?: number;
+  layer?: string;
+}
+
+export interface CadVectorRoom {
+  id?: string;
+  code?: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+}
+
+export interface CadVectorPipe {
+  id?: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  type: 'cold_water' | 'warm_water' | 'drainage' | 'heating';
+  color: string;
+  strokeWidth: number;
+  dn?: string;
+  label?: string;
+  layer?: string;
+}
+
+export interface CadVectorLabel {
+  text: string;
+  x: number;
+  y: number;
+  size?: number;
+  color?: string;
+  bold?: boolean;
+}
+
+export interface CadVectorDevice {
+  type: 'wc' | 'verteiler' | 'waschtisch' | 'pumpe' | 'zähler' | string;
+  x: number;
+  y: number;
+  label?: string;
+}
+
+export interface CadVectorData {
+  viewBox: { minX: number; minY: number; width: number; height: number };
+  walls: CadVectorWall[];
+  rooms: CadVectorRoom[];
+  pipes: CadVectorPipe[];
+  labels: CadVectorLabel[];
+  devices?: CadVectorDevice[];
+}
+
 export interface PlanDocument {
   id: string;
   projectId?: string;
@@ -21,6 +80,7 @@ export interface PlanDocument {
   dwgSize?: number;
   detectedRoomsCount?: number;
   detectedLayers?: string[];
+  vectorData?: CadVectorData;
   notes?: string;
 }
 
@@ -37,11 +97,17 @@ export interface Project {
   projectManagerId?: string;
   projectManager?: string; // e.g. "Florian Buck"
   projectManagerEmail?: string;
+  deputyProjectManagerId?: string;
+  deputyProjectManager?: string; // Vertretung Projektleiter, z. B. "Michael Weber"
+  deputyProjectManagerEmail?: string;
   commercialManagerId?: string;
   commercialManager?: string; // e.g. "Sabine Müller"
   commercialManagerEmail?: string;
+  deputyCommercialManagerId?: string;
+  deputyCommercialManager?: string; // Vertretung Kaufmann / Kauffrau, z. B. "Andreas Schmidt"
+  deputyCommercialManagerEmail?: string;
   assignedMonteurIds?: string[]; // IDs of assigned installers
-  status: 'draft' | 'in_progress' | 'completed' | 'archived';
+  status: 'draft' | 'in_progress' | 'completed' | 'archived' | 'deleted';
   currency: string;
   totalPositions: number;
   totalDeliveredPercentage?: number;
