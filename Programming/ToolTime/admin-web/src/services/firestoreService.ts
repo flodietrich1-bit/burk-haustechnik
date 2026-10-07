@@ -179,11 +179,28 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
   const colRef = collection(db, 'projects');
   const unsubFirestore = onSnapshot(colRef, async (snap) => {
     if (!snap.empty) {
-      // Firestore has data → use it as source of truth, ignoring deleted projects
-      const list = snap.docs
+      // Firestore has data
+      const firestoreProjects = snap.docs
         .map(d => ({ id: d.id, ...d.data() }) as Project)
         .filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-      saveLocalProjects(list);
+
+      // Auto-recover & sync any local projects that previously failed writing to Firestore
+      const localProjects = getLocalProjects();
+      const fsIds = new Set(firestoreProjects.map(p => p.id));
+      const unsynced = localProjects.filter(lp => lp.id && !fsIds.has(lp.id) && lp.status !== 'deleted');
+      if (unsynced.length > 0) {
+        for (const un of unsynced) {
+          try {
+            await setDoc(doc(db, 'projects', un.id), cleanForFirestore(un), { merge: true });
+            firestoreProjects.unshift(un);
+            console.log(`✅ Auto-synced pending local project to Firestore: ${un.id}`);
+          } catch (e: any) {
+            console.warn(`Could not sync ${un.id} to Firestore:`, e.message);
+          }
+        }
+      }
+
+      saveLocalProjects(firestoreProjects);
     } else {
       // Firestore is empty
       const localProjects = getLocalProjects();
@@ -194,7 +211,7 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
         for (const project of localProjects) {
           try {
             const projectRef = doc(db, 'projects', project.id);
-            await setDoc(projectRef, project, { merge: true });
+            await setDoc(projectRef, cleanForFirestore(project), { merge: true });
 
             // Also migrate positions and rooms for each project
             const posRaw = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id);
@@ -203,7 +220,7 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
               for (const pos of positions) {
                 if (!pos.id) continue;
                 const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
-                await setDoc(pRef, pos, { merge: true });
+                await setDoc(pRef, cleanForFirestore(pos), { merge: true });
               }
             }
             const roomsRaw = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id);
@@ -211,7 +228,7 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
               const rooms: Room[] = JSON.parse(roomsRaw);
               for (const room of rooms) {
                 const rRef = doc(db, 'projects', project.id, 'rooms', room.id);
-                await setDoc(rRef, room, { merge: true });
+                await setDoc(rRef, cleanForFirestore(room), { merge: true });
               }
             }
             console.log(`✅ Migrated project: ${project.id}`);
@@ -646,6 +663,8 @@ export async function clearAllProjects(): Promise<void> {
   localStorage.removeItem('burk_tooltime_active_project_id');
 }
 
+let isStorageReachable: boolean | null = null;
+
 export async function uploadPlanFile(
   projectId: string,
   planId: string,
@@ -656,8 +675,7 @@ export async function uploadPlanFile(
   const ext = isPdf ? '.pdf' : '.dwg';
   const storagePath = `projects/${projectId}/plans/${planId}${ext}`;
   
-  if (!storage) {
-    console.warn('Firebase Storage not initialized, using local fallback URL.');
+  if (!storage || isStorageReachable === false) {
     if (onProgress) onProgress(100);
     const localUrl = URL.createObjectURL(file);
     return {
@@ -685,10 +703,11 @@ export async function uploadPlanFile(
       });
     };
 
-    // Safety timeout: 25s per file max. If network hangs or throttles, fallback gracefully to blob URL
+    // Safety timeout: 3.5s per file max. If network hangs, CORS blocked, or bucket is 404, fallback quickly
     const timeoutTimer = setTimeout(() => {
       if (!isSettled) {
         console.warn(`Firebase Storage upload timed out for ${file.name}. Falling back to local URL.`);
+        isStorageReachable = false;
         try {
           if (uploadTask && typeof uploadTask.cancel === 'function') uploadTask.cancel();
         } catch {}
@@ -697,7 +716,7 @@ export async function uploadPlanFile(
           storagePath
         });
       }
-    }, 25000);
+    }, 3500);
 
     try {
       const storageRef = ref(storage, storagePath);
@@ -713,6 +732,7 @@ export async function uploadPlanFile(
         },
         (error: any) => {
           console.warn('Firebase Storage upload failed, fallback to local URL:', error.message || error);
+          isStorageReachable = false;
           safeSettle({
             downloadUrl: URL.createObjectURL(file),
             storagePath
@@ -721,9 +741,11 @@ export async function uploadPlanFile(
         async () => {
           try {
             const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            isStorageReachable = true;
             safeSettle({ downloadUrl, storagePath });
           } catch (err) {
             console.warn('Failed to retrieve download URL, using local fallback:', err);
+            isStorageReachable = false;
             safeSettle({
               downloadUrl: URL.createObjectURL(file),
               storagePath
@@ -733,6 +755,7 @@ export async function uploadPlanFile(
       );
     } catch (err) {
       console.warn('Storage upload initiation error, fallback to local URL:', err);
+      isStorageReachable = false;
       safeSettle({
         downloadUrl: URL.createObjectURL(file),
         storagePath
