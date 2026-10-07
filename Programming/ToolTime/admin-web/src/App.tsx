@@ -144,7 +144,9 @@ export function App() {
       activeProject?.name || 'Hallenbad Weingarten',
       positions,
       bookings,
-      rooms
+      rooms,
+      alerts,
+      addendums
     );
   };
 

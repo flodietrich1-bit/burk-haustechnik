@@ -1,3 +1,29 @@
+export type PlanLevel = 'UG' | 'EG' | 'OG' | 'DG' | 'Strangschema' | 'Sonstiges';
+
+export interface PlanDocument {
+  id: string;
+  projectId?: string;
+  name: string;                    // z. B. "Montageplan UG Modell 1"
+  fileName: string;
+  floor: PlanLevel;                // 'UG' | 'EG' | 'OG' | 'DG' | 'Strangschema' | 'Sonstiges'
+  level?: PlanLevel;               // Backwards compatibility alias
+  dwgUrl: string;
+  pdfUrl: string;
+  downloadUrl?: string;            // Backwards compatibility alias
+  storagePath?: string;
+  status: 'ready' | 'processing' | 'error';
+  createdAt: string | any;
+  uploadedAt?: string;
+  originalFileName?: string;
+  fileType?: 'dwg' | 'dxf' | 'pdf' | string;
+  size?: number;
+  pdfSize?: number;
+  dwgSize?: number;
+  detectedRoomsCount?: number;
+  detectedLayers?: string[];
+  notes?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -21,6 +47,8 @@ export interface Project {
   totalDeliveredPercentage?: number;
   hasDwg?: boolean;
   dwgFileName?: string;
+  plansCount?: number;
+  plans?: PlanDocument[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -78,6 +106,8 @@ export interface Room {
   completedBy?: string;
   materials?: RoomMaterialRequirement[];
   photos?: string[];
+  sourcePlanId?: string;
+  sourcePlanFileName?: string;
 }
 
 export interface Alert {

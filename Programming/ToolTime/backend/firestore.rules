@@ -8,7 +8,13 @@ service cloud.firestore {
       match /positions/{positionId} {
         allow read, write: if true;
       }
+      match /items/{itemId} {
+        allow read, write: if true;
+      }
       match /rooms/{roomId} {
+        allow read, write: if true;
+      }
+      match /plans/{planId} {
         allow read, write: if true;
       }
     }

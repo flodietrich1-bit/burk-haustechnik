@@ -13,12 +13,30 @@ import {
   Wrench, 
   Mail, 
   Check,
-  Sparkles
+  Sparkles,
+  Trash2,
+  Layers,
+  FileText,
+  Loader2
 } from 'lucide-react';
-import { parseGaebFile } from '../services/gaebParser';
-import { parseDwgFile } from '../services/dwgParser';
-import { createProject } from '../services/firestoreService';
-import type { Project, Position, Room, User } from '../types';
+import { parseLvFile } from '../services/gaebParser';
+import { 
+  parseMultipleCadFiles, 
+  detectLevelFromFilename, 
+  type MultiPlanInput 
+} from '../services/dwgParser';
+import { createProject, uploadPlanFile } from '../services/firestoreService';
+import type { Project, Position, Room, User, PlanDocument, PlanLevel } from '../types';
+
+export interface UploadedPlanItem {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  level: PlanLevel;
+  fileType: 'dwg' | 'dxf' | 'pdf' | string;
+  detectedRoomsCount: number;
+}
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -73,17 +91,19 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     }
   }, [users, projectManagerId, commercialManagerId]);
 
-  // Step 3: GAEB & CAD Files
+  // Step 3: GAEB / LV & Multi-CAD Plan Files
   const [gaebFileName, setGaebFileName] = useState<string>('');
   const [parsedPositions, setParsedPositions] = useState<Partial<Position>[]>([]);
   const [gaebStatus, setGaebStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [gaebMessage, setGaebMessage] = useState<string>('');
 
-  const [dwgFileObj, setDwgFileObj] = useState<File | null>(null);
-  const [dwgFileName, setDwgFileName] = useState<string>('');
+  const [uploadedPlans, setUploadedPlans] = useState<UploadedPlanItem[]>([]);
   const [dwgRooms, setDwgRooms] = useState<Room[]>([]);
   const [dwgStatus, setDwgStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [dwgMessage, setDwgMessage] = useState<string>('');
+  const [isDraggingPlans, setIsDraggingPlans] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<{ [planId: string]: number }>({});
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
 
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -117,91 +137,139 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     );
   };
 
-  // GAEB Upload
-  const handleGaebChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Helper to re-synthesize rooms across all uploaded CAD plans with positions
+  const recalculateRooms = async (plans: UploadedPlanItem[], positions: Partial<Position>[]) => {
+    const cadPlans: MultiPlanInput[] = plans
+      .filter(p => p.fileType === 'dwg' || p.fileType === 'dxf')
+      .map(p => ({
+        file: p.file,
+        level: p.level,
+        planId: p.id
+      }));
+
+    if (cadPlans.length === 0) {
+      setDwgRooms([]);
+      setDwgStatus('idle');
+      setDwgMessage('');
+      return;
+    }
+
+    try {
+      setDwgStatus('idle');
+      const { allRooms, planResults } = await parseMultipleCadFiles(cadPlans, positions);
+      setDwgRooms(allRooms);
+      setDwgStatus('success');
+
+      // Update detected room counts on individual plans
+      setUploadedPlans(prev => prev.map(p => {
+        const res = planResults.get(p.id);
+        return {
+          ...p,
+          detectedRoomsCount: res ? res.rooms.length : 0
+        };
+      }));
+
+      const totalMatched = allRooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0);
+      setDwgMessage(`${allRooms.length} Räume aus ${cadPlans.length} Plänen extrahiert (${totalMatched} Positionen zugeordnet)`);
+    } catch (err: any) {
+      setDwgStatus('error');
+      setDwgMessage('Fehler beim Auswerten der Pläne: ' + (err.message || err));
+    }
+  };
+
+  // Bereich A: GAEB / Excel / CSV Upload
+  const handleGaebChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setGaebFileName(file.name);
     setGaebStatus('idle');
-    setGaebMessage('');
-
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const content = evt.target?.result as string;
-        const result = parseGaebFile(content, file.name);
-
-        setParsedPositions(result.positions);
-        setGaebStatus('success');
-        setGaebMessage(`${result.positions.length} LV-Positionen erfolgreich extrahiert!`);
-
-        // Prefill missing fields from GAEB if user hasn't typed them yet
-        if (!name && result.metadata.projectName) setName(result.metadata.projectName);
-        if (!projectNumber && result.metadata.projectNumber) setProjectNumber(result.metadata.projectNumber);
-        if (!trade && result.metadata.trade) setTrade(result.metadata.trade);
-        if (!location && result.metadata.location) setLocation(result.metadata.location);
-        if (!client && result.metadata.client) setClient(result.metadata.client);
-        if (!startDate && result.metadata.startDate) setStartDate(result.metadata.startDate);
-        if (!endDate && result.metadata.endDate) setEndDate(result.metadata.endDate);
-
-        if (dwgFileObj) {
-          const updatedDwg = await parseDwgFile(dwgFileObj, result.positions);
-          setDwgRooms(updatedDwg.rooms);
-          const totalAssigned = updatedDwg.rooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0);
-          setDwgMessage(`${updatedDwg.rooms.length} Räume aus CAD-Plan extrahiert (${totalAssigned} Zuordnungen)`);
-        }
-      } catch (err: any) {
-        setGaebStatus('error');
-        setGaebMessage('Fehler beim Einlesen: ' + (err.message || 'Ungültiges GAEB-Format'));
-      }
-    };
-
-    if (file.name.toLowerCase().endsWith('.d83')) {
-      reader.readAsText(file, 'ISO-8859-1');
-    } else {
-      reader.readAsText(file, 'UTF-8');
-    }
-  };
-
-  // DWG / DXF Upload
-  const handleDwgChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setDwgFileObj(file);
-    setDwgFileName(file.name);
-    setDwgStatus('idle');
-    setDwgMessage('');
+    setGaebMessage('Lese Leistungsverzeichnis ein...');
 
     try {
-      const result = await parseDwgFile(file, parsedPositions);
-      setDwgRooms(result.rooms);
-      setDwgStatus('success');
-      const totalAssigned = result.rooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0);
-      setDwgMessage(`${result.rooms.length} Räume & Örtlichkeiten aus ${file.name} extrahiert (${totalAssigned} Positionen zugeordnet)`);
+      const result = await parseLvFile(file);
+      setParsedPositions(result.positions);
+      setGaebStatus('success');
+      setGaebMessage(`${result.positions.length} LV-Positionen erfolgreich extrahiert!`);
+
+      // Prefill missing fields from GAEB / Excel
+      if (!name && result.metadata.projectName) setName(result.metadata.projectName);
+      if (!projectNumber && result.metadata.projectNumber) setProjectNumber(result.metadata.projectNumber);
+      if (!trade && result.metadata.trade) setTrade(result.metadata.trade);
+      if (!location && result.metadata.location) setLocation(result.metadata.location);
+      if (!client && result.metadata.client) setClient(result.metadata.client);
+      if (!startDate && result.metadata.startDate) setStartDate(result.metadata.startDate);
+      if (!endDate && result.metadata.endDate) setEndDate(result.metadata.endDate);
+
+      // Re-map with existing plans
+      if (uploadedPlans.length > 0) {
+        await recalculateRooms(uploadedPlans, result.positions);
+      }
     } catch (err: any) {
-      setDwgStatus('error');
-      setDwgMessage('Fehler beim CAD-Einlesen: ' + (err.message || 'Format ungültig'));
+      setGaebStatus('error');
+      setGaebMessage('Fehler beim Einlesen: ' + (err.message || 'Ungültiges Dateiformat'));
     }
   };
 
-  // Quick Load EFH Sample files (both DXF and X81)
+  // Bereich B: Montage- & Ausführungspläne Multi-Upload
+  const handleAddPlanFiles = async (files: FileList | File[]) => {
+    const newItems: UploadedPlanItem[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const lower = file.name.toLowerCase();
+      const ext = lower.endsWith('.dwg') ? 'dwg' : lower.endsWith('.dxf') ? 'dxf' : lower.endsWith('.pdf') ? 'pdf' : 'dwg';
+      const level = detectLevelFromFilename(file.name);
+      const planId = `plan_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+      newItems.push({
+        id: planId,
+        file,
+        name: file.name,
+        size: file.size,
+        level,
+        fileType: ext,
+        detectedRoomsCount: 0
+      });
+    }
+
+    if (newItems.length === 0) return;
+
+    const combined = [...uploadedPlans, ...newItems];
+    setUploadedPlans(combined);
+    await recalculateRooms(combined, parsedPositions);
+  };
+
+  const handlePlanLevelChange = async (planId: string, newLevel: PlanLevel) => {
+    const updated = uploadedPlans.map(p => p.id === planId ? { ...p, level: newLevel } : p);
+    setUploadedPlans(updated);
+    await recalculateRooms(updated, parsedPositions);
+  };
+
+  const handleRemovePlan = async (planId: string) => {
+    const updated = uploadedPlans.filter(p => p.id !== planId);
+    setUploadedPlans(updated);
+    await recalculateRooms(updated, parsedPositions);
+  };
+
+  // Quick Load EFH Sample files
   const handleLoadEfhSamples = async () => {
     try {
       setLoading(true);
+      setUploadStatusText('Lade Musterdaten...');
+
       // 1. Fetch GAEB
       const gaebRes = await fetch('/samples/Sanitaer_Demo_Projekt_EFH_X81.x81');
       if (!gaebRes.ok) throw new Error('Muster GAEB-Datei nicht im Webspace gefunden');
-      const gaebText = await gaebRes.text();
-      const gaebResult = parseGaebFile(gaebText, 'Sanitaer_Demo_Projekt_EFH_X81.x81');
+      const gaebBlob = await gaebRes.blob();
+      const gaebFile = new File([gaebBlob], 'Sanitaer_Demo_Projekt_EFH_X81.x81', { type: 'application/xml' });
+      const gaebResult = await parseLvFile(gaebFile);
       
       setGaebFileName('Sanitaer_Demo_Projekt_EFH_X81.x81');
       setParsedPositions(gaebResult.positions);
       setGaebStatus('success');
       setGaebMessage(`${gaebResult.positions.length} LV-Positionen erfolgreich extrahiert!`);
 
-      // Fill metadata if not yet entered
       if (!name) setName('Neubau Einfamilienhaus Schneider');
       if (!projectNumber) setProjectNumber('EFH-2026-01');
       if (!trade) setTrade('Sanitärinstallation');
@@ -210,23 +278,46 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       if (!client) setClient('Familie Schneider');
       if (!startDate) setStartDate(new Date().toISOString().split('T')[0]);
 
-      // 2. Fetch DXF
+      // 2. Fetch Sample Plans (EFH DXF as EG and Weingarten DXF as UG)
       const dxfRes = await fetch('/samples/Sanitaer_Demo_Projekt_EFH.dxf');
       if (!dxfRes.ok) throw new Error('Muster DXF-Datei nicht im Webspace gefunden');
       const dxfBlob = await dxfRes.blob();
-      const dxfFile = new File([dxfBlob], 'Sanitaer_Demo_Projekt_EFH.dxf', { type: 'application/dxf' });
-      setDwgFileObj(dxfFile);
-      setDwgFileName('Sanitaer_Demo_Projekt_EFH.dxf');
-      
-      const dwgResult = await parseDwgFile(dxfFile, gaebResult.positions);
-      setDwgRooms(dwgResult.rooms);
-      setDwgStatus('success');
-      const totalAssigned = dwgResult.rooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0);
-      setDwgMessage(`${dwgResult.rooms.length} Räume aus CAD-Plan extrahiert (${totalAssigned} Zuordnungen)`);
+      const dxfFile1 = new File([dxfBlob], 'EFH_Montageplan_EG.dxf', { type: 'application/dxf' });
+
+      const weingartenRes = await fetch('/samples/Hallenbad_Weingarten_Plan.dxf');
+      const sampleList: UploadedPlanItem[] = [
+        {
+          id: `plan_sample_eg_${Date.now()}`,
+          file: dxfFile1,
+          name: 'EFH_Montageplan_EG.dxf',
+          size: dxfFile1.size,
+          level: 'EG',
+          fileType: 'dxf',
+          detectedRoomsCount: 0
+        }
+      ];
+
+      if (weingartenRes.ok) {
+        const wBlob = await weingartenRes.blob();
+        const dxfFile2 = new File([wBlob], 'Montageplan_UG_Technik.dxf', { type: 'application/dxf' });
+        sampleList.push({
+          id: `plan_sample_ug_${Date.now() + 1}`,
+          file: dxfFile2,
+          name: 'Montageplan_UG_Technik.dxf',
+          size: dxfFile2.size,
+          level: 'UG',
+          fileType: 'dxf',
+          detectedRoomsCount: 0
+        });
+      }
+
+      setUploadedPlans(sampleList);
+      await recalculateRooms(sampleList, gaebResult.positions);
     } catch (err: any) {
-      alert('Hinweis beim Laden der EFH-Musterdateien: ' + (err.message || err));
+      alert('Hinweis beim Laden der Musterdaten: ' + (err.message || err));
     } finally {
       setLoading(false);
+      setUploadStatusText('');
     }
   };
 
@@ -244,6 +335,49 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       const projectId = `proj_${Date.now()}`;
       const isStarted = new Date(startDate) <= new Date();
       const derivedStatus = isStarted ? 'in_progress' : 'draft';
+
+      // 1. Upload plans to Firebase Storage concurrently
+      setUploadStatusText(`Lade ${uploadedPlans.length} Pläne nach Firebase Storage hoch...`);
+      const planDocuments: PlanDocument[] = await Promise.all(
+        uploadedPlans.map(async (plan, i) => {
+          const { downloadUrl, storagePath } = await uploadPlanFile(
+            projectId,
+            plan.id,
+            plan.file,
+            (pct) => {
+              setUploadProgress(prev => ({ ...prev, [plan.id]: pct }));
+              setUploadStatusText(`Lade Plan ${i + 1}/${uploadedPlans.length} (${plan.name}): ${pct}%...`);
+            }
+          );
+
+          const rawBaseName = plan.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+          const cleanName = rawBaseName.toLowerCase().includes('montageplan')
+            ? rawBaseName
+            : `Montageplan ${plan.level} (${rawBaseName})`;
+
+          return {
+            id: plan.id,
+            projectId,
+            name: cleanName,
+            fileName: plan.name,
+            originalFileName: plan.name,
+            floor: plan.level,
+            level: plan.level,
+            dwgUrl: downloadUrl,
+            pdfUrl: downloadUrl,
+            downloadUrl,
+            storagePath,
+            status: 'ready' as const,
+            fileType: plan.fileType,
+            size: plan.size,
+            uploadedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            detectedRoomsCount: plan.detectedRoomsCount
+          };
+        })
+      );
+
+      setUploadStatusText(`Speichere ${parsedPositions.length} Positionen & ${dwgRooms.length} Räume in Firestore...`);
 
       const newProject: Project = {
         id: projectId,
@@ -265,19 +399,22 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         status: derivedStatus,
         currency: 'EUR',
         totalPositions: parsedPositions.length,
-        hasDwg: dwgRooms.length > 0,
-        dwgFileName: dwgFileName || undefined,
+        hasDwg: uploadedPlans.length > 0,
+        dwgFileName: uploadedPlans[0]?.name || undefined,
+        plansCount: planDocuments.length,
+        plans: planDocuments,
         createdAt: new Date().toISOString()
       };
 
-      await createProject(newProject, parsedPositions, dwgRooms);
+      await createProject(newProject, parsedPositions, dwgRooms, planDocuments);
       onProjectCreated(projectId);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating project:', err);
-      alert('Fehler beim Erstellen des Projekts.');
+      alert('Fehler beim Erstellen des Projekts: ' + (err.message || err));
     } finally {
       setLoading(false);
+      setUploadStatusText('');
     }
   };
 
@@ -601,21 +738,21 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
           )}
 
           {/* ========================================================= */}
-          {/* STEP 3: PLÄNE & GAEB                                       */}
+          {/* STEP 3: BEREICH A (LV) & BEREICH B (PLÄNE)                 */}
           {/* ========================================================= */}
           {currentStep === 3 && (
-            <div className="space-y-5 animate-in fade-in duration-150">
+            <div className="space-y-6 animate-in fade-in duration-150">
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
                   <Compass className="w-5 h-5 text-[#3B82C4]" />
-                  <span>Schritt 3: CAD-Plan & GAEB-Ausschreibung hochladen</span>
+                  <span>Schritt 3: Leistungsverzeichnis & Ausführungspläne hochladen</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Laden Sie die Planungsunterlagen hoch. Sollte keine CAD-Datei vorliegen, genügt die GAEB-Datei.
+                  Laden Sie die GAEB/Excel-Ausschreibung und beliebig viele Ausführungs- und Montagepläne (.DWG, .DXF, .PDF) hoch. Die Räume werden automatisch extrahiert und mit den LV-Positionen verknüpft.
                 </p>
               </div>
 
-              {/* One-click quick load for Einfamilienhaus demo files */}
+              {/* One-click quick load for demo files */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-center space-x-2.5">
                   <div className="w-8 h-8 rounded-lg bg-[#3B82C4]/10 flex items-center justify-center shrink-0">
@@ -623,86 +760,91 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   </div>
                   <div>
                     <span className="text-xs font-bold text-slate-800 block">
-                      Einfamilienhaus Musterdaten direkt laden
+                      Muster-Vorhabendaten direkt laden (Multi-Plan Demo)
                     </span>
                     <span className="text-[11px] text-slate-500 block">
-                      Lädt automatisch <code className="text-[#3B82C4]">Sanitaer_Demo_Projekt_EFH.dxf</code> & <code className="text-[#2FA36B]">.x81</code>
+                      Lädt automatisch <code className="text-[#3B82C4]">EG-Montageplan.dxf</code>, <code className="text-[#3B82C4]">UG-Technik.dxf</code> & <code className="text-[#2FA36B]">.x81 LV</code>
                     </span>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={handleLoadEfhSamples}
-                  className="inline-flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow-sm transition-all hover:scale-[1.02] shrink-0 self-stretch sm:self-auto justify-center"
+                  disabled={loading}
+                  className="inline-flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow-sm transition-all hover:scale-[1.02] shrink-0 self-stretch sm:self-auto justify-center disabled:opacity-50"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>Musterdaten einlesen</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* 1. DWG / DXF */}
-                <div className={`p-4 rounded-xl border-2 transition-all ${
-                  dwgStatus === 'success' ? 'border-emerald-400 bg-emerald-50/40' : 'border-dashed border-slate-300 bg-slate-50'
-                }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                      <Compass className="w-4 h-4 text-[#3B82C4]" />
-                      <span>1. CAD-Plan (DWG / DXF)</span>
+              {/* Upload Progress Banner if active */}
+              {loading && uploadStatusText && (
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-2 animate-in fade-in">
+                  <div className="flex items-center space-x-2 font-bold">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#3B82C4]" />
+                    <span>{uploadStatusText}</span>
+                  </div>
+                  {Object.entries(uploadProgress).map(([pid, pct]) => {
+                    const plan = uploadedPlans.find(p => p.id === pid);
+                    return (
+                      <div key={pid} className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-slate-600">
+                          <span className="truncate max-w-xs">{plan?.name || pid}</span>
+                          <span className="font-mono font-bold">{pct}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="bg-[#3B82C4] h-1.5 rounded-full transition-all duration-200" 
+                            style={{ width: `${pct}%` }} 
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ========================================================= */}
+              {/* BEREICH A: LEISTUNGSVERZEICHNIS (Single-Upload)           */}
+              {/* ========================================================= */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-6 h-6 rounded-lg bg-blue-100 text-[#3B82C4] font-bold text-xs flex items-center justify-center">
+                      A
                     </span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                      Räume & Etagen
-                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">
+                        Bereich A: Leistungsverzeichnis (GAEB / Excel / Datenbasis)
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Primäre Materialliste (.x81, .x83, .d83, .xml, .xlsx, .csv)
+                      </p>
+                    </div>
                   </div>
 
-                  <label className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-[#3B82C4] transition-all group text-center">
-                    <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-[#3B82C4] mb-2" />
-                    <span className="text-xs font-bold text-slate-800 block">
-                      {dwgFileName || 'DWG / DXF Datei auswählen'}
+                  {parsedPositions.length > 0 && (
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                      {parsedPositions.length} LV-Positionen
                     </span>
-                    <span className="text-[10px] text-slate-400 block mt-0.5">
-                      AutoCAD .dwg oder offenes DXF
-                    </span>
-                    <input
-                      type="file"
-                      accept=".dwg,.dxf"
-                      onChange={handleDwgChange}
-                      className="hidden"
-                    />
-                  </label>
-
-                  {dwgMessage && (
-                    <p className={`text-xs mt-2 font-medium ${dwgStatus === 'success' ? 'text-emerald-700' : 'text-red-600'}`}>
-                      {dwgMessage}
-                    </p>
                   )}
                 </div>
 
-                {/* 2. GAEB */}
                 <div className={`p-4 rounded-xl border-2 transition-all ${
-                  gaebStatus === 'success' ? 'border-emerald-400 bg-emerald-50/40' : 'border-dashed border-slate-300 bg-slate-50'
+                  gaebStatus === 'success' ? 'border-emerald-400 bg-emerald-50/30' : 'border-dashed border-slate-300 bg-slate-50'
                 }`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                      <FileCode className="w-4 h-4 text-[#2FA36B]" />
-                      <span>2. GAEB-Ausschreibung</span>
-                    </span>
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                      LV & Materialien
-                    </span>
-                  </div>
-
-                  <label className="flex flex-col items-center justify-center p-6 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-[#2FA36B] transition-all group text-center">
-                    <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-[#2FA36B] mb-2" />
+                  <label className="flex flex-col items-center justify-center p-4 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-[#3B82C4] transition-all group text-center">
+                    <FileCode className="w-8 h-8 text-slate-400 group-hover:text-[#3B82C4] mb-1.5" />
                     <span className="text-xs font-bold text-slate-800 block">
-                      {gaebFileName || 'GAEB-Datei auswählen'}
+                      {gaebFileName || 'Leistungsverzeichnis auswählen oder hierher ziehen'}
                     </span>
                     <span className="text-[10px] text-slate-400 block mt-0.5">
-                      .x81, .x83, .xml oder .d83
+                      Unterstützt .x81, .x83, .d83, .xml, .xlsx, .csv
                     </span>
                     <input
                       type="file"
-                      accept=".x81,.x82,.x83,.x84,.x85,.x86,.d83,.xml"
+                      accept=".x81,.x82,.x83,.x84,.x85,.x86,.d83,.xml,.xlsx,.xls,.csv"
                       onChange={handleGaebChange}
                       className="hidden"
                     />
@@ -713,8 +855,246 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                       {gaebMessage}
                     </p>
                   )}
+
+                  {/* Position snippet */}
+                  {parsedPositions.length > 0 && (
+                    <div className="mt-3 bg-white rounded-lg p-2.5 border border-slate-200 text-[11px] font-mono divide-y divide-slate-100 max-h-24 overflow-y-auto">
+                      {parsedPositions.slice(0, 3).map((p, idx) => (
+                        <div key={idx} className="py-1 flex justify-between text-slate-600">
+                          <span className="font-bold text-[#3B82C4]">{p.posNr}</span>
+                          <span className="truncate max-w-xs">{p.shortText}</span>
+                          <span className="text-slate-500 shrink-0">{p.qty} {p.qu}</span>
+                        </div>
+                      ))}
+                      {parsedPositions.length > 3 && (
+                        <div className="py-1 text-center text-slate-400 italic font-sans text-[10px]">
+                          + {parsedPositions.length - 3} weitere Positionen
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* ========================================================= */}
+              {/* BEREICH B: MONTAGE- & AUSFÜHRUNGSPLÄNE (Multi-Upload)     */}
+              {/* ========================================================= */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center">
+                      B
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-900">
+                        Bereich B: Montage- & Ausführungspläne (Multi-Upload)
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Mehrere CAD-Pläne für UG, EG, OG, Strangschema etc. (.dwg, .dxf, .pdf)
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-[10px] font-bold text-blue-800 bg-blue-100 border border-blue-300 px-2.5 py-0.5 rounded-full">
+                    {uploadedPlans.length} {uploadedPlans.length === 1 ? 'Plan' : 'Pläne'} hinterlegt
+                  </span>
+                </div>
+
+                {/* Multi-Dropzone */}
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setIsDraggingPlans(true); }}
+                  onDragLeave={() => setIsDraggingPlans(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingPlans(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                      handleAddPlanFiles(e.dataTransfer.files);
+                    }
+                  }}
+                  className={`p-4 rounded-xl border-2 border-dashed transition-all text-center ${
+                    isDraggingPlans 
+                      ? 'border-[#3B82C4] bg-blue-50/50 scale-[1.01]' 
+                      : 'border-slate-300 bg-slate-50 hover:bg-slate-100/60'
+                  }`}
+                >
+                  <label className="flex flex-col items-center justify-center cursor-pointer group py-2">
+                    <UploadCloud className="w-8 h-8 text-slate-400 group-hover:text-[#3B82C4] mb-1.5 transition-colors" />
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Mehrere Plan-Dateien auswählen oder hierher ziehen
+                    </span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      AutoCAD (.dwg), DXF (.dxf) oder exportierte Montage-PDFs (.pdf)
+                    </span>
+                    <input
+                      type="file"
+                      multiple
+                      accept=".dwg,.dxf,.pdf"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleAddPlanFiles(e.target.files);
+                        }
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {/* Uploaded Plans List with Level Dropdowns and Room Counts */}
+                {uploadedPlans.length > 0 && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      <span>Hochgeladene Pläne & Ebenen-Zuordnung:</span>
+                      <span>{uploadedPlans.length} Dateien</span>
+                    </div>
+
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {uploadedPlans.map((plan) => {
+                        const isCad = plan.fileType === 'dwg' || plan.fileType === 'dxf';
+                        const formatSize = (bytes: number) => {
+                          if (bytes < 1024) return `${bytes} B`;
+                          if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                          return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                        };
+
+                        return (
+                          <div 
+                            key={plan.id}
+                            className="bg-white p-3 rounded-xl border border-slate-200 hover:border-slate-300 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
+                          >
+                            <div className="flex items-center space-x-3 min-w-0">
+                              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
+                                plan.fileType === 'pdf' 
+                                  ? 'bg-rose-100 text-rose-700' 
+                                  : 'bg-blue-100 text-[#3B82C4]'
+                              }`}>
+                                {plan.fileType === 'pdf' ? (
+                                  <FileText className="w-5 h-5" />
+                                ) : (
+                                  <Compass className="w-5 h-5" />
+                                )}
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs font-bold text-slate-800 truncate max-w-xs sm:max-w-sm block">
+                                    {plan.name}
+                                  </span>
+                                  <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded uppercase shrink-0">
+                                    {plan.fileType}
+                                  </span>
+                                </div>
+                                <div className="flex items-center space-x-2 text-[11px] text-slate-500 mt-0.5">
+                                  <span>{formatSize(plan.size)}</span>
+                                  <span>•</span>
+                                  <span className="text-emerald-700 font-semibold">
+                                    {isCad ? `${plan.detectedRoomsCount} Räume extrahiert` : 'Plan-Unterlage'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+                              {/* Ebene / Typ Dropdown */}
+                              <div className="flex items-center space-x-1.5">
+                                <span className="text-[11px] font-semibold text-slate-500 hidden sm:inline">
+                                  Ebene:
+                                </span>
+                                <select
+                                  value={plan.level}
+                                  onChange={(e) => handlePlanLevelChange(plan.id, e.target.value as PlanLevel)}
+                                  className="text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                                >
+                                  <option value="UG">UG (Untergeschoss)</option>
+                                  <option value="EG">EG (Erdgeschoss)</option>
+                                  <option value="OG">OG (Obergeschoss)</option>
+                                  <option value="DG">DG (Dachgeschoss)</option>
+                                  <option value="Strangschema">Strangschema / Isometrie</option>
+                                  <option value="Sonstiges">Sonstiges</option>
+                                </select>
+                              </div>
+
+                              {/* Remove Button */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePlan(plan.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Plan entfernen"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {dwgMessage && (
+                  <p className={`text-xs font-medium pt-1 ${dwgStatus === 'success' ? 'text-emerald-700' : 'text-red-600'}`}>
+                    {dwgMessage}
+                  </p>
+                )}
+              </div>
+
+              {/* ========================================================= */}
+              {/* VORSCHAU DER SYNTHETISIERTEN RAUMLISTE                     */}
+              {/* ========================================================= */}
+              {dwgRooms.length > 0 && (
+                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                        <Layers className="w-4 h-4 text-[#3B82C4]" />
+                        <span>Vorschau: Zusammengestellte Raumliste ({dwgRooms.length} Räume)</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Synthese aus allen hochgeladenen Plänen mit automatischer LV-Materialzuordnung
+                      </p>
+                    </div>
+
+                    <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full">
+                      {dwgRooms.reduce((acc, r) => acc + (r.materials?.length || 0), 0)} Positionen zugeordnet
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-52 overflow-y-auto pr-1">
+                    {dwgRooms.map((room) => {
+                      const matCount = room.materials?.length || 0;
+                      return (
+                        <div 
+                          key={room.id}
+                          className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-[11px] text-[#3B82C4] bg-blue-50 px-1.5 py-0.5 rounded">
+                              {room.code}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {room.floor}
+                            </span>
+                          </div>
+
+                          <span className="text-xs font-bold text-slate-800 block truncate" title={room.name}>
+                            {room.name}
+                          </span>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5 border-t border-slate-100">
+                            <span className="text-emerald-700 font-semibold">
+                              {matCount} LV-Positionen
+                            </span>
+                            {room.sourcePlanFileName && (
+                              <span className="truncate max-w-[100px] text-slate-400" title={room.sourcePlanFileName}>
+                                {room.sourcePlanFileName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Summary Box */}
               <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 text-xs space-y-1.5">
@@ -724,8 +1104,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-slate-600">
                   <div>Projekt: <strong className="text-slate-900 block truncate">{name}</strong></div>
                   <div>Projektleiter: <strong className="text-slate-900 block truncate">{projectManager}</strong></div>
-                  <div>Kaufmann / Kauffrau: <strong className="text-slate-900 block truncate">{commercialManager}</strong></div>
-                  <div>Monteure: <strong className="text-slate-900 block">{assignedMonteurIds.length} zugewiesen</strong></div>
+                  <div>LV: <strong className="text-slate-900 block truncate">{parsedPositions.length} Positionen</strong></div>
+                  <div>Pläne: <strong className="text-slate-900 block">{uploadedPlans.length} Pläne ({dwgRooms.length} Räume)</strong></div>
                 </div>
               </div>
             </div>
@@ -748,11 +1128,19 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-3">
+            {loading && uploadStatusText && (
+              <div className="flex items-center space-x-2 text-xs font-semibold text-blue-700 bg-blue-50 px-3.5 py-1.5 rounded-xl border border-blue-200 animate-in fade-in">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#3B82C4]" />
+                <span className="truncate max-w-xs">{uploadStatusText}</span>
+              </div>
+            )}
+
             <button
               type="button"
+              disabled={loading}
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-700"
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-40"
             >
               Abbrechen
             </button>
@@ -777,9 +1165,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 type="button"
                 disabled={loading}
                 onClick={handleCreate}
-                className="flex items-center space-x-2 bg-[#2FA36B] hover:bg-[#258757] text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                className="flex items-center space-x-2 bg-[#2FA36B] hover:bg-[#258757] text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60"
               >
-                <CheckCircle2 className="w-4 h-4" />
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
                 <span>{loading ? 'Projekt wird erstellt...' : 'Projekt verbindlich anlegen'}</span>
               </button>
             )}

@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import * as XLSX from 'xlsx';
 import type { Position } from '../types';
 
 export interface GaebProjectMetadata {
@@ -16,7 +17,40 @@ export interface GaebProjectMetadata {
 export interface GaebParseResult {
   positions: Partial<Position>[];
   metadata: GaebProjectMetadata;
-  rawType: 'gaeb_xml' | 'gaeb_90';
+  rawType: 'gaeb_xml' | 'gaeb_90' | 'excel' | 'csv';
+}
+
+/**
+ * Universal LV parser supporting GAEB (.x81, .x83, .d83, .xml) and Excel/CSV (.xlsx, .xls, .csv).
+ */
+export async function parseLvFile(file: File): Promise<GaebParseResult> {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv')) {
+    const buffer = await file.arrayBuffer();
+    return parseExcelOrCsvBuffer(buffer, file.name);
+  }
+
+  // GAEB Text / XML formats
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const text = e.target?.result as string;
+        const res = parseGaebFile(text, file.name);
+        resolve(res);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Fehler beim Lesen der Datei.'));
+
+    if (name.endsWith('.d83')) {
+      reader.readAsText(file, 'ISO-8859-1');
+    } else {
+      reader.readAsText(file, 'UTF-8');
+    }
+  });
 }
 
 export function parseGaebFile(fileContent: string, fileName: string = ''): GaebParseResult {
@@ -379,4 +413,122 @@ function inferGroupFromPosNr(posNr: string, shortText: string): string {
   if (posNr.startsWith('01.02')) return 'Rohrleitungen';
   if (posNr.startsWith('01.03')) return 'Armaturen & Verteiler';
   return 'Allgemeine Positionen';
+}
+
+function parseExcelOrCsvBuffer(buffer: ArrayBuffer, fileName: string): GaebParseResult {
+  const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+  const positions: Partial<Position>[] = [];
+  const projectName = fileName.replace(/\.[^/.]+$/, "");
+  const location = detectLocationFromTitle(projectName);
+  const isCsv = fileName.toLowerCase().endsWith('.csv');
+
+  if (!rawRows || rawRows.length === 0) {
+    return {
+      positions: [],
+      metadata: { projectName, location, currency: 'EUR' },
+      rawType: isCsv ? 'csv' : 'excel'
+    };
+  }
+
+  // Find column indices
+  let headerIndex = -1;
+  let posCol = -1;
+  let textCol = -1;
+  let qtyCol = -1;
+  let quCol = -1;
+  let priceCol = -1;
+  let groupCol = -1;
+
+  for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+    const row = rawRows[r].map((cell: any) => String(cell).toLowerCase().trim());
+    const pIdx = row.findIndex(c => c.includes('oz') || c.includes('pos') || c === 'nr' || c.includes('nummer'));
+    const tIdx = row.findIndex(c => c.includes('text') || c.includes('bezeichnung') || c.includes('beschreib') || c.includes('artikel'));
+    const qIdx = row.findIndex(c => c.includes('menge') || c.includes('qty') || c.includes('anzahl'));
+
+    if (tIdx !== -1 && (pIdx !== -1 || qIdx !== -1)) {
+      headerIndex = r;
+      posCol = pIdx;
+      textCol = tIdx;
+      qtyCol = qIdx;
+      quCol = row.findIndex(c => c.includes('einheit') || c.includes('me') || c.includes('qu') || c === 'einh');
+      priceCol = row.findIndex(c => c.includes('preis') || c.includes('ep') || c.includes('betrag'));
+      groupCol = row.findIndex(c => c.includes('gruppe') || c.includes('gewerk') || c.includes('titel') || c.includes('kategorie'));
+      break;
+    }
+  }
+
+  // Fallback default column indices if no explicit header recognized
+  if (headerIndex === -1) {
+    headerIndex = 0;
+    posCol = 0;
+    textCol = 1;
+    qtyCol = 2;
+    quCol = 3;
+    priceCol = 4;
+  }
+
+  let counter = 0;
+  let currentGroup = 'Allgemeine Positionen';
+
+  for (let r = headerIndex + 1; r < rawRows.length; r++) {
+    const row = rawRows[r];
+    if (!row || row.length === 0) continue;
+
+    const rawPos = posCol >= 0 && row[posCol] !== undefined ? String(row[posCol]).trim() : '';
+    const rawText = textCol >= 0 && row[textCol] !== undefined ? String(row[textCol]).trim() : '';
+    const rawQty = qtyCol >= 0 && row[qtyCol] !== undefined ? String(row[qtyCol]).trim().replace(',', '.') : '';
+    const rawQu = quCol >= 0 && row[quCol] !== undefined ? String(row[quCol]).trim() : 'Stk';
+    const rawPrice = priceCol >= 0 && row[priceCol] !== undefined ? String(row[priceCol]).trim().replace(',', '.') : '0';
+    const rawGroup = groupCol >= 0 && row[groupCol] !== undefined ? String(row[groupCol]).trim() : '';
+
+    if (!rawText && !rawPos) continue;
+
+    if (rawGroup) {
+      currentGroup = rawGroup;
+    }
+
+    // Header / title line in sheet without qty
+    if (rawText && !rawQty && !rawPos) {
+      currentGroup = rawText;
+      continue;
+    }
+
+    counter++;
+    const posNr = rawPos || `01.${String(counter).padStart(2, '0')}`;
+    const qty = parseFloat(rawQty) || 1;
+    const unitPrice = parseFloat(rawPrice) || 0;
+    const qu = rawQu || 'Stk';
+    const shortText = rawText || `Position ${posNr}`;
+    const group = rawGroup || inferGroupFromPosNr(posNr, shortText) || currentGroup;
+
+    positions.push({
+      id: `pos_${posNr.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+      posNr,
+      group,
+      shortText: cleanHtml(shortText),
+      longText: cleanHtml(shortText),
+      qty,
+      qu,
+      deliveredQty: qty,
+      unitPrice,
+      isCutMaterial: (shortText.toLowerCase().includes('rohr') || shortText.toLowerCase().includes('leitung')) && (qu === 'm' || qu === 'Meter'),
+      status: 'open',
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  return {
+    positions,
+    metadata: {
+      projectName,
+      location,
+      currency: 'EUR',
+      date: new Date().toISOString().slice(0, 10)
+    },
+    rawType: isCsv ? 'csv' : 'excel'
+  };
 }

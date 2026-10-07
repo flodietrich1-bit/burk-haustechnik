@@ -5,7 +5,7 @@ import { getStorage } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 
 export const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "",
+  apiKey: process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || "AIzaSyAXf_veu3fsfYhyaRJI8531_ObU4zMY040",
   authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || "burk-haustechnik.firebaseapp.com",
   projectId: process.env.VITE_FIREBASE_PROJECT_ID || "burk-haustechnik",
   storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || "burk-haustechnik.firebasestorage.app",
@@ -17,6 +17,6 @@ export const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-export const auth = getAuth(app);
+export const auth = firebaseConfig.apiKey ? getAuth(app) : null;
 
 export default app;

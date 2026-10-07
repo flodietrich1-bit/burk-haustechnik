@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UploadCloud, FileCode, AlertCircle, X, ArrowRight } from 'lucide-react';
-import { parseGaebFile } from '../services/gaebParser';
+import { parseLvFile } from '../services/gaebParser';
 import { savePositionsBatch } from '../services/firestoreService';
 import type { Position } from '../types';
 
@@ -25,24 +25,19 @@ export const GaebUploader: React.FC<GaebUploaderProps> = ({
 
   if (!isOpen) return null;
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
     setFile(selected);
     setError('');
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const content = event.target?.result as string;
-        const parsed = parseGaebFile(content, selected.name);
-        setPreviewPositions(parsed.positions);
-        setProjectTitle(parsed.metadata.projectName || selected.name);
-      } catch (err: any) {
-        setError(err.message || 'Fehler beim Parsen der GAEB-Datei.');
-      }
-    };
-    reader.readAsText(selected);
+    try {
+      const parsed = await parseLvFile(selected);
+      setPreviewPositions(parsed.positions);
+      setProjectTitle(parsed.metadata.projectName || selected.name);
+    } catch (err: any) {
+      setError(err.message || 'Fehler beim Parsen der Datei.');
+    }
   };
 
   const handleUpload = async () => {

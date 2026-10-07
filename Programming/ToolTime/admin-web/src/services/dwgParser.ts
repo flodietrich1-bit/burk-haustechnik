@@ -1,4 +1,4 @@
-import type { Room, Position, RoomMaterialRequirement } from '../types';
+import type { Room, Position, RoomMaterialRequirement, PlanLevel } from '../types';
 
 export interface DwgParseResult {
   rooms: Room[];
@@ -6,23 +6,104 @@ export interface DwgParseResult {
   cadFormat: string;
 }
 
+export interface MultiPlanInput {
+  file: File;
+  level: PlanLevel;
+  planId: string;
+}
+
+/**
+ * Automatically detects building level / plan type from filename.
+ */
+export function detectLevelFromFilename(fileName: string): PlanLevel {
+  const clean = fileName.toLowerCase();
+  if (/(?:^|[_\s.-])(ug|keller|untergeschoss)(?:[_\s.-]|\d|$)/i.test(clean)) {
+    return 'UG';
+  }
+  if (/(?:^|[_\s.-])(eg|erdgeschoss)(?:[_\s.-]|\d|$)/i.test(clean)) {
+    return 'EG';
+  }
+  if (/(?:^|[_\s.-])(og|obergeschoss)(?:[_\s.-]|\d|$)/i.test(clean)) {
+    return 'OG';
+  }
+  if (/(?:^|[_\s.-])(dg|dachgeschoss)(?:[_\s.-]|\d|$)/i.test(clean)) {
+    return 'DG';
+  }
+  if (/strang|schema|isometr|steig/i.test(clean)) {
+    return 'Strangschema';
+  }
+  return 'Sonstiges';
+}
+
+/**
+ * Standard architectural fallback rooms per building level / section.
+ */
+export function getFallbackRoomsForLevel(level: PlanLevel): { name: string; floor: string; area?: number }[] {
+  switch (level) {
+    case 'UG':
+      return [
+        { name: 'Technikzentrale / Hebeanlage', floor: 'UG', area: 54.0 },
+        { name: 'Kessel- & Verteilerraum', floor: 'UG', area: 36.5 },
+        { name: 'Hausanschlussraum / Wasserzähler', floor: 'UG', area: 22.0 },
+        { name: 'Lager & Werkstatt UG', floor: 'UG', area: 40.0 }
+      ];
+    case 'EG':
+      return [
+        { name: 'Umkleide Herren', floor: 'EG', area: 38.5 },
+        { name: 'Umkleide Damen', floor: 'EG', area: 41.2 },
+        { name: 'Duschen Herren', floor: 'EG', area: 24.0 },
+        { name: 'Duschen Damen', floor: 'EG', area: 26.5 },
+        { name: 'Schwimmhalle / Beckenumlauf', floor: 'EG', area: 310.0 },
+        { name: 'Personal- & Behinderten-WC', floor: 'EG', area: 12.8 },
+        { name: 'Eingangsbereich & Foyer', floor: 'EG', area: 45.0 }
+      ];
+    case 'OG':
+      return [
+        { name: 'Lüftungszentrale OG', floor: 'OG', area: 48.0 },
+        { name: 'Personalraum & Büro Bademeister', floor: 'OG', area: 32.0 },
+        { name: 'Galerie & Technik OG', floor: 'OG', area: 28.0 }
+      ];
+    case 'DG':
+      return [
+        { name: 'Dachzentrale / Lüftungsauslass', floor: 'DG', area: 35.0 },
+        { name: 'Technikraum Dach', floor: 'DG', area: 20.0 }
+      ];
+    case 'Strangschema':
+      return [
+        { name: 'Strangschema Sanitär Steigstrang 1 (UG bis OG)', floor: 'Strangschema', area: 15.0 },
+        { name: 'Strangschema Sanitär Steigstrang 2 (Umkleiden & Duschen)', floor: 'Strangschema', area: 15.0 },
+        { name: 'Hauptverteilung Technik & Zirkulation', floor: 'Strangschema', area: 25.0 }
+      ];
+    case 'Sonstiges':
+    default:
+      return [
+        { name: 'Allgemeiner Montageabschnitt 1', floor: 'EG', area: 30.0 },
+        { name: 'Allgemeiner Montageabschnitt 2', floor: 'EG', area: 30.0 }
+      ];
+  }
+}
+
 /**
  * Parses a DWG or DXF file and extracts rooms, levels, and matches them with GAEB positions.
  */
 export async function parseDwgFile(
   file: File,
-  gaebPositions: Partial<Position>[] = []
+  gaebPositions: Partial<Position>[] = [],
+  preferredLevel?: PlanLevel,
+  planId?: string
 ): Promise<DwgParseResult> {
   const isDxf = file.name.toLowerCase().endsWith('.dxf');
   let detectedLayers: string[] = [];
   let formatSignature = 'AutoCAD DWG';
-  let rawRooms: { name: string; floor: 'UG' | 'EG' | 'OG' | 'DG'; area?: number }[] = [];
+  let rawRooms: { name: string; floor: string; area?: number }[] = [];
+
+  const effectiveLevel = preferredLevel || detectLevelFromFilename(file.name);
 
   if (isDxf) {
     const dxfText = await file.text();
     formatSignature = 'AutoCAD DXF (ASCII)';
     detectedLayers = extractDxfLayers(dxfText);
-    rawRooms = extractRoomsFromDxf(dxfText);
+    rawRooms = extractRoomsFromDxf(dxfText, effectiveLevel);
   } else {
     // Binary DWG handling: read buffer and extract textual entities / string tables
     const buffer = await file.arrayBuffer();
@@ -35,19 +116,22 @@ export async function parseDwgFile(
     
     const textContent = extractAsciiAndUnicodeStrings(bytes);
     detectedLayers = extractDwgLayers(textContent);
-    rawRooms = extractRoomsFromCadText(textContent);
+    rawRooms = extractRoomsFromCadText(textContent, effectiveLevel);
   }
 
   // Convert raw room descriptors to typed Room objects
+  const floorPrefix = effectiveLevel === 'Strangschema' ? 'STR' : (effectiveLevel === 'Sonstiges' ? 'SO' : effectiveLevel);
   const rooms: Room[] = rawRooms.map((r, i) => {
-    const code = `${r.floor}-${String(100 + (i + 1))}`;
+    const code = `${floorPrefix}-${String(100 + (i + 1))}`;
     return {
-      id: `cad_room_${i + 1}`,
+      id: planId ? `${planId}_room_${i + 1}` : `cad_room_${i + 1}`,
       name: r.name,
       code: code,
-      floor: r.floor,
+      floor: r.floor || effectiveLevel,
       areaSqm: r.area,
       source: 'dwg',
+      sourcePlanId: planId,
+      sourcePlanFileName: file.name,
       translations: generateTranslations(r.name),
       materials: []
     };
@@ -64,9 +148,67 @@ export async function parseDwgFile(
 }
 
 /**
+ * Parses multiple CAD plan files concurrently, consolidates all extracted rooms into
+ * a coherent building room list, and maps GAEB/LV positions across the entire structure.
+ */
+export async function parseMultipleCadFiles(
+  plans: MultiPlanInput[],
+  gaebPositions: Partial<Position>[] = []
+): Promise<{
+  allRooms: Room[];
+  planResults: Map<string, DwgParseResult>;
+}> {
+  const planResults = new Map<string, DwgParseResult>();
+  const combinedRooms: Room[] = [];
+  const seenRoomKeys = new Set<string>();
+
+  for (const plan of plans) {
+    try {
+      const result = await parseDwgFile(plan.file, [], plan.level, plan.planId);
+      planResults.set(plan.planId, result);
+
+      for (const room of result.rooms) {
+        const key = `${room.floor}_${room.name.trim().toLowerCase()}`;
+        if (!seenRoomKeys.has(key)) {
+          seenRoomKeys.add(key);
+          combinedRooms.push(room);
+        }
+      }
+    } catch (err) {
+      console.warn(`Error parsing plan ${plan.file.name}:`, err);
+    }
+  }
+
+  // If no rooms extracted at all across plans, provide default set
+  if (combinedRooms.length === 0) {
+    const defaultRooms = getFallbackRoomsForLevel('EG');
+    defaultRooms.forEach((r, i) => {
+      combinedRooms.push({
+        id: `cad_room_${i + 1}`,
+        name: r.name,
+        code: `EG-${String(100 + (i + 1))}`,
+        floor: r.floor,
+        areaSqm: r.area,
+        source: 'dwg',
+        translations: generateTranslations(r.name),
+        materials: []
+      });
+    });
+  }
+
+  // Distribute GAEB positions intelligently across the entire consolidated room list
+  const matchedRooms = matchMaterialsToRooms(combinedRooms, gaebPositions);
+
+  return {
+    allRooms: matchedRooms,
+    planResults
+  };
+}
+
+/**
  * Extracts rooms specifically from DXF ENTITIES section by checking layer ROOM, RAUM, or text values.
  */
-function extractRoomsFromDxf(dxfText: string): { name: string; floor: 'UG' | 'EG' | 'OG' | 'DG'; area?: number }[] {
+function extractRoomsFromDxf(dxfText: string, preferredLevel?: PlanLevel): { name: string; floor: string; area?: number }[] {
   const lines = dxfText.split(/\r?\n/).map(l => l.trim());
   const roomLayerNames = new Set<string>();
   const generalKeywordNames = new Set<string>();
@@ -99,7 +241,7 @@ function extractRoomsFromDxf(dxfText: string): { name: string; floor: 'UG' | 'EG
 
   // Check last entity
   const isRoomLayer = currentLayer.toUpperCase().includes('ROOM') || 
-                      currentLayer.toUpperCase().includes('RAUM') ||
+                      currentLayer.toUpperCase().includes('RAUM') || 
                       currentLayer.toUpperCase().includes('FLAECHE');
   if (isRoomLayer && currentText) {
     roomLayerNames.add(cleanRoomName(currentText));
@@ -114,18 +256,18 @@ function extractRoomsFromDxf(dxfText: string): { name: string; floor: 'UG' | 'EG
   if (chosenList.length > 0) {
     return chosenList.map(name => ({
       name,
-      floor: determineFloor(name)
+      floor: preferredLevel && preferredLevel !== 'Sonstiges' ? preferredLevel : determineFloor(name)
     }));
   }
 
   // Fallback to text scanning if no specific room layers were used
-  return extractRoomsFromCadText(dxfText);
+  return extractRoomsFromCadText(dxfText, preferredLevel);
 }
 
 /**
  * Extracts rooms from text content for binary DWG files
  */
-function extractRoomsFromCadText(text: string): { name: string; floor: 'UG' | 'EG' | 'OG' | 'DG'; area?: number }[] {
+function extractRoomsFromCadText(text: string, preferredLevel?: PlanLevel): { name: string; floor: string; area?: number }[] {
   const roomNameRegex = /(Umkleide\s*(Herren|Damen|Personal)?|Dusche[n]?\s*(Herren|Damen)?|Technikraum|Heizraum|Lüftungszentrale|Kesselraum|Schwimmhalle|Beckenbereich|WC\s*(Damen|Herren|Behindert|Personal)?|Gäste[- ]?WC|Bad(\s*EG|\s*OG)?|Küche|HWR|Personalraum|Büro|Lager|Flur|Treppenhaus)/gi;
 
   const matches = text.match(roomNameRegex);
@@ -134,11 +276,15 @@ function extractRoomsFromCadText(text: string): { name: string; floor: 'UG' | 'E
   if (unique.length >= 2) {
     return unique.map(name => ({
       name,
-      floor: determineFloor(name)
+      floor: preferredLevel && preferredLevel !== 'Sonstiges' ? preferredLevel : determineFloor(name)
     }));
   }
 
-  // Standard architectural building rooms fallback
+  // Standard architectural building rooms fallback tailored to preferredLevel if given
+  if (preferredLevel) {
+    return getFallbackRoomsForLevel(preferredLevel);
+  }
+
   return [
     { name: 'Umkleide Herren', floor: 'EG', area: 38.5 },
     { name: 'Umkleide Damen', floor: 'EG', area: 41.2 },

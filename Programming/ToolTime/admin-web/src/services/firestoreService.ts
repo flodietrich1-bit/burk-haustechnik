@@ -1,8 +1,9 @@
 import { 
-  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc
+  collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch
 } from 'firebase/firestore';
-import { db } from '../firebase';
-import type { Project, Position, Room, Booking, Addendum, Alert, User } from '../types';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
+import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocument, PlanLevel } from '../types';
 
 export const DEFAULT_PROJECT_ID = '';
 
@@ -14,6 +15,7 @@ const LOCAL_STORAGE_PROJECTS_KEY = 'burk_tooltime_projects_v2';
 const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
+const LOCAL_STORAGE_PLANS_PREFIX = 'burk_tooltime_plans_';
 
 export function getLocalProjects(): Project[] {
   try {
@@ -34,12 +36,40 @@ type SingleProjectCallback = (project: Project | null) => void;
 type PositionsCallback = (positions: Position[]) => void;
 type RoomsCallback = (rooms: Room[]) => void;
 type AlertsCallback = (alerts: Alert[]) => void;
+type PlansCallback = (plans: PlanDocument[]) => void;
 
 const projectSubscribers = new Set<ProjectsCallback>();
 const singleProjectSubscribers = new Map<string, Set<SingleProjectCallback>>();
 const positionsSubscribers = new Map<string, Set<PositionsCallback>>();
 const roomsSubscribers = new Map<string, Set<RoomsCallback>>();
 const alertsSubscribers = new Map<string, Set<AlertsCallback>>();
+const plansSubscribers = new Map<string, Set<PlansCallback>>();
+
+export function notifyPlansSubscribers(projectId: string, plans: PlanDocument[]) {
+  const set = plansSubscribers.get(projectId);
+  if (set) {
+    set.forEach(cb => {
+      try {
+        cb(plans);
+      } catch (e) {
+        console.warn('Error in plans subscriber:', e);
+      }
+    });
+  }
+}
+
+export function getLocalPlans(projectId: string): PlanDocument[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('LocalStorage error reading plans:', e);
+  }
+  return [];
+}
 
 export function notifyProjectSubscribers(projects: Project[]) {
   projectSubscribers.forEach(cb => {
@@ -311,6 +341,49 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
   };
 }
 
+// 4b. Listen to plans of project
+export function listenToPlans(projectId: string, callback: (plans: PlanDocument[]) => void) {
+  if (!projectId) {
+    callback([]);
+    return () => {};
+  }
+
+  if (!plansSubscribers.has(projectId)) {
+    plansSubscribers.set(projectId, new Set());
+  }
+  const set = plansSubscribers.get(projectId)!;
+  set.add(callback);
+
+  // Immediately deliver current cached state synchronously
+  const saved = localStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+  if (saved) {
+    try {
+      callback(JSON.parse(saved));
+    } catch {
+      callback([]);
+    }
+  } else {
+    callback([]);
+  }
+
+  const colRef = collection(db, 'projects', projectId, 'plans');
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
+    if (!snap.empty) {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as PlanDocument);
+      localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(list));
+      notifyPlansSubscribers(projectId, list);
+    }
+  }, () => {
+    // Fallback mode
+  });
+
+  return () => {
+    set.delete(callback);
+    if (set.size === 0) plansSubscribers.delete(projectId);
+    unsubFirestore();
+  };
+}
+
 export function listenToBookings(projectId: string, callback: (bookings: Booking[]) => void) {
   if (!projectId) {
     callback([]);
@@ -460,18 +533,164 @@ export async function clearAllProjects(): Promise<void> {
   }
 }
 
+export async function uploadPlanFile(
+  projectId: string,
+  planId: string,
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<{ downloadUrl: string; storagePath: string; dwgUrl: string; pdfUrl: string }> {
+  const isPdf = file.name.toLowerCase().endsWith('.pdf');
+  const ext = isPdf ? '.pdf' : '.dwg';
+  const storagePath = `projects/${projectId}/plans/${planId}${ext}`;
+  
+  if (!storage) {
+    console.warn('Firebase Storage not initialized, using local fallback URL.');
+    if (onProgress) onProgress(100);
+    const localUrl = URL.createObjectURL(file);
+    return {
+      downloadUrl: localUrl,
+      dwgUrl: localUrl,
+      pdfUrl: localUrl,
+      storagePath
+    };
+  }
+
+  return new Promise((resolve) => {
+    let isSettled = false;
+    let uploadTask: any = null;
+
+    const safeSettle = (res: { downloadUrl: string; storagePath: string; dwgUrl?: string; pdfUrl?: string }) => {
+      if (isSettled) return;
+      isSettled = true;
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (onProgress) onProgress(100);
+      resolve({
+        downloadUrl: res.downloadUrl,
+        storagePath: res.storagePath,
+        dwgUrl: res.dwgUrl || res.downloadUrl,
+        pdfUrl: res.pdfUrl || res.downloadUrl
+      });
+    };
+
+    // Safety timeout: 25s per file max. If network hangs or throttles, fallback gracefully to blob URL
+    const timeoutTimer = setTimeout(() => {
+      if (!isSettled) {
+        console.warn(`Firebase Storage upload timed out for ${file.name}. Falling back to local URL.`);
+        try {
+          if (uploadTask && typeof uploadTask.cancel === 'function') uploadTask.cancel();
+        } catch {}
+        safeSettle({
+          downloadUrl: URL.createObjectURL(file),
+          storagePath
+        });
+      }
+    }, 25000);
+
+    try {
+      const storageRef = ref(storage, storagePath);
+      uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on(
+        'state_changed',
+        (snapshot: any) => {
+          if (!isSettled && snapshot.totalBytes > 0) {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            if (onProgress) onProgress(Math.min(100, Math.round(progress)));
+          }
+        },
+        (error: any) => {
+          console.warn('Firebase Storage upload failed, fallback to local URL:', error.message || error);
+          safeSettle({
+            downloadUrl: URL.createObjectURL(file),
+            storagePath
+          });
+        },
+        async () => {
+          try {
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            safeSettle({ downloadUrl, storagePath });
+          } catch (err) {
+            console.warn('Failed to retrieve download URL, using local fallback:', err);
+            safeSettle({
+              downloadUrl: URL.createObjectURL(file),
+              storagePath
+            });
+          }
+        }
+      );
+    } catch (err) {
+      console.warn('Storage upload initiation error, fallback to local URL:', err);
+      safeSettle({
+        downloadUrl: URL.createObjectURL(file),
+        storagePath
+      });
+    }
+  });
+}
+
+export async function savePlan(projectId: string, plan: PlanDocument): Promise<void> {
+  const current = getLocalPlans(projectId);
+  const updated = [plan, ...current.filter(p => p.id !== plan.id)];
+  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  notifyPlansSubscribers(projectId, updated);
+
+  try {
+    const pRef = doc(db, 'projects', projectId, 'plans', plan.id);
+    await setDoc(pRef, plan, { merge: true });
+    await updateDoc(doc(db, 'projects', projectId), { plansCount: updated.length });
+  } catch (err: any) {
+    console.warn('Firestore savePlan error:', err.message);
+  }
+}
+
+export async function updatePlanFloor(projectId: string, planId: string, newFloor: PlanLevel): Promise<void> {
+  const current = getLocalPlans(projectId);
+  const updated = current.map(p => p.id === planId ? { ...p, floor: newFloor, level: newFloor } : p);
+  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  notifyPlansSubscribers(projectId, updated);
+
+  try {
+    const pRef = doc(db, 'projects', projectId, 'plans', planId);
+    await updateDoc(pRef, { floor: newFloor, level: newFloor });
+  } catch (err: any) {
+    console.warn('Firestore updatePlanFloor error:', err.message);
+  }
+}
+
+export async function deletePlan(projectId: string, planId: string): Promise<void> {
+  const current = getLocalPlans(projectId);
+  const updated = current.filter(p => p.id !== planId);
+  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  notifyPlansSubscribers(projectId, updated);
+
+  try {
+    const pRef = doc(db, 'projects', projectId, 'plans', planId);
+    await deleteDoc(pRef);
+    await updateDoc(doc(db, 'projects', projectId), { plansCount: updated.length });
+  } catch (err: any) {
+    console.warn('Firestore deletePlan error:', err.message);
+  }
+}
+
 // Mutators & Project Creation
 export async function createProject(
   project: Project,
   positions: Partial<Position>[] = [],
-  rooms: Room[] = []
+  rooms: Room[] = [],
+  plans: PlanDocument[] = []
 ): Promise<void> {
+  const updatedProject: Project = {
+    ...project,
+    plansCount: plans.length,
+    plans: plans
+  };
+
   // Update local list first
   const existing = getLocalProjects().filter(p => p.id !== project.id);
-  const updatedProjects = [project, ...existing];
+  const updatedProjects = [updatedProject, ...existing];
   saveLocalProjects(updatedProjects);
 
-  // Save positions and rooms locally
+  // Save positions, rooms, and plans locally
   if (positions.length > 0) {
     localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id, JSON.stringify(positions));
     notifyPositionsSubscribers(project.id, positions as Position[]);
@@ -480,21 +699,56 @@ export async function createProject(
     localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id, JSON.stringify(rooms));
     notifyRoomsSubscribers(project.id, rooms);
   }
+  if (plans.length > 0) {
+    localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + project.id, JSON.stringify(plans));
+    notifyPlansSubscribers(project.id, plans);
+  }
 
   // Attempt Firestore sync
   try {
     const projectRef = doc(db, 'projects', project.id);
-    await setDoc(projectRef, project, { merge: true });
+    await setDoc(projectRef, updatedProject, { merge: true });
 
-    for (const pos of positions) {
-      if (!pos.id) continue;
-      const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
-      await setDoc(pRef, pos, { merge: true });
+    // High-speed Chunked Batch-Write to both /positions AND /items (max 500 ops per batch)
+    const POS_CHUNK = 200; // 200 pos * 2 refs = 400 operations
+    for (let i = 0; i < positions.length; i += POS_CHUNK) {
+      const chunk = positions.slice(i, i + POS_CHUNK);
+      const batch = writeBatch(db);
+      for (const pos of chunk) {
+        if (!pos.id) continue;
+        const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
+        const iRef = doc(db, 'projects', project.id, 'items', pos.id);
+        batch.set(pRef, pos, { merge: true });
+        batch.set(iRef, {
+          id: pos.id,
+          oz: pos.posNr,
+          posNr: pos.posNr,
+          text: pos.shortText,
+          shortText: pos.shortText,
+          qu: pos.qu,
+          unit: pos.qu,
+          qty: pos.qty,
+          quantity: pos.qty,
+          unitPrice: pos.unitPrice || 0,
+          group: pos.group,
+          updatedAt: pos.updatedAt || new Date().toISOString()
+        }, { merge: true });
+      }
+      await batch.commit();
     }
 
-    for (const r of rooms) {
-      const rRef = doc(db, 'projects', project.id, 'rooms', r.id);
-      await setDoc(rRef, r, { merge: true });
+    // High-speed batch write for rooms and plans
+    if (rooms.length > 0 || plans.length > 0) {
+      const roomPlanBatch = writeBatch(db);
+      for (const r of rooms) {
+        const rRef = doc(db, 'projects', project.id, 'rooms', r.id);
+        roomPlanBatch.set(rRef, r, { merge: true });
+      }
+      for (const plan of plans) {
+        const planRef = doc(db, 'projects', project.id, 'plans', plan.id);
+        roomPlanBatch.set(planRef, plan, { merge: true });
+      }
+      await roomPlanBatch.commit();
     }
   } catch (err: any) {
     console.warn('Firestore project write failed, preserved in local storage:', err.message);
@@ -521,10 +775,31 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
   saveLocalProjects(projects);
 
   try {
-    for (const pos of positions) {
-      if (!pos.id) continue;
-      const ref = doc(db, 'projects', projectId, 'positions', pos.id);
-      await setDoc(ref, pos, { merge: true });
+    const POS_CHUNK = 200;
+    for (let i = 0; i < positions.length; i += POS_CHUNK) {
+      const chunk = positions.slice(i, i + POS_CHUNK);
+      const batch = writeBatch(db);
+      for (const pos of chunk) {
+        if (!pos.id) continue;
+        const ref = doc(db, 'projects', projectId, 'positions', pos.id);
+        const iRef = doc(db, 'projects', projectId, 'items', pos.id);
+        batch.set(ref, pos, { merge: true });
+        batch.set(iRef, {
+          id: pos.id,
+          oz: pos.posNr,
+          posNr: pos.posNr,
+          text: pos.shortText,
+          shortText: pos.shortText,
+          qu: pos.qu,
+          unit: pos.qu,
+          qty: pos.qty,
+          quantity: pos.qty,
+          unitPrice: pos.unitPrice || 0,
+          group: pos.group,
+          updatedAt: pos.updatedAt || new Date().toISOString()
+        }, { merge: true });
+      }
+      await batch.commit();
     }
     await updateDoc(doc(db, 'projects', projectId), { totalPositions: mergedList.length });
   } catch (err: any) {

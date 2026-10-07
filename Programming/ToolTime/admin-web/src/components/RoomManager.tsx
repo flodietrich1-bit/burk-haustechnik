@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { Room, Position, Booking, RoomMaterialRequirement } from '../types';
+import type { Room, Position, Booking, RoomMaterialRequirement, PlanDocument, PlanLevel } from '../types';
 import { 
   Plus, 
   Globe, 
@@ -15,12 +15,25 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Unlock
+  Unlock,
+  Layers,
+  FileText,
+  Trash2,
+  UploadCloud,
+  Filter
 } from 'lucide-react';
-import { saveRoom, completeRoom } from '../services/firestoreService';
+import { 
+  saveRoom, 
+  completeRoom, 
+  listenToPlans, 
+  uploadPlanFile, 
+  savePlan, 
+  updatePlanFloor,
+  deletePlan 
+} from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { CircularProgress } from './CircularProgress';
-import { generateTranslations } from '../services/dwgParser';
+import { generateTranslations, parseDwgFile, detectLevelFromFilename } from '../services/dwgParser';
 
 interface RoomManagerProps {
   projectId: string;
@@ -31,9 +44,22 @@ interface RoomManagerProps {
 }
 
 export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName, rooms, positions, bookings = [] }) => {
+  const [plans, setPlans] = useState<PlanDocument[]>([]);
+  const [selectedLevelFilter, setSelectedLevelFilter] = useState<string>('all');
+  const [isAddPlanOpen, setIsAddPlanOpen] = useState<boolean>(false);
+  const [newPlanFile, setNewPlanFile] = useState<File | null>(null);
+  const [newPlanLevel, setNewPlanLevel] = useState<PlanLevel>('UG');
+  const [isUploadingPlan, setIsUploadingPlan] = useState<boolean>(false);
+
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
   const [selectedRoomIdForDetail, setSelectedRoomIdForDetail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const unsub = listenToPlans(projectId, setPlans);
+    return () => unsub();
+  }, [projectId]);
 
   const selectedRoomForDetail = rooms.find(r => r.id === selectedRoomIdForDetail) || null;
 
@@ -230,6 +256,70 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     }
   };
 
+  const handleUploadAdditionalPlan = async () => {
+    if (!newPlanFile || !projectId) return;
+    setIsUploadingPlan(true);
+
+    try {
+      const planId = `plan_${Date.now()}`;
+      const ext = newPlanFile.name.toLowerCase().endsWith('.pdf') ? 'pdf' : (newPlanFile.name.toLowerCase().endsWith('.dxf') ? 'dxf' : 'dwg');
+
+      const { downloadUrl, storagePath } = await uploadPlanFile(projectId, planId, newPlanFile);
+
+      let detectedCount = 0;
+      if (ext === 'dwg' || ext === 'dxf') {
+        const parsed = await parseDwgFile(newPlanFile, positions, newPlanLevel, planId);
+        detectedCount = parsed.rooms.length;
+        for (const r of parsed.rooms) {
+          await saveRoom(projectId, r);
+        }
+      }
+
+      const rawBase = newPlanFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ').trim();
+      const planName = rawBase.toLowerCase().includes('montageplan')
+        ? rawBase
+        : `Montageplan ${newPlanLevel} (${rawBase})`;
+
+      const planDoc: PlanDocument = {
+        id: planId,
+        projectId,
+        name: planName,
+        fileName: newPlanFile.name,
+        originalFileName: newPlanFile.name,
+        floor: newPlanLevel,
+        level: newPlanLevel,
+        dwgUrl: downloadUrl,
+        pdfUrl: downloadUrl,
+        downloadUrl,
+        storagePath,
+        status: 'ready' as const,
+        fileType: ext,
+        size: newPlanFile.size,
+        uploadedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        detectedRoomsCount: detectedCount
+      };
+
+      await savePlan(projectId, planDoc);
+      setIsAddPlanOpen(false);
+      setNewPlanFile(null);
+    } catch (err: any) {
+      alert('Fehler beim Hochladen des Plans: ' + (err.message || err));
+    } finally {
+      setIsUploadingPlan(false);
+    }
+  };
+
+  const handleDeletePlan = async (planId: string, planName: string) => {
+    if (window.confirm(`Plan "${planName}" wirklich aus dem Vorhaben entfernen?`)) {
+      await deletePlan(projectId, planId);
+    }
+  };
+
+  const handlePlanFloorChange = async (planId: string, newFloor: PlanLevel) => {
+    await updatePlanFloor(projectId, planId, newFloor);
+  };
+
   // Calculate Progress Metrics for the Status Pie Chart
   const totalRooms = rooms.length;
   const completedRooms = rooms.filter(r => getRoomInfo(r).isCompleted).length;
@@ -239,6 +329,14 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   const totalProgressPercent = totalRooms > 0 
     ? Math.round(rooms.reduce((sum, r) => sum + getRoomInfo(r).roomPercent, 0) / totalRooms)
     : 0;
+
+  // Filter rooms by building level
+  const filteredRooms = rooms.filter(r => {
+    if (selectedLevelFilter === 'all') return true;
+    return r.floor === selectedLevelFilter;
+  });
+
+  const availableFloors = Array.from(new Set(rooms.map(r => r.floor || 'EG')));
 
   return (
     <div className="space-y-6">
@@ -250,14 +348,144 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
             Örtlichkeiten der Verbauung: Räume aus DWG-Plan oder manuell angelegt mit hinterlegten LV-Materialien
           </p>
         </div>
-        <button
-          onClick={() => setIsAddOpen(true)}
-          className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Raum manuell anlegen</span>
-        </button>
+        <div className="flex items-center space-x-2.5 self-start sm:self-auto">
+          <button
+            onClick={() => setIsAddPlanOpen(true)}
+            className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Compass className="w-4 h-4 text-[#3B82C4]" />
+            <span>Plan hochladen (.dwg / .dxf / .pdf)</span>
+          </button>
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Raum manuell anlegen</span>
+          </button>
+        </div>
       </div>
+
+      {/* Zugehörige Ausführungs- & Montagepläne Card */}
+      {plans.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+            <div className="flex items-center space-x-2">
+              <Layers className="w-4 h-4 text-[#3B82C4]" />
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Hinterlegte Ausführungs- & Montagepläne ({plans.length})
+              </h3>
+            </div>
+            <button
+              onClick={() => setIsAddPlanOpen(true)}
+              className="text-xs text-[#3B82C4] font-bold hover:underline flex items-center space-x-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Weiteren Plan ergänzen</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {plans.map(plan => {
+              const formatSize = (bytes: number) => {
+                if (bytes < 1024) return `${bytes} B`;
+                if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+                return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+              };
+
+              return (
+                <div 
+                  key={plan.id}
+                  className="bg-slate-50 border border-slate-200/90 rounded-xl p-3 flex items-center justify-between gap-3 hover:border-blue-300 transition-colors"
+                >
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-xs ${
+                      plan.fileType === 'pdf' ? 'bg-rose-100 text-rose-700' : 'bg-blue-100 text-[#3B82C4]'
+                    }`}>
+                      {plan.fileType === 'pdf' ? <FileText className="w-4 h-4" /> : <Compass className="w-4 h-4" />}
+                    </div>
+
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 truncate block" title={plan.name || plan.fileName}>
+                        {plan.name || plan.fileName}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px] text-slate-500 mt-1">
+                        {/* Dropdown zur manuellen Korrektur der Geschoss-Zuordnung */}
+                        <select
+                          value={plan.floor || plan.level || 'Sonstiges'}
+                          onChange={(e) => handlePlanFloorChange(plan.id, e.target.value as PlanLevel)}
+                          className="font-bold text-[10.5px] text-blue-700 bg-blue-50/90 hover:bg-blue-100/90 px-2 py-0.5 rounded border border-blue-200 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400"
+                          title="Geschoss-Zuordnung manuell anpassen"
+                        >
+                          <option value="UG">UG (Untergeschoss)</option>
+                          <option value="EG">EG (Erdgeschoss)</option>
+                          <option value="OG">OG (Obergeschoss)</option>
+                          <option value="DG">DG (Dachgeschoss)</option>
+                          <option value="Strangschema">Strangschema</option>
+                          <option value="Sonstiges">Sonstiges</option>
+                        </select>
+
+                        <span>{formatSize(plan.size || plan.pdfSize || plan.dwgSize || 0)}</span>
+
+                        {/* Verarbeitungsstatus: Upload -> Konvertierung -> PDF bereit */}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          plan.status === 'ready' 
+                            ? 'text-emerald-700 bg-emerald-50 border-emerald-200' 
+                            : plan.status === 'processing' 
+                            ? 'text-amber-700 bg-amber-50 border-amber-200 animate-pulse' 
+                            : 'text-red-700 bg-red-50 border-red-200'
+                        }`}>
+                          {plan.status === 'ready' ? '✓ PDF bereit' : plan.status === 'processing' ? '⏳ In Konvertierung...' : '⚠️ Fehler'}
+                        </span>
+
+                        {plan.detectedRoomsCount !== undefined && plan.detectedRoomsCount > 0 && (
+                          <span className="text-emerald-700 font-semibold">• {plan.detectedRoomsCount} Räume</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-1 shrink-0">
+                    {(plan.pdfUrl || plan.downloadUrl) && !(plan.pdfUrl || plan.downloadUrl)?.startsWith('file://') && (
+                      <a
+                        href={plan.pdfUrl || plan.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 text-slate-400 hover:text-[#3B82C4] hover:bg-white rounded-lg transition-colors flex items-center space-x-1 text-xs"
+                        title="Vektorisiertes PDF ansehen"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-bold">PDF</span>
+                      </a>
+                    )}
+                    {(plan.dwgUrl || plan.downloadUrl) && !(plan.dwgUrl || plan.downloadUrl)?.startsWith('file://') && (
+                      <a
+                        href={plan.dwgUrl || plan.downloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 text-slate-400 hover:text-[#3B82C4] hover:bg-white rounded-lg transition-colors flex items-center space-x-1 text-xs"
+                        title="Original-DWG herunterladen"
+                        download
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-bold">DWG</span>
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePlan(plan.id, plan.fileName)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg transition-colors"
+                      title="Plan entfernen"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Project Room Progress & Status Pie Chart Card (0% Rot -> 100% Grün) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
@@ -328,9 +556,47 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         </div>
       </div>
 
+      {/* Floor / Level Filter Bar */}
+      {availableFloors.length > 1 && (
+        <div className="flex items-center space-x-2 overflow-x-auto pb-1 text-xs">
+          <span className="font-bold text-slate-500 flex items-center space-x-1 shrink-0">
+            <Filter className="w-3.5 h-3.5" />
+            <span>Etage / Ebene filtern:</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedLevelFilter('all')}
+            className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+              selectedLevelFilter === 'all'
+                ? 'bg-[#3B82C4] text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            Alle ({rooms.length})
+          </button>
+          {availableFloors.map(floor => {
+            const count = rooms.filter(r => r.floor === floor).length;
+            return (
+              <button
+                key={floor}
+                type="button"
+                onClick={() => setSelectedLevelFilter(floor)}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all shrink-0 ${
+                  selectedLevelFilter === floor
+                    ? 'bg-[#3B82C4] text-white shadow-xs'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {floor} ({count})
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Room Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {rooms.map((room) => {
+        {filteredRooms.map((room) => {
           const isExpanded = expandedRoomId === room.id;
           const materialCount = room.materials?.length || 0;
           const isDwg = room.source === 'dwg';
@@ -851,6 +1117,90 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal: Weiteren Plan hochladen */}
+      {isAddPlanOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-800">
+                  Ausführungsplan hochladen
+                </h3>
+                <p className="text-xs text-slate-500">
+                  .DWG, .DXF oder .PDF zu diesem Bauvorhaben hinzufügen
+                </p>
+              </div>
+              <button onClick={() => { setIsAddPlanOpen(false); setNewPlanFile(null); }} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Plandatei auswählen:
+                </label>
+                <input
+                  type="file"
+                  accept=".dwg,.dxf,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setNewPlanFile(file);
+                      setNewPlanLevel(detectLevelFromFilename(file.name));
+                    }
+                  }}
+                  className="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-blue-50 file:text-[#3B82C4] hover:file:bg-blue-100 cursor-pointer"
+                />
+              </div>
+
+              {newPlanFile && (
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Ebene / Typ des Plans:
+                  </label>
+                  <select
+                    value={newPlanLevel}
+                    onChange={(e) => setNewPlanLevel(e.target.value as PlanLevel)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  >
+                    <option value="UG">UG (Untergeschoss)</option>
+                    <option value="EG">EG (Erdgeschoss)</option>
+                    <option value="OG">OG (Obergeschoss)</option>
+                    <option value="DG">DG (Dachgeschoss)</option>
+                    <option value="Strangschema">Strangschema / Isometrie</option>
+                    <option value="Sonstiges">Sonstiges</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => { setIsAddPlanOpen(false); setNewPlanFile(null); }}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleUploadAdditionalPlan}
+                disabled={!newPlanFile || isUploadingPlan}
+                className="bg-[#3B82C4] hover:bg-[#2B6EB0] disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs font-semibold shadow-md flex items-center space-x-1.5"
+              >
+                {isUploadingPlan ? (
+                  <span>Lade hoch & verarbeite...</span>
+                ) : (
+                  <>
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Plan speichern</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

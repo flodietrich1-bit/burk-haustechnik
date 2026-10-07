@@ -1,30 +1,171 @@
 import * as XLSX from 'xlsx';
-import type { Position, Booking, Room, AufmassDocument } from '../types';
+import type { Position, Booking, Room, AufmassDocument, Alert, Addendum } from '../types';
 import { getMaterialActualQty } from './firestoreService';
 
+/**
+ * Vollständige reale Baustellenbilanz als Excel-Export:
+ * - Spalte 1: Plan-Soll (GAEB LV-Menge)
+ * - Spalte 2: Geliefert (Lieferschein)
+ * - Spalte 3: Tatsächlich verbaut (Baustelle - Ist)
+ * - Spalte 4: Delta Verbau (Soll vs. Ist) mit farbiger/textueller Kennzeichnung bei Überschreitung
+ * - Spalte 5: Restbedarf offene Räume
+ * - Spalte 6: Nachträge & Zusatzpositionen inkl. protokollierter Monteur-Begründung
+ */
 export function exportMaterialReportToExcel(
   projectName: string,
   positions: Position[],
   bookings: Booking[],
-  rooms: Room[]
+  rooms: Room[],
+  alerts: Alert[] = [],
+  addendums: Addendum[] = []
 ) {
   const roomMap = new Map(rooms.map(r => [r.id, r.name]));
 
-  // Sheet 1: Material Overview
-  const matData = positions.map(p => {
-    const percent = p.qty > 0 ? Math.round((p.deliveredQty / p.qty) * 100) : 0;
+  // Index alerts and addendums for instant lookup
+  const alertMap = new Map<string, Alert>();
+  alerts.forEach(a => {
+    if (a.materialPos) alertMap.set(a.materialPos, a);
+    if (a.materialId) alertMap.set(a.materialId, a);
+  });
+
+  // Calculate project-wide actuals, remaining requirements, and deviations
+  const matData: any[] = positions.map(p => {
+    // Spalte 1: Plan-Soll (GAEB LV-Menge)
+    const planSoll = Number(p.qty) || 0;
+
+    // Spalte 2: Geliefert (Lieferschein)
+    const delivered = Number(p.deliveredQty !== undefined && p.deliveredQty !== null ? p.deliveredQty : p.qty) || 0;
+
+    // Spalte 3: Tatsächlich verbaut (Baustelle - Ist) across all rooms + direct bookings
+    let roomInstalled = 0;
+    let remainingNeeded = 0;
+    let hasRoomMatches = false;
+    let allRoomsCompleted = true;
+
+    rooms.forEach(r => {
+      const isUnlocked = r.isCompleted === false || r.status === 'in_progress';
+      const isDone = !isUnlocked && (r.status === 'completed' || r.isCompleted === true || ((r as any).pct === 100));
+
+      (r.materials || []).forEach(m => {
+        const isMatch = 
+          (m.positionId && m.positionId === p.id) ||
+          (m.posNr && m.posNr === p.posNr) ||
+          (m.shortText && p.shortText && m.shortText.trim().toLowerCase() === p.shortText.trim().toLowerCase());
+
+        if (isMatch) {
+          hasRoomMatches = true;
+          if (!isDone) allRoomsCompleted = false;
+          const pl = Number(m.plannedQty) || 0;
+          const act = getMaterialActualQty(m, r, bookings);
+          roomInstalled += act;
+          if (!isDone && pl > act) {
+            remainingNeeded += (pl - act);
+          }
+        }
+      });
+    });
+
+    let standaloneBookings = 0;
+    const relatedNotes: string[] = [];
+    bookings.forEach(b => {
+      const bPosId = b.positionId || (b as any).itemId;
+      const bPosNr = b.positionNr || (b as any).itemOz;
+      if (bPosId === p.id || (bPosNr && bPosNr === p.posNr)) {
+        if (!hasRoomMatches) standaloneBookings += Number(b.quantity) || 0;
+        if (b.note && b.note.trim()) {
+          relatedNotes.push(`${b.createdBy || 'Monteur'}: "${b.note.trim()}"`);
+        }
+      }
+    });
+
+    const totalInstalled = hasRoomMatches ? roomInstalled : Math.max(Number(p.installedQty) || 0, standaloneBookings);
+
+    // Spalte 4: Delta Verbau (Soll vs. Ist)
+    const rawDiff = totalInstalled - planSoll;
+    let deltaVerbau = `0 ${p.qu} (Punktgenau)`;
+    let statusBewertung = 'Punktgenau im Plan';
+    if (rawDiff > 0) {
+      deltaVerbau = `+${rawDiff} ${p.qu} [ÜBERSCHREITUNG / MEHRBEDARF]`;
+      statusBewertung = 'ROT (Überschreitung / Mehrkosten)';
+    } else if (rawDiff < 0) {
+      if (allRoomsCompleted && hasRoomMatches) {
+        deltaVerbau = `-${Math.abs(rawDiff)} ${p.qu} [MINDERVERBRAUCH]`;
+        statusBewertung = 'GRÜN (Minderverbrauch / Ersparnis)';
+      } else {
+        deltaVerbau = `Offen: ${Math.abs(rawDiff)} ${p.qu} [In Montage]`;
+        statusBewertung = 'GELB (In Ausführung)';
+      }
+    }
+
+    // Spalte 5: Restbedarf offene Räume
+    const restbedarf = hasRoomMatches 
+      ? (remainingNeeded > 0 ? `${remainingNeeded} ${p.qu}` : `0 ${p.qu} (Abgeschlossen)`)
+      : (Math.max(0, planSoll - totalInstalled) > 0 ? `${Math.max(0, planSoll - totalInstalled)} ${p.qu}` : `0 ${p.qu}`);
+
+    // Spalte 6: Nachträge & Zusatzpositionen inkl. protokollierter Monteur-Begründung
+    const alert = alertMap.get(p.posNr) || alertMap.get(p.id);
+    const relatedAddendums = addendums.filter(a => a.itemOz === p.posNr || a.materialId === p.id);
+    
+    let begruendung = '';
+    if (alert && alert.reason) {
+      begruendung += `[Meldung: ${alert.monteurName}] ${alert.reason}; `;
+    }
+    if (relatedAddendums.length > 0) {
+      relatedAddendums.forEach(a => {
+        begruendung += `[Nachtrag: ${a.title} (${a.quantity})] ${a.note || ''}; `;
+      });
+    }
+    if (relatedNotes.length > 0 && !begruendung) {
+      begruendung = relatedNotes.slice(0, 2).join(' | ');
+    }
+    if (!begruendung) {
+      begruendung = rawDiff > 0 ? 'Vor-Ort-Mehrverbrauch (keine Freitextbegründung)' : '-';
+    }
+
+    const unitPrice = p.unitPrice || 0;
+    const verbautWert = totalInstalled * unitPrice;
+
     return {
       'Pos-Nr': p.posNr,
-      'Kategorie / Gewerk': p.group,
-      'Bezeichnung': p.shortText,
-      'Soll-Menge': p.qty,
-      'Ist-Geliefert': p.deliveredQty,
+      'Kategorie / Gewerk': p.group || 'Allgemein',
+      'Materialbezeichnung': p.shortText,
+      'Plan-Soll (GAEB LV-Menge)': planSoll,
+      'Geliefert (Lieferschein)': delivered,
+      'Tatsächlich verbaut (Baustelle - Ist)': totalInstalled,
       'Einheit': p.qu,
-      'Fortschritt (%)': `${percent}%`,
-      'Einzelpreis (€)': p.unitPrice ? p.unitPrice.toFixed(2) : '-',
-      'Gesamtwert (€)': p.unitPrice ? (p.deliveredQty * p.unitPrice).toFixed(2) : '-',
-      'Status': p.deliveredQty >= p.qty ? 'Vollständig' : p.deliveredQty > 0 ? 'Teilgeliefert' : 'Offen'
+      'Delta Verbau (Soll vs. Ist)': deltaVerbau,
+      'Restbedarf offene Räume': restbedarf,
+      'Status / VOB-Bewertung': statusBewertung,
+      'Nachträge & Zusatzpositionen (Monteur-Begründung)': begruendung,
+      'Einzelpreis (€)': unitPrice ? unitPrice.toFixed(2) : '0.00',
+      'Abrechnungswert Ist (€)': verbautWert ? verbautWert.toFixed(2) : '0.00'
     };
+  });
+
+  // Append any Extra/Unplanned Addendums that are not part of regular LV positions
+  const knownPosNrs = new Set(positions.map(p => p.posNr));
+  const knownPosIds = new Set(positions.map(p => p.id));
+
+  addendums.forEach(a => {
+    const isKnown = (a.itemOz && knownPosNrs.has(a.itemOz)) || (a.materialId && knownPosIds.has(a.materialId));
+    if (!isKnown && a.type === 'material') {
+      const qtyNum = typeof a.quantity === 'number' ? a.quantity : parseFloat(String(a.quantity).replace(',', '.')) || 1;
+      matData.push({
+        'Pos-Nr': a.itemOz || 'NACHTRAG',
+        'Kategorie / Gewerk': 'Zusatz / Nachtrag',
+        'Materialbezeichnung': `[ZUSATZPOSITION] ${a.title}`,
+        'Plan-Soll (GAEB LV-Menge)': 0,
+        'Geliefert (Lieferschein)': 0,
+        'Tatsächlich verbaut (Baustelle - Ist)': qtyNum,
+        'Einheit': a.qu || 'Stk',
+        'Delta Verbau (Soll vs. Ist)': `+${qtyNum} [ZUSATZBEDARF]`,
+        'Restbedarf offene Räume': '0',
+        'Status / VOB-Bewertung': 'ROT (Außerplanmäßiger Nachtrag)',
+        'Nachträge & Zusatzpositionen (Monteur-Begründung)': `[Nachtrag: ${a.requestedBy || 'Monteur'}] ${a.note || a.description || 'Außerplanmäßig verbaut'}`,
+        'Einzelpreis (€)': '0.00',
+        'Abrechnungswert Ist (€)': '0.00'
+      });
+    }
   });
 
   const wsMat = XLSX.utils.json_to_sheet(matData);
@@ -35,22 +176,38 @@ export function exportMaterialReportToExcel(
     'KW': b.calendarWeek || '-',
     'Monteur': b.createdBy,
     'Raum': roomMap.get(b.roomId) || b.roomId,
-    'Pos-Nr': b.positionNr || '-',
-    'Material': b.positionName || '-',
-    'Gelieferte Menge': b.quantity,
+    'Pos-Nr': b.positionNr || (b as any).itemOz || '-',
+    'Material': b.positionName || (b as any).itemText || '-',
+    'Verbaut / Geliefert': b.quantity,
     'Einheit': b.qu || '-',
-    'Bemerkung': b.note || '-'
+    'Monteur-Hinweis': b.note || '-'
   }));
-
   const wsBook = XLSX.utils.json_to_sheet(bookData);
+
+  // Sheet 3: Nachtrags-Protokoll
+  const addendumData = addendums.map(a => ({
+    'ID': a.id,
+    'Art': a.type === 'stunden' ? 'Arbeitszeit / Regie' : 'Material-Nachtrag',
+    'Titel': a.title,
+    'Menge': a.quantity,
+    'Raum': a.roomName || roomMap.get(a.roomId) || 'Baustelle allgemein',
+    'Erfasst von': a.requestedBy,
+    'Status': a.status === 'approved' ? 'Freigegeben' : a.status === 'rejected' ? 'Abgelehnt' : 'Offen / In Prüfung',
+    'Begründung': a.note || a.description || '-',
+    'Datum': a.createdAt ? new Date(a.createdAt).toLocaleString('de-DE') : '-'
+  }));
+  const wsAddendums = XLSX.utils.json_to_sheet(addendumData);
 
   // Create workbook
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, wsMat, 'Materialbilanz');
+  XLSX.utils.book_append_sheet(wb, wsMat, 'Baustellenbilanz');
   XLSX.utils.book_append_sheet(wb, wsBook, 'Monteursbuchungen');
+  if (addendums.length > 0) {
+    XLSX.utils.book_append_sheet(wb, wsAddendums, 'Nachtragsprotokoll');
+  }
 
   // Trigger download
-  const filename = `ToolTime_Materialbilanz_${projectName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const filename = `ToolTime_Baustellenbilanz_${projectName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
@@ -85,25 +242,30 @@ export function exportRoomVobAufmassToExcel(
     let deltaDisplay = '0 ' + (mat.qu || 'Stk');
     if (isOver) {
       vobStatus = `Mehrverbrauch (+${excessQty} ${mat.qu} Sonderposten/Mehraufwand)`;
-      deltaDisplay = `+${excessQty} ${mat.qu}`;
+      deltaDisplay = `+${excessQty} ${mat.qu} [ÜBERSCHREITUNG]`;
     } else if (isUnder) {
       if (isCompleted) {
         vobStatus = `Minderverbrauch (-${underQty} ${mat.qu} Ersparnis/Retoure)`;
-        deltaDisplay = `-${underQty} ${mat.qu}`;
+        deltaDisplay = `-${underQty} ${mat.qu} [MINDERVERBRAUCH]`;
       } else {
         vobStatus = `In Montage (Offen: ${underQty} ${mat.qu})`;
-        deltaDisplay = `Offen: ${underQty} ${mat.qu}`;
+        deltaDisplay = `Offen: ${underQty} ${mat.qu} [In Ausführung]`;
       }
     }
+
+    const deliveredQty = pos?.deliveredQty !== undefined ? pos.deliveredQty : planned;
+    const restbedarf = !isCompleted && planned > actual ? `${planned - actual} ${mat.qu || 'Stk'}` : '0';
 
     return {
       'Pos-Nr': mat.posNr || pos?.posNr || '-',
       'Gewerk / Kategorie': mat.group || pos?.group || '-',
       'Materialbezeichnung': mat.shortText || pos?.shortText || '-',
-      'Soll-Menge (Plan)': planned,
-      'Ist-Menge (Verbaut)': actual,
+      'Plan-Soll (GAEB LV-Menge)': planned,
+      'Geliefert (Lieferschein)': deliveredQty,
+      'Tatsächlich verbaut (Baustelle - Ist)': actual,
       'Einheit': mat.qu || pos?.qu || 'Stk',
-      'Mengen-Delta': deltaDisplay,
+      'Delta Verbau (Soll vs. Ist)': deltaDisplay,
+      'Restbedarf': restbedarf,
       'Einheitspreis (€)': unitPrice ? unitPrice.toFixed(2) : '0.00',
       'Abrechnungswert (€)': actualTotal ? actualTotal.toFixed(2) : '0.00',
       'Kosten-Delta (€)': costDelta !== 0 ? (costDelta > 0 ? `+${costDelta.toFixed(2)}` : costDelta.toFixed(2)) : '0.00',

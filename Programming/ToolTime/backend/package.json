@@ -3,15 +3,22 @@
   "version": "1.0.0",
   "type": "module",
   "description": "",
-  "main": "firebaseConfig.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test_converter.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.6",
+    "dxf-parser": "^1.1.2",
+    "express": "^5.2.1",
     "fast-xml-parser": "^5.11.1",
-    "firebase": "^12.19.0"
+    "firebase": "^12.19.0",
+    "multer": "^2.4.0",
+    "pdfkit": "^0.20.2"
   }
 }
