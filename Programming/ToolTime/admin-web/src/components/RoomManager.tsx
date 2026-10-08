@@ -686,14 +686,16 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                         <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-tight">
                           {room.name}
                         </h3>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenPlanForRoom(room)}
-                          className="p-1 text-slate-400 hover:text-[#3B82C4] hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-                          title={`CAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
-                        >
-                          <Map className="w-3.5 h-3.5" />
-                        </button>
+                        {plans.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenPlanForRoom(room)}
+                            className="p-1 text-slate-400 hover:text-[#3B82C4] hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                            title={`AutoCAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
+                          >
+                            <Map className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         {isCompleted ? (
                           <div className="flex items-center space-x-1.5 shrink-0">
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center space-x-1">
@@ -863,21 +865,23 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                   </button>
                 )}
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPlanForRoom(room)}
-                    className="flex items-center justify-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-[#3B82C4] border border-blue-200/80 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-                    title={`CAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
-                  >
-                    <Map className="w-3.5 h-3.5 text-[#3B82C4]" />
-                    <span>Plan ansehen</span>
-                  </button>
+                <div className={plans.length > 0 ? "grid grid-cols-2 gap-2" : "w-full"}>
+                  {plans.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPlanForRoom(room)}
+                      className="flex items-center justify-center space-x-1.5 bg-blue-50 hover:bg-blue-100 text-[#3B82C4] border border-blue-200/80 py-2 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                      title={`AutoCAD-Plan für ${room.name} (${room.floor || 'EG'}) anzeigen`}
+                    >
+                      <Map className="w-3.5 h-3.5 text-[#3B82C4]" />
+                      <span>Plan ansehen</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     onClick={() => setSelectedRoomIdForDetail(room.id)}
-                    className="flex items-center justify-center space-x-1.5 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                    className="w-full flex items-center justify-center space-x-1.5 bg-[#1C2A3B] hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                     title="Mengen-Delta & VOB-Aufmaß ansehen"
                   >
                     <BarChart2 className="w-3.5 h-3.5 text-[#3B82C4]" />

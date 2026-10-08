@@ -63,7 +63,9 @@ export interface PlanDocument {
   id: string;
   projectId?: string;
   name: string;                    // z. B. "Montageplan UG Modell 1"
+  title?: string;
   fileName: string;
+  sourceFileName?: string;
   floor: PlanLevel;                // 'UG' | 'EG' | 'OG' | 'DG' | 'Strangschema' | 'Sonstiges'
   level?: PlanLevel;               // Backwards compatibility alias
   dwgUrl: string;
