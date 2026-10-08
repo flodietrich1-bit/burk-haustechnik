@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'addendums' as TabType,
-      label: 'Nachtrag',
+      label: 'Nachträge',
       icon: AlertCircle,
       badge: openAddendumsCount > 0 ? String(openAddendumsCount) : undefined,
       badgeColor: 'bg-amber-500 text-white'
