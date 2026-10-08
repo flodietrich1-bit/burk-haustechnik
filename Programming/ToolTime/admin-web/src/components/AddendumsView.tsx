@@ -359,13 +359,13 @@ Bauleitung Burk Haustechnik`;
 
   // Classify each addendum into 1 of the 3 requested categories:
   // 1. time: 'stunden' | 'zeit' | 'regie'
-  // 2. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Planabweichung in note/title/reason
-  // 3. material: 'material' (Mehr Material angefragt)
+  // 2. material: 'material' | 'gaeb_vs_dwg' (Mehr Material angefragt / Mehrbedarf)
+  // 3. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Anderes Material verbaut
   const getItemCategory = (item: Addendum): 'time' | 'material' | 'unclear' => {
     const t = (item.type || '').toLowerCase();
     const note = (item.note || '').toLowerCase();
     const title = (item.title || '').toLowerCase();
-    const reason = ((item as any).reason || '').toLowerCase();
+    const reason = ((item as any).reason || item.description || '').toLowerCase();
     const itemOz = (item.itemOz || '').toUpperCase();
 
     // 1. Time / Regie
@@ -373,38 +373,35 @@ Bauleitung Burk Haustechnik`;
       return 'time';
     }
 
-    // Explicit overrides
-    if (item.isUnclear === true || t === 'unklar' || t === 'ausserplanmaessig' || t === 'außerplanmäßig' || t === 'abweichung' || t === 'planabweichung' || t === 'anders') {
+    // Explicit Material / GAEB vs DWG Nachtrag -> MUST be in 'material' (Mehr Material angefragt)
+    if (item.deviationSource === 'gaeb_vs_dwg' || t === 'material') {
+      return 'material';
+    }
+
+    // Explicit overrides for unclear
+    if (item.isUnclear === true || t === 'unklar' || t === 'ausserplanmaessig' || t === 'außerplanmäßig' || t === 'anders') {
       return 'unclear';
     }
 
-    // 2. Anderes Material verbaut (Unklar, außerplanmäßig, Planabweichung, Zusatz etc.)
+    // 2. Anderes Material verbaut (Unklar, außerplanmäßig, nicht im Plan, anders verbaut)
     if (
       t === 'unplanned' ||
       itemOz === 'UNKLAR' ||
       itemOz === 'ZUSATZ' ||
-      note.includes('planabweichung') ||
-      note.includes('außerplanmäßig') ||
-      note.includes('ausserplanmäßig') ||
       note.includes('nicht im raumplan') ||
       note.includes('nicht im plan') ||
       note.includes('anders verbaut') ||
       note.includes('anderes material') ||
-      reason.includes('planabweichung') ||
-      reason.includes('außerplanmäßig') ||
-      reason.includes('ausserplanmäßig') ||
       reason.includes('nicht im raumplan') ||
-      reason.includes('abweichung') ||
-      title.includes('außerplanmäßig') ||
-      title.includes('ausserplanmäßig') ||
-      title.includes('planabweichung') ||
+      reason.includes('anders verbaut') ||
+      reason.includes('anderes material') ||
       title.includes('anderes material') ||
       title.includes('anders verbaut')
     ) {
       return 'unclear';
     }
 
-    // 3. Mehr Material angefragt
+    // 3. Mehr Material angefragt (Default für alle Material-Nachträge & Mehrbedarfe)
     return 'material';
   };
 
@@ -579,13 +576,26 @@ Bauleitung Burk Haustechnik`;
           </div>
         </div>
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] self-start md:self-auto"
-        >
-          <Plus className="w-4 h-4" />
-          <span>+ Mehrbedarf erfassen</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
+          {unrequestedMaterialItems.length > 0 && (
+            <button
+              onClick={handleOpenBatchRequestModal}
+              className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              title={`${unrequestedMaterialItems.length} offene Material-Nachträge gesammelt per E-Mail an ${managerFirstName} anfragen`}
+            >
+              <Mail className="w-4 h-4" />
+              <span>Material anfragen ({unrequestedMaterialItems.length})</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Mehrbedarf erfassen</span>
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards: The 3 Core Categories */}
@@ -921,13 +931,15 @@ Bauleitung Burk Haustechnik`;
                     </div>
                   )}
 
-                  {/* Monteur Note / Begründung */}
-                  {item.note && (
+                  {/* Begründung / Notiz / Raumverteilung */}
+                  {(item.description || item.note) && (
                     <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-xs text-slate-700 space-y-1">
                       <span className="font-bold text-[10px] text-slate-400 uppercase tracking-wider block">
-                        Begründung / Notiz vom Monteur:
+                        {item.deviationSource === 'gaeb_vs_dwg'
+                          ? 'Begründung & Raumverteilung (Bauleitung / GAEB vs. DWG):'
+                          : 'Begründung / Notiz:'}
                       </span>
-                      <p className="leading-relaxed italic">„{item.note}“</p>
+                      <p className="leading-relaxed italic whitespace-pre-wrap">„{item.description || item.note}“</p>
                     </div>
                   )}
 
