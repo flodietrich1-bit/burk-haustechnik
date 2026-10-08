@@ -322,12 +322,12 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
           </div>
 
           <div className="flex items-center space-x-2.5">
-            {onNavigateToAddendums && createdAddendums.size > 0 && (
+            {onNavigateToAddendums && (createdAddendums.size > 0 || (addendums && addendums.some(a => a.deviationSource === 'gaeb_vs_dwg'))) && (
               <button
                 onClick={onNavigateToAddendums}
                 className="inline-flex items-center space-x-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-xs"
               >
-                <span>Zu Nachträgen ({createdAddendums.size})</span>
+                <span>Zu Nachträgen ({addendums?.filter(a => a.deviationSource === 'gaeb_vs_dwg').length || createdAddendums.size})</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}

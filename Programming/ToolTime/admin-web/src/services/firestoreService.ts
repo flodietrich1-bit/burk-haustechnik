@@ -16,6 +16,28 @@ const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
 const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 const LOCAL_STORAGE_PLANS_PREFIX = 'burk_tooltime_plans_';
+const LOCAL_STORAGE_ADDENDUMS_PREFIX = 'burk_tooltime_addendums_';
+
+export function getLocalAddendums(projectId: string): Addendum[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('LocalStorage error reading addendums:', e);
+  }
+  return [];
+}
+
+export function saveLocalAddendums(projectId: string, list: Addendum[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId, JSON.stringify(list));
+  } catch (e) {
+    console.warn('LocalStorage error saving addendums:', e);
+  }
+}
 
 const LOCAL_STORAGE_DELETED_PROJECTS_KEY = 'burk_tooltime_deleted_project_ids';
 
@@ -444,11 +466,35 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
     return () => {};
   }
 
+  // Immediately emit cached local addendums for instant UI rendering
+  const initialLocal = getLocalAddendums(projectId);
+  if (initialLocal.length > 0) {
+    callback(initialLocal);
+  }
+
+  // Listen to local update events (e.g. from createAddendum or batchUpdateAddendumsRequested)
+  const localUpdateHandler = () => {
+    const fresh = getLocalAddendums(projectId);
+    callback(fresh);
+  };
+  if (typeof window !== 'undefined') {
+    window.addEventListener('burk_tooltime_addendums_updated', localUpdateHandler);
+  }
+
   let globalList: Addendum[] = [];
   let projectList: Addendum[] = [];
 
   const emitMerged = () => {
     const map = new Map<string, Addendum>();
+
+    // 1. Seed from local storage
+    getLocalAddendums(projectId).forEach(a => {
+      if (a.projectId === projectId || !a.projectId) {
+        map.set(a.id, a);
+      }
+    });
+
+    // 2. Merge with Firestore collections
     globalList.forEach(a => {
       if (a.projectId === projectId || !a.projectId) {
         map.set(a.id, a);
@@ -465,6 +511,7 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
       status: (item.status && (item.status as string) !== 'synced') ? item.status : 'pending',
     }));
 
+    saveLocalAddendums(projectId, normalized);
     callback(normalized);
   };
 
@@ -495,6 +542,9 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
   });
 
   return () => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('burk_tooltime_addendums_updated', localUpdateHandler);
+    }
     unsubGlobal();
     unsubProject();
   };
@@ -509,6 +559,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+  localStorage.removeItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
   localStorage.removeItem('burk_tooltime_aufmasse_' + projectId);
 
   const activeSavedId = localStorage.getItem('burk_tooltime_active_project_id');
@@ -994,10 +1045,10 @@ export async function deleteRoom(projectId: string, roomId: string) {
   }
 }
 
-export async function createAddendum(projectId: string, addendumData: Partial<Addendum>): Promise<void> {
+export async function createAddendum(projectId: string, addendumData: Partial<Addendum>): Promise<Addendum> {
   const addId = addendumData.id || `add_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const now = new Date().toISOString();
-  const payload: Addendum = {
+  const rawPayload = {
     id: addId,
     projectId,
     roomId: addendumData.roomId || 'allgemein',
@@ -1005,27 +1056,47 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
     type: addendumData.type || 'material',
     title: addendumData.title || 'Mehrbedarf',
     description: addendumData.description || '',
-    quantity: addendumData.quantity || '1',
+    quantity: addendumData.quantity !== undefined ? addendumData.quantity : '1',
     qu: addendumData.qu || 'Stk',
-    requestedBy: addendumData.requestedBy || 'Projektleiter',
+    requestedBy: addendumData.requestedBy || 'Bauleiter',
     status: (addendumData.status as any) || 'pending',
     note: addendumData.note || '',
     signature: addendumData.signature || null,
-    signatureUrl: addendumData.signatureUrl || undefined,
+    signatureUrl: addendumData.signatureUrl,
     photoUrls: addendumData.photoUrls || [],
     createdAt: addendumData.createdAt || now,
-    itemOz: addendumData.itemOz,
-    materialId: addendumData.materialId,
-    isOrdered: addendumData.isOrdered,
-    isUnclear: addendumData.isUnclear,
+    itemOz: addendumData.itemOz || '',
+    materialId: addendumData.materialId || '',
+    isOrdered: addendumData.isOrdered || false,
+    isUnclear: addendumData.isUnclear || false,
+    createdByRole: addendumData.createdByRole || 'bauleiter',
+    deviationSource: addendumData.deviationSource || 'manual',
+    unitPrice: addendumData.unitPrice || 0,
+    totalPrice: addendumData.totalPrice || 0,
   };
 
+  const payload: Addendum = cleanForFirestore(rawPayload as Addendum);
+
+  // 1. Immediately persist to localStorage for instant UI feedback
+  if (projectId) {
+    const currentLocal = getLocalAddendums(projectId);
+    const updatedLocal = [payload, ...currentLocal.filter(a => a.id !== addId)];
+    saveLocalAddendums(projectId, updatedLocal);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId, addendum: payload } }));
+    }
+  }
+
+  // 2. Persist to Firestore
   try {
     await setDoc(doc(db, 'projects', projectId, 'addendums', addId), payload, { merge: true });
     await setDoc(doc(db, 'addendums', addId), payload, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAddendum error:', err.message);
   }
+
+  return payload;
 }
 
 export async function updateAddendumStatus(
@@ -1034,11 +1105,21 @@ export async function updateAddendumStatus(
   projectId?: string,
   extraData?: Partial<Addendum>
 ): Promise<void> {
-  const payload = {
+  const payload = cleanForFirestore({
     status,
     updatedAt: new Date().toISOString(),
     ...(extraData || {}),
-  };
+  });
+
+  if (projectId) {
+    const current = getLocalAddendums(projectId);
+    const updated = current.map(a => a.id === addendumId ? { ...a, ...payload } : a);
+    saveLocalAddendums(projectId, updated);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId } }));
+    }
+  }
 
   try {
     const ref = doc(db, 'addendums', addendumId);
@@ -1063,15 +1144,27 @@ export async function batchUpdateAddendumsRequested(
   requestedTo: string
 ): Promise<void> {
   const now = new Date().toISOString();
-  const batch = writeBatch(db);
+  const idSet = new Set(addendumIds);
 
+  // Update localStorage immediately
+  if (projectId) {
+    const current = getLocalAddendums(projectId);
+    const updated = current.map(a => idSet.has(a.id) ? { ...a, status: 'requested' as const, requestedAt: now, requestedTo, updatedAt: now } : a);
+    saveLocalAddendums(projectId, updated);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId } }));
+    }
+  }
+
+  const batch = writeBatch(db);
   for (const id of addendumIds) {
-    const payload = {
+    const payload = cleanForFirestore({
       status: 'requested' as const,
       requestedAt: now,
       requestedTo,
       updatedAt: now
-    };
+    });
     if (projectId) {
       batch.set(doc(db, 'projects', projectId, 'addendums', id), payload, { merge: true });
     }
