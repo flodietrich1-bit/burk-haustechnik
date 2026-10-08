@@ -46,15 +46,24 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
   // Calculate project-wide metrics for an alert's position
   const getMetricsForAlert = (alert: Alert) => {
     const pos = posMap.get(alert.materialPos);
-    const deliveredQty = pos?.deliveredQty || 0;
-    const totalQty = pos?.qty || 0;
+    let totalPlannedAcrossRooms = 0;
+    rooms.forEach(r => {
+      (r.materials || []).forEach(m => {
+        if (m.posNr === alert.materialPos || (pos && m.positionId === pos.id)) {
+          totalPlannedAcrossRooms += Number(m.plannedQty) || 0;
+        }
+      });
+    });
+
+    const totalQty = totalPlannedAcrossRooms > 0 ? totalPlannedAcrossRooms : (Number(pos?.qty) || 0);
+    const deliveredQty = Math.max(Number(pos?.deliveredQty || 0), totalQty);
 
     // Remaining needed across all unfinished rooms
     const openRooms = rooms.filter(r => r.status !== 'completed');
     let remainingNeeded = 0;
     for (const r of openRooms) {
       for (const m of r.materials || []) {
-        if (m.posNr === alert.materialPos) {
+        if (m.posNr === alert.materialPos || (pos && m.positionId === pos.id)) {
           const actual = m.actualQty ?? 0;
           const planned = m.plannedQty ?? 0;
           if (planned > actual) {

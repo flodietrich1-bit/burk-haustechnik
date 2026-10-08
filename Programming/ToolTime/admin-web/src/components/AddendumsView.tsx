@@ -181,13 +181,9 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
 
     const qu = item.qu || p?.qu || 'Stk';
 
-    // 1. Initial stock / delivered
-    const initialDelivered = p && p.deliveredQty !== undefined
-      ? Number(p.deliveredQty)
-      : (Number(p?.qty) || 0);
-
-    // 2. Already installed in all rooms
+    // 1. Calculate installed & planned across rooms
     let projectInstalledTotal = 0;
+    let totalPlannedAcrossRooms = 0;
     rooms.forEach(r => {
       (r.materials || []).forEach(m => {
         if (
@@ -196,9 +192,16 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
           (item.itemOz && m.posNr === item.itemOz)
         ) {
           projectInstalledTotal += getMaterialActualQty(m, r, bookings);
+          totalPlannedAcrossRooms += Number(m.plannedQty) || 0;
         }
       });
     });
+
+    const plannedTotal = totalPlannedAcrossRooms > 0 ? totalPlannedAcrossRooms : (Number(p?.qty) || 0);
+    const initialDelivered = Math.max(
+      p && p.deliveredQty !== undefined ? Number(p.deliveredQty) : 0,
+      plannedTotal
+    );
 
     // 3. Still needed in unfinished rooms
     let projectNeeded = 0;

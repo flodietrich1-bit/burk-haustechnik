@@ -83,8 +83,13 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       }
 
       const installed = hasRoomMatches ? roomInstalled : Math.max(Number(pos.installedQty) || 0, standaloneBookingQty);
-      const planned = Number(pos.qty) || totalPlannedInRooms;
+      const planned = (hasRoomMatches && totalPlannedInRooms > 0) ? totalPlannedInRooms : (Number(pos.qty) || 0);
       const rest = hasRoomMatches ? remainingNeeded : Math.max(0, planned - installed);
+      
+      // Baustellenbestand / Vorrätig:
+      // Geplante/gelieferte Stückzahl abzüglich bisher im Projekt verbauter Teile
+      const initialStock = Math.max(Number(pos.deliveredQty || 0), planned);
+      const stock = Math.max(0, initialStock - installed);
       
       // Echte netto Abweichung:
       // Nur Mehrverbrauch (sofort) und Minderverbrauch (nur bei fertigen Räumen)
@@ -134,6 +139,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
         installed,
         delta,
         rest,
+        stock,
         deviationType,
         percent,
         isCompleted,
@@ -319,9 +325,10 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
                 <th className="py-3 px-4 w-20">Pos-Nr</th>
                 <th className="py-3 px-4">Gewerk / Beschreibung</th>
                 <th className="py-3 px-4 w-24 text-right">Geplant</th>
-                <th className="py-3 px-4 w-28 text-center">Abweichung</th>
+                <th className="py-3 px-4 w-32 text-center">Abweichung bisher</th>
                 <th className="py-3 px-4 w-28 text-right">Gesamt Verbaut</th>
                 <th className="py-3 px-4 w-24 text-right">Noch offen</th>
+                <th className="py-3 px-4 w-24 text-right">Vorrätig</th>
                 <th className="py-3 px-4 w-36">Fortschritt</th>
                 <th className="py-3 px-4 w-24 text-right">Einzelpreis</th>
                 <th className="py-3 px-4 w-28 text-center">Status</th>
@@ -330,7 +337,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredPositions.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-slate-400">
+                  <td colSpan={10} className="py-8 text-center text-slate-400">
                     Keine LV-Positionen für diesen Filter gefunden.
                   </td>
                 </tr>
@@ -381,6 +388,17 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
                       </td>
                       <td className="py-3 px-4 text-right font-semibold text-slate-600">
                         {m.rest > 0 ? `${m.rest} ${pos.qu}` : <span className="text-slate-400">–</span>}
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold">
+                        {m.stock < m.rest ? (
+                          <span className="text-amber-600" title="Vorrätiger Bestand reicht nicht für Restbedarf">
+                            {m.stock} {pos.qu}
+                          </span>
+                        ) : (
+                          <span className="text-slate-700">
+                            {m.stock} {pos.qu}
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="space-y-1">
