@@ -10,7 +10,6 @@ import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import ProgressRing from '../components/ProgressRing';
-import PlanViewerModal from '../components/PlanViewerModal';
 import { computeRoomPercentage, getRoomFloor } from '../services/storageService';
 
 const FLOOR_PILLS = ['Alle', 'UG', 'EG', 'OG', 'DG', 'Strangschema'];
@@ -25,7 +24,6 @@ export default function RoomListScreen({
   onSwitchProject = null,
 }) {
   const [selectedFloor, setSelectedFloor] = useState('Alle');
-  const [activePlanModal, setActivePlanModal] = useState(null); // { plan, floor }
 
   // Calculate total project stats
   const totalDeliveredVal = materials.reduce((acc, m) => acc + (m.deliveredQty * m.unitPrice), 0);
@@ -62,23 +60,6 @@ export default function RoomListScreen({
 
     return { floorCounts: counts, groupedRooms: groups, filteredRooms: filtered };
   }, [rooms, selectedFloor]);
-
-  const findPlanForFloor = (fl) => {
-    if (!Array.isArray(plans) || plans.length === 0) return null;
-    return (
-      plans.find(
-        (p) =>
-          (p.floor && p.floor.toUpperCase() === fl.toUpperCase()) ||
-          (p.level && p.level.toUpperCase() === fl.toUpperCase())
-      ) || plans[0]
-    );
-  };
-
-  const handleOpenPlan = (fl) => {
-    const targetFloor = fl === 'Alle' ? 'UG' : fl;
-    const plan = findPlanForFloor(targetFloor);
-    setActivePlanModal({ plan, floor: targetFloor });
-  };
 
   const renderRoomCard = (room) => {
     const transName = currentLang !== 'de' && room.translations?.[currentLang];
@@ -194,27 +175,6 @@ export default function RoomListScreen({
           </ScrollView>
         </View>
 
-        {/* Floor Montageplan Quick Action Button */}
-        {selectedFloor !== 'Alle' && (
-          <View style={styles.floorPlanBanner}>
-            <View style={styles.floorPlanInfo}>
-              <Text style={styles.floorPlanTitle}>
-                📐 {t('openPlanForFloor', currentLang, { floor: selectedFloor })}
-              </Text>
-              <Text style={styles.floorPlanSub}>
-                Trassen, Leitungsmaße & CAD-Modell
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.openPlanBtn}
-              onPress={() => handleOpenPlan(selectedFloor)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.openPlanBtnText}>{t('openPlan', currentLang)} ›</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* 3. Rooms List grouped or filtered */}
         <View style={styles.roomList}>
           {selectedFloor === 'Alle' ? (
@@ -232,13 +192,6 @@ export default function RoomListScreen({
                         {t('roomsCountFloor', currentLang, { n: fRooms.length })}
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.floorGroupPlanBtn}
-                      onPress={() => handleOpenPlan(fl)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.floorGroupPlanText}>📐 Plan {fl}</Text>
-                    </TouchableOpacity>
                   </View>
                   <View style={styles.floorCardsWrap}>
                     {fRooms.map(renderRoomCard)}
@@ -257,17 +210,6 @@ export default function RoomListScreen({
           <Text style={styles.footerVersionText}>TTApp {APP_VERSION}</Text>
         </View>
       </ScrollView>
-
-      {/* Plan Viewer Modal */}
-      {activePlanModal && (
-        <PlanViewerModal
-          visible={Boolean(activePlanModal)}
-          plan={activePlanModal.plan}
-          floor={activePlanModal.floor}
-          currentLang={currentLang}
-          onClose={() => setActivePlanModal(null)}
-        />
-      )}
     </View>
   );
 }
@@ -405,43 +347,7 @@ const styles = StyleSheet.create({
   filterPillTextActive: {
     color: '#FFFFFF',
   },
-  floorPlanBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F0F9FF',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  floorPlanInfo: {
-    flex: 1,
-    marginRight: 8,
-  },
-  floorPlanTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#0369A1',
-  },
-  floorPlanSub: {
-    fontSize: 11,
-    color: '#0284C7',
-    marginTop: 2,
-  },
-  openPlanBtn: {
-    backgroundColor: '#0284C7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  openPlanBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
+
   roomList: {
     gap: 10,
   },
@@ -477,19 +383,7 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     fontWeight: '700',
   },
-  floorGroupPlanBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: '#E0F2FE',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  floorGroupPlanText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0284C7',
-  },
+
   floorCardsWrap: {
     gap: 8,
   },

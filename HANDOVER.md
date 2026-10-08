@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.17` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, interactive CAD Plan-Viewer modal with continuous pinch-to-zoom (1x–6x) and pan, offline plan sync with local PDF storage (`expo-file-system`), unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.18` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal with signer name, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. ("Plan ansehen" UI-Buttons in v2.18 entfernt, da für Monteure auf der Baustelle unpraktisch).
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -142,6 +142,11 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-08 v2.18: "Plan ansehen"-Button & Modaleinbindung aus Monteur-App entfernt:
+  - `BookingScreen.jsx`: "📐 Plan ansehen"-Button im Kopfbereich und `PlanViewerModal`-Einbindung entfernt.
+  - `RoomListScreen.jsx`: Geschoss-Banner ("Montageplan {floor} öffnen"), Geschoss-Gruppen-Button ("📐 Plan {fl}") und `PlanViewerModal`-Einbindung entfernt.
+  - Styles bereinigt (`bookingStyles.js`, `RoomListScreen.jsx`).
+  - Hintergrund: Die CAD-Vektor-Ansicht auf mobilen Geräten bot für Monteure vor Ort keinen praktischen Mehrwert. Der Code von `PlanViewerModal.jsx` bleibt für spätere Anwendungsfälle erhalten.
 - 2026-10-07 v2.17: Strikte Umsetzung der Zugriffsrechte aus den Projekteinstellungen:
   - Projektzuordnung (`authService.js`): Funktion `isUserAssignedToProject(monteur, project)` prüft `project.assignedMonteurIds` (aus den Admin-Web-Projekteinstellungen) auf Monteur-ID, Namens-Slug und Name.
   - Fallback-Entfernung: Der fehlerhafte Fallback, der bei leeren oder nicht gematchten IDs alle Projekte anzeigte, wurde vollständig entfernt. Monteure sehen exakt nur ihre zugewiesenen Projekte.
@@ -206,5 +211,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-07 — v2.17 Update: Strikte Zugriffsrechte nach Admin-Projekteinstellungen (`assignedMonteurIds`), Entfernung des unberechtigten Fallbacks auf alle Projekte, dynamisches Routing & Abmelde-Option.
+2026-10-08 — v2.18 Update: "Plan ansehen"-Button und Modal-Einbindung aus Monteur-App entfernt (`BookingScreen.jsx`, `RoomListScreen.jsx`, `bookingStyles.js`).
 

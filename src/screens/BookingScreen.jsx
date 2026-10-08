@@ -22,7 +22,6 @@ import NachtragModal from '../components/booking/NachtragModal';
 import UnplannedInstallModal from '../components/booking/UnplannedInstallModal';
 import OverConsumptionModal from '../components/booking/OverConsumptionModal';
 import CompleteRoomModal from '../components/booking/CompleteRoomModal';
-import PlanViewerModal from '../components/PlanViewerModal';
 import { getRoomFloor } from '../services/storageService';
 import { styles } from '../components/booking/bookingStyles';
 
@@ -46,19 +45,8 @@ export default function BookingScreen({
   onOverConsumptionAlert,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showPlanModal, setShowPlanModal] = useState(false);
 
   const floor = useMemo(() => getRoomFloor(room), [room]);
-  const floorPlan = useMemo(() => {
-    if (!Array.isArray(plans) || plans.length === 0) return null;
-    return (
-      plans.find(
-        (p) =>
-          (p.floor && p.floor.toUpperCase() === floor.toUpperCase()) ||
-          (p.level && p.level.toUpperCase() === floor.toUpperCase())
-      ) || plans[0]
-    );
-  }, [plans, floor]);
 
   const getInitialMaterialIds = () => {
     if (Array.isArray(room.materials) && room.materials.length > 0) {
@@ -463,16 +451,6 @@ export default function BookingScreen({
               {t('bookHead', currentLang)} · {t('kw', currentLang)} 27 · {t('floorPrefix', currentLang, { floor })}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.planHeaderBtn}
-            onPress={() => setShowPlanModal(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.planHeaderBtnIcon}>📐</Text>
-            <Text style={styles.planHeaderBtnText}>
-              {t('openPlan', currentLang)}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Locked Room Status Banner */}
@@ -676,15 +654,6 @@ export default function BookingScreen({
         onConfirm={handleConfirmCompleteRoom}
       />
 
-      {/* MODAL 5: PLAN VIEWER MIT PINCH-TO-ZOOM */}
-      <PlanViewerModal
-        visible={showPlanModal}
-        plan={floorPlan}
-        floor={floor}
-        room={room}
-        currentLang={currentLang}
-        onClose={() => setShowPlanModal(false)}
-      />
     </View>
   );
 }
