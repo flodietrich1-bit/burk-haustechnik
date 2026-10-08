@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat
+  Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat, X
 } from 'lucide-react';
 import type { Project, Alert, User } from '../types';
+import { updateAlertStatus } from '../services/firestoreService';
 
 interface HeaderProps {
   projects: Project[];
@@ -211,17 +212,27 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Alerts Dropdown Flyout */}
             {isAlertsOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
-                <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
-                  <div className="flex items-center space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-bold text-white uppercase tracking-wider">
+              <div className="absolute right-0 top-full mt-2 w-88 sm:w-[420px] bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800 gap-2">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold text-white uppercase tracking-wider truncate" title="Akute Warnungen & Nachbestellungen">
                       Akute Warnungen & Nachbestellungen
                     </span>
                   </div>
-                  <span className="text-[11px] font-bold bg-red-600 text-white px-2 py-0.2 rounded-full">
-                    {openAlerts.length} offen
-                  </span>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <span className="text-[11px] font-bold bg-red-600 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 shadow-sm leading-none flex items-center justify-center">
+                      {openAlerts.length} offen
+                    </span>
+                    <button
+                      onClick={() => setIsAlertsOpen(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      title="Flyout schließen"
+                      aria-label="Schließen"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {openAlerts.length === 0 ? (
@@ -233,20 +244,36 @@ export const Header: React.FC<HeaderProps> = ({
                     {openAlerts.map(alert => (
                       <div 
                         key={alert.id}
-                        className="bg-slate-800/90 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 space-y-1 text-xs"
+                        className="bg-slate-800/90 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 space-y-1.5 text-xs transition-colors"
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-white truncate mr-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-white truncate">
                             {alert.roomName}
                           </span>
-                          <span className="font-mono text-[#3B82C4] font-bold shrink-0">
-                            Pos. {alert.materialPos}
-                          </span>
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <span className="font-mono text-[#3B82C4] font-bold">
+                              Pos. {alert.materialPos}
+                            </span>
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                const pId = activeProject?.id || alert.projectId;
+                                if (pId) {
+                                  await updateAlertStatus(pId, alert.id, 'acknowledged', 'Im Header quittiert');
+                                }
+                              }}
+                              className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700/80 transition-colors"
+                              title="Diesen Alert schließen / quittieren"
+                              aria-label="Alert schließen"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                         <div className="text-slate-300 text-[11px] truncate">
                           {alert.materialName}
                         </div>
-                        <div className="flex items-center justify-between pt-1 text-[11px]">
+                        <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-700/40">
                           <span className="text-red-400 font-bold">
                             +{alert.exceededBy} {alert.qu} Mehrbedarf
                           </span>

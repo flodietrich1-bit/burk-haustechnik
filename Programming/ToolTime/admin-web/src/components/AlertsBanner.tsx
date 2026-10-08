@@ -158,11 +158,11 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
                   Material-Überschreitungen & Monteur-Meldungen
                 </h3>
                 {openAlerts.length > 0 ? (
-                  <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+                  <span className="bg-red-600 text-white text-xs font-bold px-2.5 py-0.5 rounded-full shadow-sm whitespace-nowrap shrink-0">
                     {openAlerts.length} offen
                   </span>
                 ) : (
-                  <span className="bg-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  <span className="bg-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">
                     Alle erledigt
                   </span>
                 )}

@@ -1120,6 +1120,7 @@ export async function updateAlertStatus(
     return a;
   });
   localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  notifyAlertsSubscribers(projectId, updated);
 
   try {
     const ref = doc(db, 'projects', projectId, 'alerts', alertId);
@@ -1133,11 +1134,27 @@ export async function updateAlertStatus(
   }
 }
 
+export async function deleteAlert(projectId: string, alertId: string) {
+  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
+  const updated = currentList.filter(a => a.id !== alertId);
+  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  notifyAlertsSubscribers(projectId, updated);
+
+  try {
+    const ref = doc(db, 'projects', projectId, 'alerts', alertId);
+    await deleteDoc(ref);
+  } catch (err: any) {
+    console.warn('Firestore deleteAlert error:', err.message);
+  }
+}
+
 export async function createAlert(projectId: string, alert: Alert) {
   const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   const currentList: Alert[] = saved ? JSON.parse(saved) : [];
   const updated = [alert, ...currentList.filter(a => a.id !== alert.id)];
   localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  notifyAlertsSubscribers(projectId, updated);
 
   try {
     const ref = doc(db, 'projects', projectId, 'alerts', alert.id);
