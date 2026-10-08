@@ -312,6 +312,26 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         ? rawBase
         : `Montageplan ${newPlanLevel} (${rawBase})`;
 
+      let apsUrn: string | undefined = undefined;
+      try {
+        const formData = new FormData();
+        formData.append('file', newPlanFile);
+        formData.append('planId', planId);
+        formData.append('floor', newPlanLevel);
+        formData.append('name', planName);
+        formData.append('projectName', projectName || 'Bauvorhaben');
+        const beRes = await fetch(`http://localhost:3001/api/projects/${projectId}/plans/upload-and-convert`, {
+          method: 'POST',
+          body: formData
+        });
+        if (beRes.ok) {
+          const beData = await beRes.json();
+          if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
+        }
+      } catch (beErr) {
+        console.warn('Backend CAD upload notice:', beErr);
+      }
+
       const planDoc: PlanDocument = {
         id: planId,
         projectId,
@@ -331,7 +351,8 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         createdAt: new Date().toISOString(),
         detectedRoomsCount: detectedCount,
         detectedLayers,
-        vectorData
+        vectorData,
+        ...(apsUrn ? { apsUrn } : {})
       };
 
       await savePlan(projectId, planDoc);

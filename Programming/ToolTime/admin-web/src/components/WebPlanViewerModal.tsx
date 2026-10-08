@@ -35,7 +35,14 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
 
   // Load and initialize official Autodesk Viewer SDK with manifest check & polling
   useEffect(() => {
-    if (!isOpen || !plan?.apsUrn) return;
+    if (!isOpen) return;
+
+    if (!plan?.apsUrn) {
+      setIsApsLoading(false);
+      setApsStatus(null);
+      setApsError(null);
+      return;
+    }
 
     let isMounted = true;
     let pollTimer: any = null;
@@ -89,14 +96,22 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
           }
         } catch (e) {
           console.warn('Could not check manifest status, proceeding to viewer directly:', e);
+          isReady = true;
         }
 
-        // B. Inject Autodesk Viewing CSS & JS dynamically if not already in document
+        // B. Ensure Autodesk Viewing CSS & JS are present in document
         if (!(window as any).Autodesk?.Viewing) {
           await new Promise<void>((resolve, reject) => {
-            const existingScript = document.getElementById('aps-viewer-script');
+            if ((window as any).Autodesk?.Viewing) {
+              resolve();
+              return;
+            }
+            const existingScript = document.getElementById('aps-viewer-script') as HTMLScriptElement | null;
             if (existingScript) {
-              existingScript.addEventListener('load', () => resolve());
+              existingScript.addEventListener('load', () => resolve(), { once: true });
+              setTimeout(() => {
+                if ((window as any).Autodesk?.Viewing) resolve();
+              }, 1500);
               return;
             }
 
@@ -131,7 +146,11 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
 
     const loadModelIntoViewer = () => {
       const Autodesk = (window as any).Autodesk;
-      if (!Autodesk?.Viewing) return;
+      if (!Autodesk?.Viewing) {
+        setIsApsLoading(false);
+        setApsError('Autodesk Viewer SDK nicht geladen.');
+        return;
+      }
 
       const options = {
         env: 'AutodeskProduction2',
@@ -163,6 +182,8 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
         const startCode = viewer.start();
         if (startCode > 0) {
           console.error('Failed to start Autodesk Viewer, code:', startCode);
+          setIsApsLoading(false);
+          setApsError('Autodesk Viewer Initialisierung fehlgeschlagen.');
           return;
         }
         apsViewerInstance.current = viewer;
@@ -172,27 +193,38 @@ export const WebPlanViewerModal: React.FC<WebPlanViewerModalProps> = ({
           documentId,
           (doc: any) => {
             if (!isMounted) return;
-            let viewable = doc.getRoot().getDefaultGeometry(true);
+            let viewable = doc.getRoot().getDefaultGeometry();
             if (!viewable) {
-              const geometries = doc.getRoot().search({ type: 'geometry' });
-              if (geometries && geometries.length > 0) {
-                viewable = geometries[0];
+              const views2d = doc.getRoot().search({ role: '2d' });
+              if (views2d && views2d.length > 0) {
+                viewable = views2d[0];
+              } else {
+                const geometries = doc.getRoot().search({ type: 'geometry' });
+                if (geometries && geometries.length > 0) {
+                  viewable = geometries[0];
+                }
               }
             }
 
             if (viewable) {
-              viewer.loadDocumentNode(doc, viewable);
-              setIsApsLoading(false);
+              viewer.loadDocumentNode(doc, viewable).then(() => {
+                if (isMounted) setIsApsLoading(false);
+              }).catch(() => {
+                if (isMounted) setIsApsLoading(false);
+              });
+              setTimeout(() => {
+                if (isMounted) setIsApsLoading(false);
+              }, 2000);
             } else {
               setIsApsLoading(false);
               setApsError('Keine 2D-Ansicht in der AutoCAD-Datei gefunden.');
             }
           },
-          (errorCode: any) => {
-            console.warn('Autodesk Document Load Warning:', errorCode);
+          (errorCode: any, errorMsg: any) => {
+            console.warn('Autodesk Document Load Warning:', errorCode, errorMsg);
             if (isMounted) {
               setIsApsLoading(false);
-              setApsError('Modell wird noch verarbeitet oder konnte nicht geladen werden.');
+              setApsError('Modell konnte nicht geladen werden (' + (errorMsg || errorCode) + ').');
             }
           }
         );

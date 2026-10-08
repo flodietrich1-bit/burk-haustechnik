@@ -430,6 +430,26 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             ? rawBaseName
             : `Montageplan ${plan.level} (${rawBaseName})`;
 
+          let apsUrn: string | undefined = undefined;
+          try {
+            const formData = new FormData();
+            formData.append('file', plan.file);
+            formData.append('planId', plan.id);
+            formData.append('floor', plan.level);
+            formData.append('name', cleanName);
+            formData.append('projectName', name || 'Bauvorhaben');
+            const beRes = await fetch(`http://localhost:3001/api/projects/${projectId}/plans/upload-and-convert`, {
+              method: 'POST',
+              body: formData
+            });
+            if (beRes.ok) {
+              const beData = await beRes.json();
+              if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
+            }
+          } catch (beErr) {
+            console.warn('Backend CAD upload notice in NewProjectModal:', beErr);
+          }
+
           return {
             id: plan.id,
             projectId,
@@ -449,7 +469,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             createdAt: new Date().toISOString(),
             detectedRoomsCount: plan.detectedRoomsCount,
             detectedLayers: plan.detectedLayers,
-            vectorData: plan.vectorData
+            vectorData: plan.vectorData,
+            ...(apsUrn ? { apsUrn } : {})
           };
         })
       );
