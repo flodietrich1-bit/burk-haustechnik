@@ -333,7 +333,7 @@ export function calculateAufmassSnapshot(
 
     // B. Extra Positions (Zusatzpositionen / außerplanmäßig verbaut)
     // 1. Extra Bookings in this room not part of planned materials
-    bookingsInPeriod.forEach(b => {
+    bookingsUpToDate.forEach(b => {
       if (b.roomId === room.id) {
         const bPosId = b.positionId || (b as any).itemId;
         const bPosNr = b.positionNr || (b as any).itemOz;
@@ -342,8 +342,16 @@ export function calculateAufmassSnapshot(
         if (!isPlanned && bPosNr !== 'FERTIG' && bPosNr !== 'DOKU') {
           const qty = Number(b.quantity) || 0;
           if (qty > 0) {
+            const bTime = b.createdAt || b.timestamp;
+            const inPeriod = !bTime || (new Date(bTime).getTime() >= fromDateStartTimestamp && new Date(bTime).getTime() <= toDateEndTimestamp);
+            const periodQty = inPeriod ? qty : 0;
+
             const alreadyAdded = specialPositions.find(p => p.posNr === bPosNr || p.positionId === bPosId);
-            if (!alreadyAdded) {
+            if (alreadyAdded) {
+              alreadyAdded.totalInstalledToDate += qty;
+              alreadyAdded.excessQty += qty;
+              alreadyAdded.installedInPeriod += periodQty;
+            } else {
               const pos = (bPosId ? posMap.get(bPosId) : undefined) || (bPosNr ? posByNrMap.get(bPosNr) : undefined);
               const { reasonText, causedBy } = determineCauseAndOriginator(b.note || 'Außerplanmäßige Monteurbuchung', bPosNr, room.id);
 
@@ -355,7 +363,7 @@ export function calculateAufmassSnapshot(
                 qu: b.qu || pos?.qu || 'Stk',
                 unitPrice: pos?.unitPrice || 0,
                 plannedQty: 0,
-                installedInPeriod: qty,
+                installedInPeriod: periodQty,
                 totalInstalledToDate: qty,
                 isOverconsumption: true,
                 excessQty: qty,

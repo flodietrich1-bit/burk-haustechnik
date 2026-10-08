@@ -60,7 +60,8 @@ export async function generateAufmassPdf(aufmass) {
       doc.text(`Zeitraum: ${new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} bis ${new Date(aufmass.dateTo).toLocaleDateString('de-DE')}`, 50, startY + 25);
       doc.text(`Erstellt von: ${aufmass.createdBy}`, 50, startY + 40);
 
-      doc.text(`Verbaute Positionen: ${aufmass.summaryItems.length}`, 300, startY + 10);
+      const specialCount = (aufmass.roomsData || []).reduce((acc, r) => acc + (r.specialPositions?.length || 0), 0);
+      doc.text(`Verbaute Positionen: ${aufmass.summaryItems.length} (${specialCount} Sonderposten)`, 300, startY + 10);
       doc.text(`Bearbeitete Räume: ${aufmass.roomsData.length}`, 300, startY + 25);
       doc.font('Helvetica-Bold').text(`Abrechnungsvolumen: ${Number(aufmass.totalPeriodVolume || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`, 300, startY + 40);
 
@@ -93,11 +94,11 @@ export async function generateAufmassPdf(aufmass) {
         doc.fillColor('#1E293B');
         doc.text(item.posNr || '-', 45, tableY + 4);
         doc.text((item.shortText || '-').substring(0, 38), 110, tableY + 4, { width: 200, ellipsis: true });
-        doc.text(`${item.plannedTotalQty}`, 315, tableY + 4, { width: 45, align: 'right' });
+        doc.text(`${item.plannedTotalQty ?? item.plannedQty ?? 0}`, 315, tableY + 4, { width: 45, align: 'right' });
         doc.text(`${item.totalInstalledUpToDate}`, 365, tableY + 4, { width: 50, align: 'right' });
         doc.font('Helvetica-Bold').text(`${item.periodInstalledQty}`, 420, tableY + 4, { width: 45, align: 'right' });
         doc.font('Helvetica').text(item.qu || 'Stk', 470, tableY + 4, { width: 35, align: 'center' });
-        doc.text(`${Number(item.periodVolume || 0).toFixed(2)}`, 505, tableY + 4, { width: 45, align: 'right' });
+        doc.text(`${Number(item.periodVolume ?? item.totalCost ?? 0).toFixed(2)}`, 505, tableY + 4, { width: 45, align: 'right' });
         tableY += 18;
       });
 
@@ -110,7 +111,7 @@ export async function generateAufmassPdf(aufmass) {
 
         aufmass.roomsData.forEach(r => {
           const pct = getRoomPercent(r);
-          if (rY > 690) {
+          if (rY > 670) {
             doc.addPage();
             rY = 40;
           }
@@ -123,23 +124,41 @@ export async function generateAufmassPdf(aufmass) {
           // Bold percentage text right at the room title
           const pctText = `${pct}% fertiggestellt${r.isCompleted ? ' ✓' : ''}`;
           doc.fontSize(9).font('Helvetica-Bold').fillColor('#0F172A').text(pctText, 350, rY + 5, { width: 195, align: 'right' });
-          rY += 24;
+          rY += 25;
 
-          const positions = (r.plannedPositions && r.plannedPositions.length > 0)
+          const planned = (r.plannedPositions && r.plannedPositions.length > 0)
             ? r.plannedPositions
             : (r.positions ? r.positions.filter(p => !p.isExtraPosition) : []);
+          const special = (r.specialPositions && r.specialPositions.length > 0)
+            ? r.specialPositions
+            : (r.positions ? r.positions.filter(p => p.isExtraPosition) : []);
 
-          if (positions.length > 0) {
-            doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold');
+          // 1. SECTION: Planmäßig verbaut (laut Plan)
+          if (rY > 730) {
+            doc.addPage();
+            rY = 40;
+          }
+          doc.fillColor('#334155').fontSize(8).font('Helvetica-Bold');
+          doc.text('1. Planmäßig verbaut (laut Plan)', 45, rY);
+          rY += 12;
+
+          if (planned.length === 0) {
+            doc.fillColor('#94A3B8').fontSize(7.5).font('Helvetica-Oblique');
+            doc.text('Keine planmäßigen Teile verbaut', 50, rY);
+            rY += 12;
+          } else {
+            // Header for planned items
+            doc.fillColor('#64748B').fontSize(7).font('Helvetica-Bold');
             doc.text('Pos-Nr', 45, rY);
             doc.text('Bezeichnung', 110, rY);
             doc.text('Plan', 330, rY, { width: 50, align: 'right' });
             doc.text('Ist', 390, rY, { width: 50, align: 'right' });
             doc.text('Delta', 450, rY, { width: 50, align: 'right' });
-            rY += 12;
+            doc.text('Einheit', 505, rY, { width: 35, align: 'center' });
+            rY += 11;
 
             doc.font('Helvetica').fontSize(7.5);
-            positions.forEach(p => {
+            planned.forEach(p => {
               if (rY > 750) {
                 doc.addPage();
                 rY = 40;
@@ -147,13 +166,73 @@ export async function generateAufmassPdf(aufmass) {
               doc.fillColor('#334155');
               doc.text(p.posNr || '-', 45, rY);
               doc.text((p.shortText || '-').substring(0, 42), 110, rY, { width: 210, ellipsis: true });
-              doc.text(`${p.plannedQty || 0} ${p.qu || 'Stk'}`, 330, rY, { width: 50, align: 'right' });
-              doc.text(`${p.totalInstalledToDate || 0} ${p.qu || 'Stk'}`, 390, rY, { width: 50, align: 'right' });
-              doc.font('Helvetica-Bold').text(`+${p.periodInstalledQty || 0}`, 450, rY, { width: 50, align: 'right' });
-              doc.font('Helvetica');
+              doc.text(`${p.plannedQty || 0}`, 330, rY, { width: 50, align: 'right' });
+              doc.text(`${p.totalInstalledToDate || 0}`, 390, rY, { width: 50, align: 'right' });
+              doc.font('Helvetica-Bold').text(`+${p.installedInPeriod || 0}`, 450, rY, { width: 50, align: 'right' });
+              doc.font('Helvetica').text(p.qu || 'Stk', 505, rY, { width: 35, align: 'center' });
               rY += 12;
             });
-            rY += 6;
+            rY += 4;
+          }
+
+          // 2. SECTION: Sonderposten (Zusätzlich verbaut / Mehrverbrauch)
+          if (rY > 720) {
+            doc.addPage();
+            rY = 40;
+          }
+          const hasSpecial = special.length > 0;
+          doc.rect(40, rY, 515, 16).fill(hasSpecial ? '#FEF2F2' : '#F8FAFC');
+          doc.fillColor(hasSpecial ? '#991B1B' : '#64748B').fontSize(8).font('Helvetica-Bold');
+          doc.text(`2. Sonderposten (Zusätzlich verbaut / Mehrverbrauch) [${special.length}]`, 48, rY + 4);
+          rY += 18;
+
+          if (!hasSpecial) {
+            doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Oblique');
+            doc.text('✓ Keine Sonderposten in diesem Raum – alle Arbeiten planmäßig ausgeführt.', 48, rY);
+            rY += 14;
+          } else {
+            // Header for Sonderposten table
+            doc.rect(40, rY, 515, 14).fill('#FEE2E2');
+            doc.fillColor('#7F1D1D').fontSize(7).font('Helvetica-Bold');
+            doc.text('Pos-Nr', 45, rY + 3);
+            doc.text('Bezeichnung', 100, rY + 3);
+            doc.text('Art', 235, rY + 3);
+            doc.text('Zusätzlich', 315, rY + 3, { width: 45, align: 'right' });
+            doc.text('Verursacher', 370, rY + 3);
+            doc.text('Begründung', 435, rY + 3);
+            rY += 14;
+
+            special.forEach((p, sIdx) => {
+              if (rY > 750) {
+                doc.addPage();
+                rY = 40;
+              }
+              const rowBg = sIdx % 2 === 0 ? '#FFFFFF' : '#FFF5F5';
+              doc.rect(40, rY, 515, 14).fill(rowBg);
+
+              doc.fillColor('#991B1B').fontSize(7.5).font('Helvetica-Bold');
+              doc.text(p.posNr || '-', 45, rY + 3);
+
+              doc.fillColor('#1E293B').font('Helvetica');
+              doc.text((p.shortText || '-').substring(0, 26), 100, rY + 3, { width: 130, ellipsis: true });
+
+              const artText = p.specialType === 'mehrverbrauch' ? 'Mehrverbrauch' : (p.specialType === 'zusatzmaterial' ? 'Zusatzmaterial' : 'Sonderposten');
+              doc.fillColor('#7F1D1D');
+              doc.text(artText, 235, rY + 3, { width: 75 });
+
+              const excessQty = p.totalInstalledToDate || p.excessQty || p.installedInPeriod || 0;
+              doc.font('Helvetica-Bold').fillColor('#991B1B');
+              doc.text(`+${excessQty} ${p.qu || 'Stk'}`, 315, rY + 3, { width: 45, align: 'right' });
+
+              doc.font('Helvetica').fillColor('#475569');
+              doc.text((p.causedBy || 'Monteur').substring(0, 14), 370, rY + 3, { width: 60 });
+
+              doc.font('Helvetica-Oblique').fillColor('#64748B');
+              doc.text((p.reason || 'Baustellenanpassung').substring(0, 26), 435, rY + 3, { width: 115, ellipsis: true });
+
+              rY += 14;
+            });
+            rY += 8;
           }
           rY += 4;
         });
