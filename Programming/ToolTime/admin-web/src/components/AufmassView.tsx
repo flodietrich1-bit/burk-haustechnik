@@ -678,7 +678,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-slate-900">Aufmaß erstellen & Historie</h2>
+              <h2 className="text-xl font-black text-slate-900">Aufmaße & Historie</h2>
               <p className="text-xs text-slate-500">
                 Erstelle stichtagsbezogene VOB-Aufmaße mit unveränderlichen Snapshots, Deltas und Excel-Export.
               </p>

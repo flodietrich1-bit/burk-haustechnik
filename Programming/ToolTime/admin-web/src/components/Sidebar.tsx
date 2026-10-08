@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'aufmass' as TabType,
-      label: 'Aufmaß erstellen',
+      label: 'Aufmaße',
       icon: FileSpreadsheet
     },
     {
