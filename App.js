@@ -197,6 +197,10 @@ export default function App() {
   const handleUnlockWithAutoSync = async (authenticatedMonteur, assignedProjects = []) => {
     if (authenticatedMonteur) {
       setMonteur(authenticatedMonteur);
+      if (authenticatedMonteur.defaultLanguage) {
+        setCurrentLang(authenticatedMonteur.defaultLanguage);
+        await setLanguage(authenticatedMonteur.defaultLanguage);
+      }
     }
     const projectsList = Array.isArray(assignedProjects) ? assignedProjects : [];
     setAvailableProjects(projectsList);
