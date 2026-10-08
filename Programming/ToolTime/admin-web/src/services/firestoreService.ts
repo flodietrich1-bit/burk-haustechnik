@@ -1217,6 +1217,20 @@ export async function completeRoom(
  * 2. Checks room.completionDelta or the latest room_completion booking's deltaSummary
  * 3. Falls back to direct in-progress bookings (excluding completion bookings)
  */
+export function isRoomMatch(
+  room: { id?: string; code?: string; name?: string } | null,
+  item: { roomId?: string; roomName?: string } | null
+): boolean {
+  if (!room || !item) return false;
+  if (item.roomId) {
+    return item.roomId === room.id || item.roomId === room.code;
+  }
+  if (item.roomName && room.name) {
+    return item.roomName.toLowerCase().trim() === room.name.toLowerCase().trim();
+  }
+  return false;
+}
+
 export function getMaterialActualQty(
   mat: { positionId?: string; posNr?: string; plannedQty?: number; actualQty?: number; id?: string },
   room: { id?: string; code?: string; name?: string; status?: string; isCompleted?: boolean; completionDelta?: any[] } | null,
@@ -1232,7 +1246,7 @@ export function getMaterialActualQty(
   // 2. Check room's completionDelta or the latest room_completion booking
   const completionBookings = bookings
     .filter(b => 
-      (b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name) && 
+      isRoomMatch(room, b) && 
       (b.type === 'room_completion' || b.itemId === 'room_completion')
     )
     .sort((a, b) => {
@@ -1261,7 +1275,7 @@ export function getMaterialActualQty(
 
   // 3. For rooms without completion (in progress), sum direct non-completion bookings
   const directBookings = bookings.filter(b => 
-    (b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name) &&
+    isRoomMatch(room, b) &&
     b.type !== 'room_completion' &&
     b.itemId !== 'room_completion' &&
     (

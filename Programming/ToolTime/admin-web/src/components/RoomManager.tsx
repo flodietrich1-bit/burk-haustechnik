@@ -30,7 +30,8 @@ import {
   uploadPlanFile, 
   savePlan, 
   updatePlanFloor,
-  deletePlan 
+  deletePlan,
+  isRoomMatch 
 } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { WebPlanViewerModal } from './WebPlanViewerModal';
@@ -228,11 +229,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     }
 
     // 2. From bookings matching this room (by id or code or roomName)
-    const matching = bookings.filter(b => 
-      b.roomId === r.id || 
-      b.roomId === r.code || 
-      (b as any).roomName === r.name
-    );
+    const matching = bookings.filter(b => isRoomMatch(r, b));
 
     matching.forEach(b => {
       if (Array.isArray(b.photoUrls)) {
@@ -251,7 +248,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   };
 
   const getRoomInfo = (r: Room) => {
-    const roomBookings = bookings.filter(b => b.roomId === r.id || b.roomId === r.code || (b as any).roomName === r.name);
+    const roomBookings = bookings.filter(b => isRoomMatch(r, b));
     const hasCompletionBooking = roomBookings.some(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion');
     const isExplicitlyUnlocked = r.isCompleted === false || r.status === 'in_progress';
     const isCompleted = !isExplicitlyUnlocked && (r.status === 'completed' || r.isCompleted === true || (r.pct === 100) || hasCompletionBooking);
@@ -659,7 +656,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           const isDwg = room.source === 'dwg';
           const { isCompleted, roomPercent, photos } = getRoomInfo(room);
           // Resolve Monteur Name and Language
-          const matchingBookings = bookings.filter(b => b.roomId === room.id || b.roomId === room.code || (b as any).roomName === room.name);
+          const matchingBookings = bookings.filter(b => isRoomMatch(room, b));
           const latestBooking = matchingBookings[matchingBookings.length - 1];
           const monteurName = room.completedBy || (room as any).lastUpdatedBy || (latestBooking && latestBooking.createdBy) || 'Stefan Maier';
           const rawLang = (room as any).lastMonteurLanguage || (room as any).monteurLanguage || (latestBooking as any)?.language || 'de';

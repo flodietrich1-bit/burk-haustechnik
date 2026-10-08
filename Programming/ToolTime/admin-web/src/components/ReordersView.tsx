@@ -17,7 +17,7 @@ import {
   Minus,
   Plus
 } from 'lucide-react';
-import { createAlert, getMaterialActualQty, addPositionDeliveredQty } from '../services/firestoreService';
+import { createAlert, getMaterialActualQty, addPositionDeliveredQty, isRoomMatch } from '../services/firestoreService';
 
 export interface RoomDeviation {
   roomId: string;
@@ -74,7 +74,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
   alerts = [],
   project
 }) => {
-  const [filterType, setFilterType] = useState<'all' | 'over' | 'under' | 'reordered'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'over' | 'under' | 'reordered'>('over');
   const [selectedGroup, setSelectedGroup] = useState<GroupedDeviation | null>(null);
   const [reorderQty, setReorderQty] = useState<number>(1);
   const [mailSubject, setMailSubject] = useState('');
@@ -106,7 +106,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
     const resolveRoomDeviationReason = (room: Room, m: any) => {
       // 1. Check alerts
       const matchingAlert = alerts.find(a => {
-        const isRoom = a.roomId === room.id || a.roomId === room.code || (a.roomName && room.name && a.roomName.toLowerCase() === room.name.toLowerCase());
+        const isRoom = isRoomMatch(room, a);
         if (!isRoom) return false;
         const isPos = (a.materialPos && a.materialPos === m.posNr) || 
                       (a.materialId && a.materialId === m.positionId) ||
@@ -124,7 +124,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
       // 2. Check bookings for this room with an explicit reason or note
       const matchingBooking = bookings.find(b => {
-        const isRoom = b.roomId === room.id || b.roomId === room.code || (b.roomName && room.name && b.roomName.toLowerCase() === room.name.toLowerCase());
+        const isRoom = isRoomMatch(room, b);
         if (!isRoom) return false;
         const isPos = (b.positionNr && b.positionNr === m.posNr) || 
                       (b.itemOz && b.itemOz === m.posNr) ||
@@ -154,7 +154,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
       // Check any booking to at least get the Monteur's name
       const anyBooking = bookings.find(b => {
-        const isRoom = b.roomId === room.id || b.roomId === room.code || (b.roomName && room.name && b.roomName.toLowerCase() === room.name.toLowerCase());
+        const isRoom = isRoomMatch(room, b);
         if (!isRoom) return false;
         return (b.positionNr && b.positionNr === m.posNr) || 
                (b.itemOz && b.itemOz === m.posNr) ||
@@ -182,7 +182,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
         // Active alert check for this specific room and material
         const roomAlert = alerts.find(a => 
-          (a.roomId === room.id || a.roomId === room.code || (a.roomName && room.name && a.roomName.toLowerCase() === room.name.toLowerCase())) &&
+          isRoomMatch(room, a) &&
           ((a.materialPos && a.materialPos === m.posNr) || (a.materialId && a.materialId === m.positionId) || (a.materialName && m.shortText && a.materialName.toLowerCase() === m.shortText.toLowerCase()))
         );
 
