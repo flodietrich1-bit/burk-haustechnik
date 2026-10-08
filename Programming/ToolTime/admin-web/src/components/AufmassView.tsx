@@ -61,6 +61,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [detailTab, setDetailTab] = useState<'summary' | 'rooms'>('summary');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
+  const [onlyInstalled, setOnlyInstalled] = useState<boolean>(false);
 
   // Discard Confirmation Modal State
   const [discardTarget, setDiscardTarget] = useState<AufmassDocument | null>(null);
@@ -202,14 +203,18 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   // Filtered Summary in Detail View
   const filteredSummaryItems = useMemo(() => {
     if (!selectedAufmass) return [];
-    if (!searchTerm.trim()) return selectedAufmass.summaryItems;
+    let items = selectedAufmass.summaryItems;
+    if (onlyInstalled) {
+      items = items.filter(item => (Number(item.totalInstalledUpToDate) || 0) > 0 || (Number(item.periodInstalledQty) || 0) > 0);
+    }
+    if (!searchTerm.trim()) return items;
     const term = searchTerm.toLowerCase();
-    return selectedAufmass.summaryItems.filter(item => 
+    return items.filter(item => 
       item.posNr.toLowerCase().includes(term) ||
       item.shortText.toLowerCase().includes(term) ||
       (item.group && item.group.toLowerCase().includes(term))
     );
-  }, [selectedAufmass, searchTerm]);
+  }, [selectedAufmass, searchTerm, onlyInstalled]);
 
   // Filtered Rooms in Detail View
   const filteredRoomsData = useMemo(() => {
@@ -217,6 +222,12 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     let list = selectedAufmass.roomsData;
     if (selectedRoomFilter !== 'all') {
       list = list.filter(r => r.roomId === selectedRoomFilter);
+    }
+    if (onlyInstalled) {
+      list = list.map(r => ({
+        ...r,
+        positions: r.positions.filter(p => (Number(p.totalInstalledToDate) || 0) > 0 || (Number(p.installedInPeriod) || 0) > 0)
+      })).filter(r => r.positions.length > 0);
     }
     if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase();
@@ -226,7 +237,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       r.floor.toLowerCase().includes(term) ||
       r.positions.some(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term))
     );
-  }, [selectedAufmass, selectedRoomFilter, searchTerm]);
+  }, [selectedAufmass, selectedRoomFilter, searchTerm, onlyInstalled]);
 
   // ---------------------------------------------------------------------------
   // VIEW: DETAIL ANSICHT (Betrachtung eines Aufmaßes)
@@ -325,7 +336,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
               <Layers className="w-4 h-4 text-[#3B82C4]" />
               <span>Gesamtansicht (Kumuliert)</span>
               <span className="ml-1 text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                {selectedAufmass.summaryItems.length}
+                {filteredSummaryItems.length}
               </span>
             </button>
 
@@ -340,12 +351,38 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
               <MapPin className="w-4 h-4 text-emerald-600" />
               <span>Raumansicht (Aufgeschlüsselt)</span>
               <span className="ml-1 text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full font-mono">
-                {selectedAufmass.roomsData.length}
+                {filteredRoomsData.length}
               </span>
             </button>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Radio Button: Nur verbaute Teile */}
+            <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700">
+              <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
+                <input
+                  type="radio"
+                  name="aufmass_installed_filter"
+                  value="all"
+                  checked={!onlyInstalled}
+                  onChange={() => setOnlyInstalled(false)}
+                  className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
+                />
+                <span>Alle Teile</span>
+              </label>
+              <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
+                <input
+                  type="radio"
+                  name="aufmass_installed_filter"
+                  value="installed"
+                  checked={onlyInstalled}
+                  onChange={() => setOnlyInstalled(true)}
+                  className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
+                />
+                <span>Nur verbaute Teile</span>
+              </label>
+            </div>
+
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input

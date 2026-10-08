@@ -13,6 +13,7 @@ interface MaterialTableProps {
 export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, bookings = [], rooms = [], searchTerm }) => {
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [onlyInstalled, setOnlyInstalled] = useState<boolean>(false);
 
   const getPositionMetrics = useMemo(() => {
     return (pos: Position) => {
@@ -161,6 +162,10 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       const matchesGroup = selectedGroup === 'all' || p.group === selectedGroup;
 
       const m = getPositionMetrics(p);
+      if (onlyInstalled && m.installed <= 0) {
+        return false;
+      }
+
       const matchesStatus = 
         selectedStatus === 'all' ||
         (selectedStatus === 'over' && m.deviationType === 'over') ||
@@ -172,7 +177,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
 
       return matchesSearch && matchesGroup && matchesStatus;
     });
-  }, [positions, searchTerm, selectedGroup, selectedStatus, getPositionMetrics]);
+  }, [positions, searchTerm, selectedGroup, selectedStatus, onlyInstalled, getPositionMetrics]);
 
   // Totals & KPI Metrics
   const totalItems = positions.length;
@@ -265,6 +270,32 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
             <option value="completed">Vollständig verbaut</option>
             <option value="open">Noch offen</option>
           </select>
+
+          {/* Radio Button: Nur verbaute Teile */}
+          <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 ml-1">
+            <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
+              <input
+                type="radio"
+                name="pos_installed_filter"
+                value="all"
+                checked={!onlyInstalled}
+                onChange={() => setOnlyInstalled(false)}
+                className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
+              />
+              <span>Alle Teile</span>
+            </label>
+            <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
+              <input
+                type="radio"
+                name="pos_installed_filter"
+                value="installed"
+                checked={onlyInstalled}
+                onChange={() => setOnlyInstalled(true)}
+                className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
+              />
+              <span>Nur verbaute Teile</span>
+            </label>
+          </div>
         </div>
 
         <div className="flex items-center space-x-4 text-xs text-slate-500 font-medium">
