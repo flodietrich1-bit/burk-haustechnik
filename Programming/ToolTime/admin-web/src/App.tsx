@@ -190,18 +190,23 @@ export function App() {
   const handleConfirmDeleteProject = async () => {
     if (!activeProject) return;
     setIsDeletingProject(true);
+    const deletedId = activeProject.id;
     try {
-      const deletedId = activeProject.id;
-      await deleteProject(deletedId);
+      // 1. Immediate optimistic UI update
+      setProjects(prev => prev.filter(p => p.id !== deletedId));
       setIsDeleteModalOpen(false);
 
       const remaining = accessibleProjects.filter(p => p.id !== deletedId);
       if (remaining.length > 0) {
         setSelectedProjectId(remaining[0].id);
+        setActiveProject(remaining[0]);
       } else {
         setSelectedProjectId('');
         setActiveProject(null);
       }
+
+      // 2. Perform background delete in Firestore & local caches
+      await deleteProject(deletedId);
     } catch (err: any) {
       console.error('Fehler beim Löschen des Projekts:', err);
       alert('Fehler beim Löschen des Projekts: ' + (err?.message || err));
@@ -391,6 +396,7 @@ export function App() {
                     project={activeProject}
                     users={users}
                     currentUser={currentUser}
+                    onDeleteProject={handleRequestDeleteProject}
                   />
                 )}
               </>

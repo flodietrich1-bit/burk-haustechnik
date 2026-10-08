@@ -17,6 +17,25 @@ const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
 const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
 const LOCAL_STORAGE_PLANS_PREFIX = 'burk_tooltime_plans_';
 
+const LOCAL_STORAGE_DELETED_PROJECTS_KEY = 'burk_tooltime_deleted_project_ids';
+
+export function getDeletedProjectIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function addDeletedProjectId(projectId: string) {
+  try {
+    const current = getDeletedProjectIds();
+    current.add(projectId);
+    localStorage.setItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY, JSON.stringify(Array.from(current)));
+  } catch {}
+}
+
 /** Helper to sanitize objects before sending to Firestore (Firestore rejects undefined fields) */
 export function cleanForFirestore<T>(data: T): T {
   if (data === undefined) return null as unknown as T;
@@ -28,7 +47,10 @@ export function getLocalProjects(): Project[] {
     const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        const deletedIds = getDeletedProjectIds();
+        return parsed.filter(p => p.id && !deletedIds.has(p.id) && p.status !== 'deleted' && !(p as any).isDeleted);
+      }
     }
   } catch (e) {
     console.warn('LocalStorage error reading projects:', e);
@@ -177,71 +199,19 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
   callback(getLocalProjects());
 
   const colRef = collection(db, 'projects');
-  const unsubFirestore = onSnapshot(colRef, async (snap) => {
+  const unsubFirestore = onSnapshot(colRef, (snap) => {
+    const deletedIds = getDeletedProjectIds();
     if (!snap.empty) {
-      // Firestore has data
       const firestoreProjects = snap.docs
         .map(d => ({ id: d.id, ...d.data() }) as Project)
-        .filter(p => p.status !== 'deleted' && !(p as any).isDeleted);
-
-      // Auto-recover & sync any local projects that previously failed writing to Firestore
-      const localProjects = getLocalProjects();
-      const fsIds = new Set(firestoreProjects.map(p => p.id));
-      const unsynced = localProjects.filter(lp => lp.id && !fsIds.has(lp.id) && lp.status !== 'deleted');
-      if (unsynced.length > 0) {
-        for (const un of unsynced) {
-          try {
-            await setDoc(doc(db, 'projects', un.id), cleanForFirestore(un), { merge: true });
-            firestoreProjects.unshift(un);
-            console.log(`✅ Auto-synced pending local project to Firestore: ${un.id}`);
-          } catch (e: any) {
-            console.warn(`Could not sync ${un.id} to Firestore:`, e.message);
-          }
-        }
-      }
+        .filter(p => p && p.id && p.name && p.status !== 'deleted' && !(p as any).isDeleted && !deletedIds.has(p.id));
 
       saveLocalProjects(firestoreProjects);
     } else {
-      // Firestore is empty
-      const localProjects = getLocalProjects();
-      const hasInitialMigrationRun = sessionStorage.getItem('burk_migrated_to_firestore');
-      if (localProjects.length > 0 && !hasInitialMigrationRun) {
-        sessionStorage.setItem('burk_migrated_to_firestore', 'true');
-        console.log(`Migrating ${localProjects.length} local project(s) to Firestore...`);
-        for (const project of localProjects) {
-          try {
-            const projectRef = doc(db, 'projects', project.id);
-            await setDoc(projectRef, cleanForFirestore(project), { merge: true });
-
-            // Also migrate positions and rooms for each project
-            const posRaw = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id);
-            if (posRaw) {
-              const positions: Position[] = JSON.parse(posRaw);
-              for (const pos of positions) {
-                if (!pos.id) continue;
-                const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
-                await setDoc(pRef, cleanForFirestore(pos), { merge: true });
-              }
-            }
-            const roomsRaw = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id);
-            if (roomsRaw) {
-              const rooms: Room[] = JSON.parse(roomsRaw);
-              for (const room of rooms) {
-                const rRef = doc(db, 'projects', project.id, 'rooms', room.id);
-                await setDoc(rRef, cleanForFirestore(room), { merge: true });
-              }
-            }
-            console.log(`✅ Migrated project: ${project.id}`);
-          } catch (err: any) {
-            console.warn(`Failed to migrate project ${project.id}:`, err.message);
-          }
-        }
-      } else {
-        saveLocalProjects([]);
-      }
+      saveLocalProjects([]);
     }
-  }, () => {
-    // Ignore in fallback mode
+  }, (err) => {
+    console.warn('Firestore onSnapshot projects error:', err.message);
   });
 
   return () => {
@@ -532,6 +502,7 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
 
 // Delete a single project and clean all associated local data, users & Firestore subcollections
 export async function deleteProject(projectId: string): Promise<void> {
+  addDeletedProjectId(projectId);
   const current = getLocalProjects().filter(p => p.id !== projectId);
   saveLocalProjects(current);
   localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
@@ -558,15 +529,15 @@ export async function deleteProject(projectId: string): Promise<void> {
   try {
     const projectRef = doc(db, 'projects', projectId);
 
-    // 1. Mark as deleted first so any active real-time queries immediately filter it out
+    // 1. Mark as tombstone (status: deleted, isDeleted: true) so all clients filter it out permanently
     try {
-      await updateDoc(projectRef, {
+      await setDoc(projectRef, {
         status: 'deleted',
         isDeleted: true,
         deletedAt: new Date().toISOString()
-      });
+      }, { merge: true });
     } catch {
-      // Document might be offline or not exist yet
+      // Document might be offline
     }
 
     // 2. Wipe all subcollection documents in Firestore
@@ -637,9 +608,7 @@ export async function deleteProject(projectId: string): Promise<void> {
       // ignore
     }
 
-    // 4. Finally delete the project root document
-    await deleteDoc(projectRef);
-    console.log(`✅ Project ${projectId} completely deleted from Firestore and caches.`);
+    console.log(`✅ Project ${projectId} completely marked as deleted in Firestore and wiped from caches.`);
   } catch (err: any) {
     console.warn('Firestore deleteProject error:', err.message);
   }

@@ -20,9 +20,15 @@ interface ProjectSettingsViewProps {
   project: Project | null;
   users: User[];
   currentUser: User | null;
+  onDeleteProject?: () => void;
 }
 
-export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ project, users, currentUser }) => {
+export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ 
+  project, 
+  users, 
+  currentUser,
+  onDeleteProject 
+}) => {
   const [form, setForm] = useState<Partial<Project>>({});
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -568,9 +574,13 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ projec
             </div>
             <button
               type="button"
-              onClick={async () => {
-                if (window.confirm(`Bist du sicher, dass du dieses Projekt komplett löschen willst?\n\nProjekt: "${project.name}"`)) {
-                  await deleteProject(project.id);
+              onClick={() => {
+                if (onDeleteProject) {
+                  onDeleteProject();
+                } else if (project) {
+                  if (window.confirm(`Bist du sicher, dass du dieses Projekt komplett löschen willst?\n\nProjekt: "${project.name}"`)) {
+                    deleteProject(project.id);
+                  }
                 }
               }}
               className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] shrink-0 cursor-pointer"
