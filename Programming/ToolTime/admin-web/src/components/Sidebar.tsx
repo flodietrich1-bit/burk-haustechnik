@@ -12,7 +12,8 @@ import {
   Building2,
   UserCheck,
   FileSpreadsheet,
-  Trash2
+  Trash2,
+  Scale
 } from 'lucide-react';
 
 import type { User } from '../types';
@@ -20,6 +21,7 @@ import { ADMIN_PANEL_VERSION } from '../version';
 
 export type TabType = 
   | 'positions' 
+  | 'gaeb_vs_dwg'
   | 'rooms' 
   | 'bookings' 
   | 'addendums' 
@@ -36,6 +38,7 @@ interface SidebarProps {
   totalPositionsCount: number;
   totalRoomsCount: number;
   reordersCount?: number;
+  gaebVsDwgDeviationsCount?: number;
   currentUser: User | null;
   onExport: () => void;
   onDeleteProject?: () => void;
@@ -49,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   totalPositionsCount,
   totalRoomsCount,
   reordersCount = 0,
+  gaebVsDwgDeviationsCount = 0,
   currentUser,
   onExport,
   onDeleteProject,
@@ -60,6 +64,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'LV Material-Bilanz',
       icon: Package,
       badge: totalPositionsCount > 0 ? String(totalPositionsCount) : undefined
+    },
+    {
+      id: 'gaeb_vs_dwg' as TabType,
+      label: 'GAEB vs. DWG',
+      icon: Scale,
+      badge: gaebVsDwgDeviationsCount > 0 ? String(gaebVsDwgDeviationsCount) : undefined,
+      badgeColor: 'bg-amber-500 text-white'
     },
     {
       id: 'rooms' as TabType,

@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import type { TabType } from './components/Sidebar';
 import { MaterialTable } from './components/MaterialTable';
+import { GaebVsDwgView } from './components/GaebVsDwgView';
 import { RoomManager } from './components/RoomManager';
 import { LiveFeed } from './components/LiveFeed';
 import { AddendumsView } from './components/AddendumsView';
@@ -237,6 +238,31 @@ export function App() {
     return deviationPositions.size;
   }, [rooms, bookings, alerts]);
 
+  // GAEB vs DWG deviations count (positions where verplante Menge in Räumen != GAEB LV-Menge)
+  const gaebVsDwgDeviationsCount = useMemo(() => {
+    let count = 0;
+    positions.forEach(pos => {
+      const gaebQty = Number(pos.qty) || 0;
+      let dwgQty = 0;
+      rooms.forEach(r => {
+        (r.materials || []).forEach(m => {
+          const isMatch = 
+            (m.positionId && m.positionId === pos.id) ||
+            (m.posNr && m.posNr === pos.posNr) ||
+            (m.shortText && pos.shortText && m.shortText.trim().toLowerCase() === pos.shortText.trim().toLowerCase());
+          if (isMatch) {
+            dwgQty += Number(m.plannedQty) || 0;
+          }
+        });
+      });
+      // Wenn in den Räumen verplant und es weicht vom GAEB-Soll ab
+      if (dwgQty > 0 && dwgQty !== gaebQty) {
+        count++;
+      }
+    });
+    return count;
+  }, [positions, rooms]);
+
   if (!currentUser) {
     return (
       <LoginView
@@ -276,6 +302,7 @@ export function App() {
           totalPositionsCount={positions.length}
           totalRoomsCount={rooms.length}
           reordersCount={reordersCount}
+          gaebVsDwgDeviationsCount={gaebVsDwgDeviationsCount}
           currentUser={currentUser}
           onExport={handleExport}
           hasActiveProject={Boolean(activeProject)}
@@ -321,6 +348,18 @@ export function App() {
                     bookings={bookings}
                     rooms={rooms}
                     searchTerm={searchTerm}
+                  />
+                )}
+
+                {/* TAB: GAEB vs DWG (Planungsvergleich) */}
+                {activeTab === 'gaeb_vs_dwg' && (
+                  <GaebVsDwgView
+                    projectId={selectedProjectId}
+                    projectName={activeProject?.name}
+                    positions={positions}
+                    rooms={rooms}
+                    currentUser={currentUser}
+                    onNavigateToAddendums={() => setActiveTab('addendums')}
                   />
                 )}
 
