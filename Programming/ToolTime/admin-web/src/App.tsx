@@ -340,6 +340,7 @@ export function App() {
                   <LiveFeed
                     bookings={bookings}
                     rooms={rooms}
+                    positions={positions}
                   />
                 )}
 
