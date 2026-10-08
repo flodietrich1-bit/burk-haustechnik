@@ -159,24 +159,25 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
   const kpis = useMemo(() => {
     let overCount = 0;
     let overValue = 0;
-    let overQty = 0;
+    const overUnits: Record<string, number> = {};
 
     let underCount = 0;
     let underValue = 0;
-    let underQty = 0;
+    const underUnits: Record<string, number> = {};
 
     let exactCount = 0;
     let unplannedCount = 0;
 
     comparisonData.forEach(row => {
+      const qu = (row.qu || 'Stk').trim();
       if (row.status === 'over') {
         overCount++;
         overValue += row.deltaValue;
-        overQty += row.delta;
+        overUnits[qu] = (overUnits[qu] || 0) + row.delta;
       } else if (row.status === 'under') {
         underCount++;
         underValue += Math.abs(row.deltaValue);
-        underQty += Math.abs(row.delta);
+        underUnits[qu] = (underUnits[qu] || 0) + Math.abs(row.delta);
       } else if (row.status === 'exact') {
         exactCount++;
       } else if (row.status === 'unplanned') {
@@ -184,16 +185,38 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
       }
     });
 
+    const formatBreakdown = (units: Record<string, number>, sign: '+' | '-') => {
+      const keys = Object.keys(units).filter(k => units[k] > 0);
+      if (keys.length === 0) return '';
+      // Sort: Stk first, then m, then alphabetic
+      keys.sort((a, b) => {
+        const aLower = a.toLowerCase();
+        const bLower = b.toLowerCase();
+        if (aLower === 'stk') return -1;
+        if (bLower === 'stk') return 1;
+        if (aLower === 'm') return -1;
+        if (bLower === 'm') return 1;
+        return a.localeCompare(b);
+      });
+      const parts = keys.map(k => {
+        const val = Number.isInteger(units[k]) ? units[k] : Math.round(units[k] * 10) / 10;
+        return `${val} ${k}`;
+      });
+      return `(${sign}${parts.join(', ')})`;
+    };
+
+    const overBreakdownText = formatBreakdown(overUnits, '+');
+    const underBreakdownText = formatBreakdown(underUnits, '-');
     const totalDeviations = overCount + underCount;
 
     return {
       totalPositions: comparisonData.length,
       overCount,
       overValue,
-      overQty,
+      overBreakdownText,
       underCount,
       underValue,
-      underQty,
+      underBreakdownText,
       exactCount,
       unplannedCount,
       totalDeviations
@@ -361,12 +384,12 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline space-x-2">
+          <div className="mt-2 flex items-baseline space-x-1.5 flex-wrap">
             <span className="text-2xl font-black text-rose-700">
               {kpis.overCount}
             </span>
             <span className="text-xs font-semibold text-rose-600">
-              Positionen (+{kpis.overQty} Stk)
+              Positionen {kpis.overBreakdownText}
             </span>
           </div>
           <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
@@ -394,12 +417,12 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
               <TrendingDown className="w-4 h-4" />
             </div>
           </div>
-          <div className="mt-2 flex items-baseline space-x-2">
+          <div className="mt-2 flex items-baseline space-x-1.5 flex-wrap">
             <span className="text-2xl font-black text-emerald-700">
               {kpis.underCount}
             </span>
             <span className="text-xs font-semibold text-emerald-600">
-              Positionen (-{kpis.underQty} Stk)
+              Positionen {kpis.underBreakdownText}
             </span>
           </div>
           <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
