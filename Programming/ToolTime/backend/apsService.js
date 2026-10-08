@@ -178,17 +178,27 @@ export async function uploadAndTranslateDwg(buffer, originalFileName) {
   const objectId = finalizeRes.data.objectId;
   const urn = Buffer.from(objectId).toString('base64').replace(/=/g, '');
 
-  // Step D: Start Model Derivative translation job
+  // Step D: Start Model Derivative translation job optimized for 2D architectural DWGs
   const jobRes = await requestJson('https://developer.api.autodesk.com/modelderivative/v2/designdata/job', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'x-ads-force': 'true'
     }
   }, {
     input: { urn },
     output: {
-      formats: [{ type: 'svf', views: ['2d', '3d'] }]
+      destination: { region: 'us' },
+      formats: [
+        {
+          type: 'svf',
+          views: ['2d'],
+          advanced: {
+            '2dviews': 'pdf'
+          }
+        }
+      ]
     }
   });
 
