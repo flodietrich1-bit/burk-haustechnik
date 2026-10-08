@@ -87,8 +87,11 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
       const rest = hasRoomMatches ? remainingNeeded : Math.max(0, planned - installed);
       
       // Baustellenbestand / Vorrätig:
-      // Geplante/gelieferte Stückzahl abzüglich bisher im Projekt verbauter Teile
-      const initialStock = Math.max(Number(pos.deliveredQty || 0), planned);
+      // Verfügbarkeit basiert strikt auf der GAEB-Datei (pos.qty) abzüglich bisher im Projekt verbauter Teile
+      const gaebQty = Number(pos.qty) || 0;
+      const initialStock = (pos.deliveredQty !== undefined && pos.deliveredQty !== null)
+        ? Number(pos.deliveredQty)
+        : gaebQty;
       const stock = Math.max(0, initialStock - installed);
       
       // Echte netto Abweichung:

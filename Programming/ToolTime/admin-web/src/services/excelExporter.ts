@@ -253,7 +253,8 @@ export function exportRoomVobAufmassToExcel(
       }
     }
 
-    const deliveredQty = pos?.deliveredQty !== undefined ? pos.deliveredQty : planned;
+    const gaebQty = Number(pos?.qty) || planned;
+    const deliveredQty = (pos && pos.deliveredQty !== undefined && pos.deliveredQty !== null) ? pos.deliveredQty : gaebQty;
     const restbedarf = !isCompleted && planned > actual ? `${planned - actual} ${mat.qu || 'Stk'}` : '0';
 
     return {

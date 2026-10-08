@@ -293,9 +293,11 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
       const p = posMap.get(entry.posNr) || (entry.positionId ? posIdMap.get(entry.positionId) : undefined);
       
       // A. Delivered / Initial Stock
-      // Wenn in den Räumen mehr geplant ist als in der Position hinterlegt (z.B. LV-Split), gilt mindestens die Raum-Planung als Soll-Liefermenge
-      const totalPlanned = totalPlannedAcrossRooms > 0 ? totalPlannedAcrossRooms : (Number(p?.qty) || 0);
-      const initialDelivered = Math.max(Number(p?.deliveredQty || 0), totalPlanned);
+      // Verfügbarkeit basiert strikt auf der GAEB-Datei (LV-Menge p.qty)
+      const gaebQty = Number(p?.qty) || 0;
+      const initialDelivered = (p && p.deliveredQty !== undefined && p.deliveredQty !== null)
+        ? Number(p.deliveredQty)
+        : gaebQty;
 
       // B. Additional reordered items
       const reordersSum = matchingAlerts

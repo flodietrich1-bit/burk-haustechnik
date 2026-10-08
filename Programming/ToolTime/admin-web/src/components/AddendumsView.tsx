@@ -210,11 +210,12 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
       });
     });
 
-    const plannedTotal = totalPlannedAcrossRooms > 0 ? totalPlannedAcrossRooms : (Number(p?.qty) || 0);
-    const initialDelivered = Math.max(
-      p && p.deliveredQty !== undefined ? Number(p.deliveredQty) : 0,
-      plannedTotal
-    );
+    // Verfügbarkeit basiert strikt auf der GAEB-Datei (LV-Menge p.qty),
+    // zzgl. etwaig manuell/per Nachbestellung erfasster Liefermengen (p.deliveredQty):
+    const gaebQty = Number(p?.qty) || 0;
+    const initialDelivered = (p && p.deliveredQty !== undefined && p.deliveredQty !== null)
+      ? Number(p.deliveredQty)
+      : gaebQty;
 
     // 3. Still needed in unfinished rooms
     let projectNeeded = 0;

@@ -27,7 +27,8 @@ import {
   Search,
   Check,
   UserCheck,
-  Pencil
+  Pencil,
+  Mail
 } from 'lucide-react';
 import { 
   listenToAufmasse, 
@@ -217,6 +218,49 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     exportAufmassToPdf(aufmass);
   };
 
+  // Send Aufmaß to commercial manager via Email with prefilled text and auto-download of Excel & PDF
+  const handleSendAufmassEmail = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    // 1. Download both Excel and PDF files so they are immediately available to attach
+    exportAufmassToExcel(aufmass);
+    exportAufmassToPdf(aufmass);
+
+    // 2. Prepare Email Metadata
+    const managerFirstName = (project?.commercialManager || 'Andreas').trim().split(/\s+/)[0];
+    const managerEmail = project?.commercialManagerEmail || 'andreas@burk-haustechnik.de';
+    const pName = project?.name || 'Bauvorhaben';
+    const dateFromStr = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
+    const dateToStr = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
+
+    const totalPositionsCount = aufmass.summaryItems.length;
+    const roomsCount = aufmass.roomsData.length;
+    const specialCount = aufmass.roomsData.reduce((acc, r) => acc + (r.specialPositions?.length || 0), 0);
+
+    const subject = `Aufmaß ${aufmass.aufmassNumber} (${pName}) – Zeitraum ${dateFromStr} bis ${dateToStr}`;
+
+    const body = `Hallo ${managerFirstName},
+
+anbei erhältst du das Aufmaß zur kaufmännischen Abrechnung und Prüfung:
+
+• Bauvorhaben: ${pName}
+• Aufmaß-Nummer: ${aufmass.aufmassNumber}
+• Abrechnungszeitraum: ${dateFromStr} bis ${dateToStr}
+• Erfasst von: ${aufmass.createdBy || 'Bauleitung'}
+• Verbaute Positionen: ${totalPositionsCount}
+• Bearbeitete Räume: ${roomsCount}
+${specialCount > 0 ? `• Davon Sonderposten: ${specialCount}\n` : ''}${aufmass.notes ? `• Bemerkung: ${aufmass.notes}\n` : ''}
+Beide Dateien (Excel-Report und PDF-Aufmaß) sind an diese E-Mail angehängt.
+
+Bitte prüfe das Aufmaß und veranlasse die Abrechnung / Abschlagsrechnung.
+
+Viele Grüße,
+${aufmass.createdBy || 'Bauleitung'}`;
+
+    const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailtoUrl, '_blank');
+  };
+
   // Open modal to edit reason and originator for a special position
   const handleOpenEditReason = (roomId: string, roomName: string, pos: AufmassRoomPosition) => {
     setEditReasonModal({
@@ -388,8 +432,16 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
             </div>
           </div>
 
-          {/* Action Buttons Top Right: Excel, PDF, Discard */}
-          <div className="flex items-center space-x-2.5">
+          {/* Action Buttons Top Right: Send, Excel, PDF, Discard */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleSendAufmassEmail(selectedAufmass)}
+              className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+              title="Aufmaß per E-Mail an kfm. Leitung versenden (Excel & PDF werden generiert)"
+            >
+              <Mail className="w-4 h-4" />
+              <span>Aufmaß verschicken</span>
+            </button>
             <button
               onClick={() => handleExport(selectedAufmass)}
               className="flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
@@ -1191,6 +1243,15 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                     {/* Aktionen (Excel Export in jeder Zeile!) */}
                     <td className="py-3.5 px-4 text-center">
                       <div className="flex items-center justify-center space-x-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={(e) => handleSendAufmassEmail(aufmass, e)}
+                          className="flex items-center space-x-1 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer"
+                          title="Aufmaß per E-Mail an kfm. Leitung versenden"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>Aufmaß verschicken</span>
+                        </button>
+
                         <button
                           onClick={(e) => handleExport(aufmass, e)}
                           className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-lg text-[11px] font-bold shadow-xs transition-all cursor-pointer"

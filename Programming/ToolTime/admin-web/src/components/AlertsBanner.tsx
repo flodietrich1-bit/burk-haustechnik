@@ -56,7 +56,10 @@ export const AlertsBanner: React.FC<AlertsBannerProps> = ({
     });
 
     const totalQty = totalPlannedAcrossRooms > 0 ? totalPlannedAcrossRooms : (Number(pos?.qty) || 0);
-    const deliveredQty = Math.max(Number(pos?.deliveredQty || 0), totalQty);
+    const gaebQty = Number(pos?.qty) || 0;
+    const deliveredQty = (pos && pos.deliveredQty !== undefined && pos.deliveredQty !== null)
+      ? Number(pos.deliveredQty)
+      : gaebQty;
 
     // Remaining needed across all unfinished rooms
     const openRooms = rooms.filter(r => r.status !== 'completed');
