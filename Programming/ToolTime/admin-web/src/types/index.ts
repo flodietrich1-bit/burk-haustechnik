@@ -340,6 +340,7 @@ export interface AufmassRoomData {
   roomCode: string;
   floor: string;
   isCompleted: boolean;
+  progressPercent?: number; // 0 bis 100%
   positions: AufmassRoomPosition[];
   plannedPositions?: AufmassRoomPosition[]; // Planmäßig verbaut (laut Plan)
   specialPositions?: AufmassRoomPosition[]; // Sonderposten (Zusätzlich verbaut)

@@ -410,9 +410,10 @@ Projektleitung Burk Haustechnik`;
 
   const handleOpenReorderModal = (group: GroupedDeviation) => {
     setSelectedGroup(group);
-    const initialQty = group.netDelta > 0 
-      ? group.netDelta 
-      : (group.projectNeeded > group.projectAvailable ? group.projectNeeded - group.projectAvailable : 1);
+    const shortage = Math.max(0, group.projectNeeded - group.projectAvailable);
+    const initialQty = shortage > 0 
+      ? shortage 
+      : (group.netDelta > 0 ? group.netDelta : 1);
     
     setReorderQty(initialQty);
     setMailSubject(`Dringende Material-Nachbestellung: ${initialQty} ${group.qu} ${group.materialName} (Pos. ${group.posNr}) - Projekt ${projectName}`);

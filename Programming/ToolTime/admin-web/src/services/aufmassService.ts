@@ -413,6 +413,24 @@ export function calculateAufmassSnapshot(
     // Combined positions array (for backward compatibility)
     const combinedPositions = [...plannedPositions, ...specialPositions];
 
+    // Calculate room progress percentage
+    let roomPercent = isDone ? 100 : ((room as any).pct ?? room.progressPercent ?? 0);
+    if (!isDone) {
+      let totPlan = 0;
+      let totInst = 0;
+      (room.materials || []).forEach(m => {
+        const pl = Number(m.plannedQty || 0);
+        const act = getMaterialActualQty(m, room, bookingsUpToDate);
+        if (pl > 0) {
+          totPlan += pl;
+          totInst += Math.min(pl, act);
+        }
+      });
+      if (totPlan > 0) {
+        roomPercent = Math.min(99, Math.round((totInst / totPlan) * 100));
+      }
+    }
+
     // Only include room if work has been performed (at least 1 position installed)
     if (combinedPositions.length > 0) {
       roomsData.push({
@@ -421,6 +439,7 @@ export function calculateAufmassSnapshot(
         roomCode: room.code || 'Raum',
         floor: room.floor,
         isCompleted: isDone,
+        progressPercent: roomPercent,
         plannedPositions,
         specialPositions,
         positions: combinedPositions,
@@ -530,4 +549,30 @@ export async function updateAufmassPositionReason(
 
   await saveAufmassDocument(projectId, updated);
   return updated;
+}
+
+/**
+ * Resolves the completion percentage for a room in an Aufmaß snapshot.
+ * Uses persistent progressPercent if available, or derives it from planned vs installed.
+ */
+export function getAufmassRoomPercent(r: AufmassRoomData): number {
+  if (r.progressPercent !== undefined && r.progressPercent !== null) {
+    return Math.round(r.progressPercent);
+  }
+  if (r.isCompleted) return 100;
+  const planned = r.plannedPositions || r.positions?.filter(p => !p.isExtraPosition) || [];
+  let totPlan = 0;
+  let totInst = 0;
+  planned.forEach(p => {
+    const pl = Number(p.plannedQty || 0);
+    const inst = Number(p.totalInstalledToDate || 0);
+    if (pl > 0) {
+      totPlan += pl;
+      totInst += Math.min(pl, inst);
+    }
+  });
+  if (totPlan > 0) {
+    return Math.min(99, Math.round((totInst / totPlan) * 100));
+  }
+  return 0;
 }

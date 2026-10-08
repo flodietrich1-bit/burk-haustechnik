@@ -1,5 +1,27 @@
 import PDFDocument from 'pdfkit';
 
+function getRoomPercent(r) {
+  if (r.progressPercent !== undefined && r.progressPercent !== null) {
+    return Math.round(r.progressPercent);
+  }
+  if (r.isCompleted) return 100;
+  const planned = r.plannedPositions || (r.positions ? r.positions.filter(p => !p.isExtraPosition) : []);
+  let totPlan = 0;
+  let totInst = 0;
+  planned.forEach(p => {
+    const pl = Number(p.plannedQty || 0);
+    const inst = Number(p.totalInstalledToDate || 0);
+    if (pl > 0) {
+      totPlan += pl;
+      totInst += Math.min(pl, inst);
+    }
+  });
+  if (totPlan > 0) {
+    return Math.min(99, Math.round((totInst / totPlan) * 100));
+  }
+  return 0;
+}
+
 /**
  * Generate a professional DIN A4 VOB Aufmaß PDF
  */
@@ -79,7 +101,64 @@ export async function generateAufmassPdf(aufmass) {
         tableY += 18;
       });
 
-      // Signature area
+      // Rooms Breakdown Table
+      if (aufmass.roomsData && aufmass.roomsData.length > 0) {
+        doc.addPage();
+        let rY = 40;
+        doc.fontSize(12).font('Helvetica-Bold').fillColor('#0F172A').text('Detailliertes Raumaufmaß (Raumübersicht)', 40, rY);
+        rY += 20;
+
+        aufmass.roomsData.forEach(r => {
+          const pct = getRoomPercent(r);
+          if (rY > 690) {
+            doc.addPage();
+            rY = 40;
+          }
+
+          // Room Header Box
+          doc.rect(40, rY, 515, 20).fill('#F1F5F9');
+          doc.fillColor('#0F172A').fontSize(9).font('Helvetica-Bold');
+          doc.text(`${r.roomCode || 'Raum'} – ${r.roomName || ''} (Etage ${r.floor || '-'})`, 48, rY + 5);
+
+          // Bold percentage text right at the room title
+          const pctText = `${pct}% fertiggestellt${r.isCompleted ? ' ✓' : ''}`;
+          doc.fontSize(9).font('Helvetica-Bold').fillColor('#0F172A').text(pctText, 350, rY + 5, { width: 195, align: 'right' });
+          rY += 24;
+
+          const positions = (r.plannedPositions && r.plannedPositions.length > 0)
+            ? r.plannedPositions
+            : (r.positions ? r.positions.filter(p => !p.isExtraPosition) : []);
+
+          if (positions.length > 0) {
+            doc.fillColor('#64748B').fontSize(7.5).font('Helvetica-Bold');
+            doc.text('Pos-Nr', 45, rY);
+            doc.text('Bezeichnung', 110, rY);
+            doc.text('Plan', 330, rY, { width: 50, align: 'right' });
+            doc.text('Ist', 390, rY, { width: 50, align: 'right' });
+            doc.text('Delta', 450, rY, { width: 50, align: 'right' });
+            rY += 12;
+
+            doc.font('Helvetica').fontSize(7.5);
+            positions.forEach(p => {
+              if (rY > 750) {
+                doc.addPage();
+                rY = 40;
+              }
+              doc.fillColor('#334155');
+              doc.text(p.posNr || '-', 45, rY);
+              doc.text((p.shortText || '-').substring(0, 42), 110, rY, { width: 210, ellipsis: true });
+              doc.text(`${p.plannedQty || 0} ${p.qu || 'Stk'}`, 330, rY, { width: 50, align: 'right' });
+              doc.text(`${p.totalInstalledToDate || 0} ${p.qu || 'Stk'}`, 390, rY, { width: 50, align: 'right' });
+              doc.font('Helvetica-Bold').text(`+${p.periodInstalledQty || 0}`, 450, rY, { width: 50, align: 'right' });
+              doc.font('Helvetica');
+              rY += 12;
+            });
+            rY += 6;
+          }
+          rY += 4;
+        });
+        tableY = rY;
+      }
       if (tableY > 680) {
         doc.addPage();
         tableY = 60;

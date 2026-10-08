@@ -34,8 +34,14 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
     email: '',
     phone: '',
     pin: '',
+    defaultLanguage: 'de',
     status: 'active'
   });
+
+  const handleUpdateLanguage = async (user: User, lang: 'de' | 'ro' | 'pl' | 'hr') => {
+    const updated: User = { ...user, defaultLanguage: lang };
+    await saveUser(updated);
+  };
 
   const isPL = (u: User) => u.role === 'projektleiter' || u.role === 'bauleiter';
   const filteredUsers = users.filter(u => {
@@ -76,6 +82,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
       email: newUser.email || undefined,
       phone: newUser.phone || undefined,
       pin: newUser.role === 'monteur' ? (newUser.pin || '1234') : undefined,
+      defaultLanguage: newUser.defaultLanguage || 'de',
       status: 'active',
       createdAt: new Date().toISOString()
     };
@@ -88,6 +95,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
       email: '',
       phone: '',
       pin: '',
+      defaultLanguage: 'de',
       status: 'active'
     });
   };
@@ -202,6 +210,7 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
                 <th className="py-3.5 px-4">Rolle</th>
                 <th className="py-3.5 px-4">Kontakt</th>
                 <th className="py-3.5 px-4">App-PIN (Monteur)</th>
+                <th className="py-3.5 px-4">App-Sprache</th>
                 <th className="py-3.5 px-4">Zugewiesene Projekte</th>
                 <th className="py-3.5 px-4">Status</th>
               </tr>
@@ -300,6 +309,21 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
                       ) : (
                         <span className="text-slate-400 italic text-[11px]">-</span>
                       )}
+                    </td>
+
+                    {/* App-Sprache */}
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      <select
+                        value={user.defaultLanguage || 'de'}
+                        onChange={(e) => handleUpdateLanguage(user, e.target.value as any)}
+                        className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-semibold rounded-lg px-2 py-1 text-slate-800 cursor-pointer focus:ring-1 focus:ring-[#3B82C4] focus:outline-none"
+                        title="Standardsprache für die Monteur-App"
+                      >
+                        <option value="de">🇩🇪 Deutsch</option>
+                        <option value="ro">🇷🇴 Română</option>
+                        <option value="pl">🇵🇱 Polski</option>
+                        <option value="hr">🇭🇷 Hrvatski</option>
+                      </select>
                     </td>
 
                     {/* Assigned Projects */}
@@ -421,6 +445,20 @@ export const UserManagementView: React.FC<UserManagementViewProps> = ({ users, p
                   <option value="projektleiter">Projektleiter (Projekt- & Baustellenleitung)</option>
                   <option value="kaufmaennisch">Kaufmann / Kauffrau (Bestellungen & Rechnungen)</option>
                   <option value="admin">Eigentümer / Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Bevorzugte App-Sprache (Monteur-App) *</label>
+                <select
+                  value={newUser.defaultLanguage || 'de'}
+                  onChange={(e) => setNewUser({ ...newUser, defaultLanguage: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                >
+                  <option value="de">🇩🇪 Deutsch (Standard)</option>
+                  <option value="ro">🇷🇴 Rumänisch (Română)</option>
+                  <option value="pl">🇵🇱 Polnisch (Polski)</option>
+                  <option value="hr">🇭🇷 Kroatisch (Hrvatski)</option>
                 </select>
               </div>
 

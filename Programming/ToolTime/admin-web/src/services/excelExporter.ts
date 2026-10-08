@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import type { Position, Booking, Room, AufmassDocument, Alert, Addendum } from '../types';
 import { getMaterialActualQty } from './firestoreService';
+import { getAufmassRoomPercent } from './aufmassService';
 
 /**
  * Vollständige reale Baustellenbilanz als Excel-Export:
@@ -531,9 +532,10 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
     const planned = r.plannedPositions || r.positions.filter(p => !p.isExtraPosition);
     const special = r.specialPositions || r.positions.filter(p => p.isExtraPosition);
 
+    const pct = getAufmassRoomPercent(r);
     return `
     <div class="room-block">
-      <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) ${r.isCompleted ? '✓ abgeschlossen' : '(in Montage)'}</h3>
+      <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) – <b style="font-weight: 800; color: #0f172a;">${pct}% fertiggestellt</b> ${r.isCompleted ? '✓' : ''}</h3>
       
       <!-- Bereich 1: Planmäßig verbaut -->
       <div class="sub-head">Planmäßig verbaut (laut Plan)</div>

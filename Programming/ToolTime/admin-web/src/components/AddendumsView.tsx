@@ -310,7 +310,8 @@ Bauleitung Burk Haustechnik`;
   // 3. Open Reorder / Request Modal for single item
   const handleOpenReorderModal = (item: Addendum) => {
     const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
-    const initQty = Math.max(1, rawQty);
+    const stockInfo = getItemStockInfo(item);
+    const initQty = stockInfo.deficit > 0 ? stockInfo.deficit : Math.max(1, rawQty);
     const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
     const { subj, body } = generateMailContent(item, initQty, unit);
 

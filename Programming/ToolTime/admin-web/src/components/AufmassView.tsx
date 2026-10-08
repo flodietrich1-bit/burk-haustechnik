@@ -35,7 +35,8 @@ import {
   saveAufmassDocument, 
   deleteAufmassDocument, 
   calculateAufmassSnapshot,
-  updateAufmassPositionReason
+  updateAufmassPositionReason,
+  getAufmassRoomPercent
 } from '../services/aufmassService';
 import { exportAufmassToExcel, exportAufmassToPdf, downloadAufmassPdf } from '../services/excelExporter';
 
@@ -62,10 +63,10 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
 }) => {
   const [aufmasse, setAufmasse] = useState<AufmassDocument[]>([]);
   const [selectedAufmass, setSelectedAufmass] = useState<AufmassDocument | null>(null);
-  const [detailTab, setDetailTab] = useState<'summary' | 'rooms'>('summary');
+  const [detailTab, setDetailTab] = useState<'summary' | 'rooms'>('rooms');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
-  const [onlyInstalled, setOnlyInstalled] = useState<boolean>(false);
+  const onlyInstalled = true;
 
   // Discard Confirmation Modal State
   const [discardTarget, setDiscardTarget] = useState<AufmassDocument | null>(null);
@@ -138,20 +139,11 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     if (project?.startDate) {
       return project.startDate;
     }
-    // Fallback: earliest booking or 30 days ago
-    if (bookings.length > 0) {
-      const timestamps = bookings
-        .map(b => b.createdAt || b.timestamp)
-        .filter(Boolean) as string[];
-      if (timestamps.length > 0) {
-        timestamps.sort();
-        return timestamps[0].slice(0, 10);
-      }
+    if (project?.createdAt) {
+      return project.createdAt.slice(0, 10);
     }
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  }, [latestSavedAufmass, project?.startDate, bookings]);
+    return new Date().toISOString().slice(0, 10);
+  }, [latestSavedAufmass, project?.startDate, project?.createdAt]);
 
   // Handle open create modal
   const handleOpenCreateModal = () => {
@@ -187,7 +179,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       setAufmasse(prev => [snapshot, ...prev.filter(a => a.id !== snapshot.id)]);
       setIsCreateModalOpen(false);
       setSelectedAufmass(snapshot);
-      setDetailTab('summary');
+      setDetailTab('rooms');
       setSelectedRoomFilter('all');
     } catch (err: any) {
       console.error('Error creating Aufmass snapshot:', err);
@@ -545,32 +537,6 @@ ${aufmass.createdBy || 'Bauleitung'}`;
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Radio Button: Nur verbaute Teile */}
-            <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700">
-              <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
-                <input
-                  type="radio"
-                  name="aufmass_installed_filter"
-                  value="all"
-                  checked={!onlyInstalled}
-                  onChange={() => setOnlyInstalled(false)}
-                  className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
-                />
-                <span>Alle Teile</span>
-              </label>
-              <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
-                <input
-                  type="radio"
-                  name="aufmass_installed_filter"
-                  value="installed"
-                  checked={onlyInstalled}
-                  onChange={() => setOnlyInstalled(true)}
-                  className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
-                />
-                <span>Nur verbaute Teile</span>
-              </label>
-            </div>
-
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -684,6 +650,7 @@ ${aufmass.createdBy || 'Bauleitung'}`;
               {selectedAufmass.roomsData.map(r => {
                 const isActive = selectedRoomFilter === r.roomId;
                 const hasIssues = r.positions.some(p => p.isOverconsumption);
+                const pct = getAufmassRoomPercent(r);
                 return (
                   <button
                     key={r.roomId}
@@ -695,6 +662,9 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                     }`}
                   >
                     <span>{r.roomCode} {r.roomName}</span>
+                    <span className={`text-[10px] ${isActive ? 'text-blue-100 font-extrabold' : 'text-slate-600 font-bold'}`}>
+                      {pct}%
+                    </span>
                     {hasIssues && (
                       <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-amber-300' : 'bg-red-500'}`} />
                     )}
@@ -726,6 +696,8 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                   ? specialList.filter(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term) || (p.reason && p.reason.toLowerCase().includes(term)) || (p.causedBy && p.causedBy.toLowerCase().includes(term)))
                   : specialList;
 
+                const pct = getAufmassRoomPercent(room);
+
                 return (
                   <div key={room.roomId} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
                     {/* Room Header */}
@@ -737,6 +709,9 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                         <h3 className="font-bold text-slate-900 text-sm">
                           {room.roomName}
                         </h3>
+                        <span className="inline-flex items-center text-xs font-bold text-slate-900 bg-slate-200/90 border border-slate-300 px-2.5 py-0.5 rounded-md shadow-xs">
+                          <strong>{pct}% fertiggestellt</strong>
+                        </span>
                         <span className="text-xs text-slate-400">
                           (Etage: {room.floor})
                         </span>
@@ -1203,7 +1178,10 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                 {aufmasse.map((aufmass, idx) => (
                   <tr 
                     key={aufmass.id}
-                    onClick={() => setSelectedAufmass(aufmass)}
+                    onClick={() => {
+                      setSelectedAufmass(aufmass);
+                      setDetailTab('rooms');
+                    }}
                     className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
                   >
                     {/* Aufmaß-Nr */}
@@ -1302,7 +1280,10 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                         </button>
 
                         <button
-                          onClick={() => setSelectedAufmass(aufmass)}
+                          onClick={() => {
+                            setSelectedAufmass(aufmass);
+                            setDetailTab('rooms');
+                          }}
                           className="flex items-center space-x-1 bg-blue-50 hover:bg-blue-100 text-[#3B82C4] border border-blue-200 px-2 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
                           title="Aufmaß-Details ansehen"
                         >
