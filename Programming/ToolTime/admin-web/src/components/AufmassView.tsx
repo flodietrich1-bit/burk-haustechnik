@@ -37,7 +37,7 @@ import {
   calculateAufmassSnapshot,
   updateAufmassPositionReason
 } from '../services/aufmassService';
-import { exportAufmassToExcel, exportAufmassToPdf } from '../services/excelExporter';
+import { exportAufmassToExcel, exportAufmassToPdf, downloadAufmassPdf } from '../services/excelExporter';
 
 interface AufmassViewProps {
   projectId: string;
@@ -84,6 +84,16 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [editReasonText, setEditReasonText] = useState('');
   const [editCausedBy, setEditCausedBy] = useState('Monteur');
   const [isSavingReason, setIsSavingReason] = useState(false);
+
+  // Email Sent Status Modal State
+  const [emailSentModal, setEmailSentModal] = useState<{
+    aufmass: AufmassDocument;
+    managerEmail: string;
+    managerFirstName: string;
+    subject: string;
+    body: string;
+    mailtoUrl: string;
+  } | null>(null);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -219,14 +229,10 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   };
 
   // Send Aufmaß to commercial manager via Email with prefilled text and auto-download of Excel & PDF
-  const handleSendAufmassEmail = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
+  const handleSendAufmassEmail = async (aufmass: AufmassDocument, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
-    // 1. Download both Excel and PDF files so they are immediately available to attach
-    exportAufmassToExcel(aufmass);
-    exportAufmassToPdf(aufmass);
-
-    // 2. Prepare Email Metadata
+    // 1. Prepare Email Metadata
     const managerFirstName = (project?.commercialManager || 'Andreas').trim().split(/\s+/)[0];
     const managerEmail = project?.commercialManagerEmail || 'andreas@burk-haustechnik.de';
     const pName = project?.name || 'Bauvorhaben';
@@ -258,7 +264,32 @@ Viele Grüße,
 ${aufmass.createdBy || 'Bauleitung'}`;
 
     const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailtoUrl, '_blank');
+
+    // 2. OPEN EMAIL PROGRAM IMMEDIATELY USING NATIVE LINK
+    // We execute this immediately to preserve user gesture context so the OS mail client opens without popup blocker interference:
+    const mailLink = document.createElement('a');
+    mailLink.href = mailtoUrl;
+    document.body.appendChild(mailLink);
+    mailLink.click();
+    document.body.removeChild(mailLink);
+
+    // 3. Download both Excel and PDF files
+    exportAufmassToExcel(aufmass);
+    try {
+      await downloadAufmassPdf(aufmass);
+    } catch (err) {
+      console.warn('PDF download error:', err);
+    }
+
+    // 4. Open status & guidance modal
+    setEmailSentModal({
+      aufmass,
+      managerEmail,
+      managerFirstName,
+      subject,
+      body,
+      mailtoUrl
+    });
   };
 
   // Open modal to edit reason and originator for a special position
@@ -1600,6 +1631,84 @@ ${aufmass.createdBy || 'Bauleitung'}`;
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: E-Mail verschickt & Dateien heruntergeladen */}
+      {emailSentModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3 text-[#3B82C4]">
+              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#3B82C4]">
+                <Mail className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Aufmaß per E-Mail versenden</h3>
+                <p className="text-xs text-slate-500">
+                  Empfänger: <strong>{emailSentModal.managerFirstName} ({emailSentModal.managerEmail})</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+              <div className="flex items-center space-x-2 text-emerald-700 font-bold">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>E-Mail-Programm aufgerufen & Dateien bereitgestellt:</span>
+              </div>
+              <ul className="pl-6 list-disc space-y-1 text-slate-600">
+                <li><span className="font-semibold text-slate-800">Excel-Datei (.xlsx)</span> im Download-Ordner</li>
+                <li><span className="font-semibold text-slate-800">PDF-Aufmaß (.pdf)</span> im Download-Ordner</li>
+              </ul>
+              <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
+                💡 <strong>Hinweis zum Anhang:</strong> Aus Sicherheitsgründen dürfen Web-Browser Dateien nicht direkt in Desktop-Mailprogramme einfügen. Ziehe die beiden heruntergeladenen Dateien einfach kurz per Drag & Drop in die geöffnete E-Mail.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                Vorbereiteter E-Mail-Text:
+              </span>
+              <pre className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-[10.5px] text-slate-800 whitespace-pre-wrap font-sans max-h-36 overflow-y-auto leading-relaxed">
+                {emailSentModal.body}
+              </pre>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(emailSentModal.body);
+                  alert('E-Mail-Text in Zwischenablage kopiert!');
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                Text kopieren
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const mailLink = document.createElement('a');
+                    mailLink.href = emailSentModal.mailtoUrl;
+                    document.body.appendChild(mailLink);
+                    mailLink.click();
+                    document.body.removeChild(mailLink);
+                  }}
+                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#3B82C4] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all cursor-pointer"
+                >
+                  E-Mail erneut öffnen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEmailSentModal(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1C2A3B] hover:bg-slate-900 text-white shadow-xs transition-all cursor-pointer"
+                >
+                  Fertig
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

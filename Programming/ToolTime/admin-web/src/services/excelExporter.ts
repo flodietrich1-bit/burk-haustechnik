@@ -689,3 +689,38 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
   w.document.write(html);
   w.document.close();
 }
+
+/**
+ * Downloads Aufmaß as a real binary PDF file from the backend service,
+ * falling back to HTML print if backend is unavailable.
+ */
+export async function downloadAufmassPdf(aufmass: AufmassDocument): Promise<void> {
+  const sanitizedProject = (aufmass.projectName || 'Projekt').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Aufmass_${aufmass.aufmassNumber}_${sanitizedProject}.pdf`;
+
+  try {
+    const res = await fetch('http://localhost:3001/api/aufmass-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aufmass)
+    });
+
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+  } catch (err) {
+    console.warn('Backend PDF endpoint error, falling back to print dialog:', err);
+  }
+
+  // Fallback to HTML print dialog
+  exportAufmassToPdf(aufmass);
+}

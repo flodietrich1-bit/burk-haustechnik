@@ -15,6 +15,7 @@ import {
   getManifest,
   uploadAndTranslateDwg
 } from './apsService.js';
+import { generateAufmassPdf } from './aufmassPdfService.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -100,6 +101,26 @@ app.post('/api/convert-cad', upload.single('file'), async (req, res) => {
   } catch (err) {
     console.error('Error in /api/convert-cad:', err);
     res.status(500).json({ error: err.message || 'CAD conversion failed' });
+  }
+});
+
+/**
+ * 1b. Endpoint: Generate Aufmaß DIN A4 PDF binary
+ * POST /api/aufmass-pdf
+ */
+app.post('/api/aufmass-pdf', async (req, res) => {
+  try {
+    const aufmass = req.body;
+    if (!aufmass || !aufmass.aufmassNumber) {
+      return res.status(400).json({ error: 'Aufmass data is required' });
+    }
+    const pdfBuffer = await generateAufmassPdf(aufmass);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Aufmass_${aufmass.aufmassNumber}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('Error in /api/aufmass-pdf:', err);
+    res.status(500).json({ error: err.message || 'PDF generation failed' });
   }
 });
 
