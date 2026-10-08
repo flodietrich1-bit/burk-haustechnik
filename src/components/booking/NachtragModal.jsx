@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { COLORS } from '../../constants/theme';
 import { t } from '../../locales/i18n';
-import SignaturePad from '../SignaturePad';
 import { getRoomDisplayName } from './bookingHelpers';
 import { styles } from './nachtragStyles';
 
@@ -42,17 +41,13 @@ export default function NachtragModal({
   const [hoursMonteur, setHoursMonteur] = useState('');
   const [hoursNote, setHoursNote] = useState('');
 
-  // Form 3: Unterschrift & Validation
-  const [nachtragSignature, setNachtragSignature] = useState(null);
-  const [modalScrollEnabled, setModalScrollEnabled] = useState(true);
+  // Validation
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
   useEffect(() => {
     if (visible) {
       if (!matBesteller) setMatBesteller(monteur?.name || '');
       if (!hoursMonteur) setHoursMonteur(monteur?.name || '');
-      setNachtragSignature(null);
-      setModalScrollEnabled(true);
       setHasAttemptedSubmit(false);
       setShowRoomMatPicker(false);
     }
@@ -79,7 +74,6 @@ export default function NachtragModal({
           !matQty.trim() || !(parseFloat(matQty) > 0) ? t('reQty', currentLang) : null,
           !matNote.trim() ? t('reNote', currentLang) : null,
           !matBesteller.trim() ? t('reBest', currentLang) : null,
-          !nachtragSignature ? t('signatureLabel', currentLang) : null,
         ].filter(Boolean)
       : [
           !hoursActivity.trim() ? t('fldTaetigkeit', currentLang) : null,
@@ -88,7 +82,6 @@ export default function NachtragModal({
             : null,
           !hoursNote.trim() ? t('reNote', currentLang) : null,
           !hoursMonteur.trim() ? t('monteur', currentLang) : null,
-          !nachtragSignature ? t('signatureLabel', currentLang) : null,
         ].filter(Boolean);
 
   const handleSubmit = () => {
@@ -108,14 +101,13 @@ export default function NachtragModal({
         qu: matUnit,
         requestedBy: matBesteller.trim() || monteur?.name || 'Monteur',
         note: matNote.trim(),
-        signature: nachtragSignature,
+        signature: null,
       });
 
       setMatTitle('');
       setMatQty('');
       setMatNote('');
       setSelectedRoomMat(null);
-      setNachtragSignature(null);
       setHasAttemptedSubmit(false);
       setShowRoomMatPicker(false);
     } else {
@@ -129,13 +121,12 @@ export default function NachtragModal({
         qu: 'h',
         requestedBy: hoursMonteur.trim() || monteur?.name || 'Monteur',
         note: hoursNote.trim(),
-        signature: nachtragSignature,
+        signature: null,
       });
 
       setHoursActivity('');
       setHoursDuration('');
       setHoursNote('');
-      setNachtragSignature(null);
       setHasAttemptedSubmit(false);
     }
   };
@@ -203,7 +194,6 @@ export default function NachtragModal({
             style={styles.modalBody}
             contentContainerStyle={styles.modalScrollContent}
             keyboardShouldPersistTaps="handled"
-            scrollEnabled={modalScrollEnabled}
           >
             {/* TAB 1: MATERIAL NACHTRAG */}
             {activeTab === 'material' && (
@@ -478,16 +468,6 @@ export default function NachtragModal({
                 </View>
               </View>
             )}
-
-            {/* UNTERSCHRIFTENFELD */}
-            <SignaturePad
-              key={`sig-${activeTab}`}
-              isInvalid={hasAttemptedSubmit && !nachtragSignature}
-              currentLang={currentLang}
-              onSignatureChange={(hasSig, paths) => setNachtragSignature(hasSig ? paths : null)}
-              onDrawStart={() => setModalScrollEnabled(false)}
-              onDrawEnd={() => setModalScrollEnabled(true)}
-            />
           </ScrollView>
 
           {/* Sticky Bottom Footer */}

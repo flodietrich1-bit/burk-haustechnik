@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { COLORS } from '../../constants/theme';
 import { t } from '../../locales/i18n';
-import SignaturePad from '../SignaturePad';
 import { getMaterialDisplayName, getRoomDisplayName } from './bookingHelpers';
 import { styles } from './unplannedStyles';
 
@@ -32,8 +31,6 @@ export default function UnplannedInstallModal({
   const [showUnclearSuggestions, setShowUnclearSuggestions] = useState(false);
   const [unclearReason, setUnclearReason] = useState('');
   const [unclearSigner, setUnclearSigner] = useState('');
-  const [unclearSignature, setUnclearSignature] = useState(null);
-  const [unclearScrollEnabled, setUnclearScrollEnabled] = useState(true);
   const [hasAttemptedUnclearSubmit, setHasAttemptedUnclearSubmit] = useState(false);
 
   useEffect(() => {
@@ -81,8 +78,7 @@ export default function UnplannedInstallModal({
       !unclearText.trim() ||
       qtyVal <= 0 ||
       !unclearReason.trim() ||
-      !unclearSigner.trim() ||
-      !unclearSignature;
+      !unclearSigner.trim();
     if (isMissing) {
       setHasAttemptedUnclearSubmit(true);
       return;
@@ -101,7 +97,7 @@ export default function UnplannedInstallModal({
       group: selectedUnclearMat?.group || 'Zusatz / Außerplanmäßig',
       isOrdered: !!selectedUnclearMat,
       reason: unclearReason.trim(),
-      signature: unclearSignature,
+      signature: null,
       requestedBy: unclearSigner.trim() || monteur?.name || 'Monteur',
       signerName: unclearSigner.trim() || monteur?.name || 'Monteur',
       roomId: room.id,
@@ -111,7 +107,6 @@ export default function UnplannedInstallModal({
     setUnclearText('');
     setUnclearQty('');
     setUnclearReason('');
-    setUnclearSignature(null);
     setSelectedUnclearMat(null);
     setShowUnclearSuggestions(false);
     setHasAttemptedUnclearSubmit(false);
@@ -146,7 +141,6 @@ export default function UnplannedInstallModal({
             style={styles.modalBody}
             contentContainerStyle={styles.modalScrollContent}
             keyboardShouldPersistTaps="handled"
-            scrollEnabled={unclearScrollEnabled}
           >
             {/* Info banner */}
             <View style={styles.unclearInfoCard}>
@@ -327,16 +321,6 @@ export default function UnplannedInstallModal({
                 onChangeText={setUnclearSigner}
               />
             </View>
-
-            {/* Unterschrift */}
-            <SignaturePad
-              key="sig-unclear"
-              isInvalid={hasAttemptedUnclearSubmit && !unclearSignature}
-              currentLang={currentLang}
-              onSignatureChange={(hasSig, paths) => setUnclearSignature(hasSig ? paths : null)}
-              onDrawStart={() => setUnclearScrollEnabled(false)}
-              onDrawEnd={() => setUnclearScrollEnabled(true)}
-            />
           </ScrollView>
 
           {/* Single Sticky Bottom Button: Material erfassen */}
@@ -345,8 +329,7 @@ export default function UnplannedInstallModal({
               (!unclearText.trim() ||
                 !(parseFloat(unclearQty) > 0) ||
                 !unclearReason.trim() ||
-                !unclearSigner.trim() ||
-                !unclearSignature) && (
+                !unclearSigner.trim()) && (
                 <View style={styles.missingHintBar}>
                   <Text style={styles.missingHintIcon}>⚠️</Text>
                   <View style={{ flex: 1 }}>
@@ -359,7 +342,6 @@ export default function UnplannedInstallModal({
                         !(parseFloat(unclearQty) > 0) ? t('reQty', currentLang) : null,
                         !unclearReason.trim() ? t('unplannedReason', currentLang) : null,
                         !unclearSigner.trim() ? t('reBest', currentLang) : null,
-                        !unclearSignature ? t('signatureLabel', currentLang) : null,
                       ]
                         .filter(Boolean)
                         .join(' · ')}

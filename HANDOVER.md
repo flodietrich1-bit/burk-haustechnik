@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.18` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal with signature, unplanned/außerplanmäßig material modal with signer name, photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. ("Plan ansehen" UI-Buttons in v2.18 entfernt, da für Monteure auf der Baustelle unpraktisch).
+- App version `v2.19` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal (ohne Unterschrift, Monteur bereits authentifiziert), unplanned/außerplanmäßig material modal mit Erfassername (ohne Unterschrift), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -142,6 +142,10 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-08 v2.19: Unterschriftenfeld bei Nachträgen und außerplanmäßigem Material entfernt:
+  - `NachtragModal.jsx`: `SignaturePad` und Signaturvalidierung für Material- und Arbeitszeit-Nachträge entfernt.
+  - `UnplannedInstallModal.jsx`: `SignaturePad` und Signaturvalidierung für außerplanmäßig verbautes Material entfernt.
+  - Begründung: Der Monteur ist bereits über seine PIN/Benutzer-ID sicher authentifiziert; das manuelle Unterschreiben per Touchscreen bot keinen Mehrwert und verlangsamte den Buchungsablauf. Der Name des Monteurs bleibt in den Datensätzen unverändert hinterlegt (`requestedBy` / `signerName`).
 - 2026-10-08 v2.18: "Plan ansehen"-Button & Modaleinbindung aus Monteur-App entfernt:
   - `BookingScreen.jsx`: "📐 Plan ansehen"-Button im Kopfbereich und `PlanViewerModal`-Einbindung entfernt.
   - `RoomListScreen.jsx`: Geschoss-Banner ("Montageplan {floor} öffnen"), Geschoss-Gruppen-Button ("📐 Plan {fl}") und `PlanViewerModal`-Einbindung entfernt.
@@ -211,5 +215,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-08 — v2.18 Update: "Plan ansehen"-Button und Modal-Einbindung aus Monteur-App entfernt (`BookingScreen.jsx`, `RoomListScreen.jsx`, `bookingStyles.js`).
+2026-10-08 — v2.19 Update: Unterschriftenfeld bei Nachträgen und außerplanmäßig verbautem Material entfernt (`NachtragModal.jsx`, `UnplannedInstallModal.jsx`). Monteur-Identität bleibt durch Login-ID / Name verlässlich gewahrt.
 
