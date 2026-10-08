@@ -304,6 +304,11 @@ export function exportRoomVobAufmassToExcel(
  * Sheet 1: Gesamtübersicht (aggregated period totals)
  * Sheet 2: Räume (detailed room breakdown with overconsumption and reasons)
  */
+/**
+ * Export a complete Aufmaß Snapshot into an Excel (.xlsx) file with 2 sheets:
+ * Sheet 1: Gesamtübersicht (only installed period totals with wide columns)
+ * Sheet 2: Räume (separated into 'Planmäßig verbaut' and 'Sonderposten' with cause & reason)
+ */
 export function exportAufmassToExcel(aufmass: AufmassDocument) {
   const wb = XLSX.utils.book_new();
 
@@ -314,6 +319,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
     ['AUFMASS-PROTOKOLL (GESAMTÜBERSICHT)'],
     ['Projekt:', aufmass.projectName],
     ['Aufmaß-Nr:', aufmass.aufmassNumber],
+    ['Verbaute Positionen:', `${aufmass.summaryItems.length} Positionen in ${aufmass.roomsData.length} bearbeiteten Räumen`],
     ['Stichtag der Abrechnung:', new Date(aufmass.dateTo).toLocaleDateString('de-DE')],
     ['Zeitraum (Delta seit vorigem Aufmaß):', `Von ${new Date(aufmass.dateFrom).toLocaleDateString('de-DE')} bis ${new Date(aufmass.dateTo).toLocaleDateString('de-DE')}`],
     ['Erstellt am:', `${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${aufmass.createdBy}`],
@@ -334,93 +340,162 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
   }));
 
   const wsSummary = XLSX.utils.aoa_to_sheet(summaryHeader);
-  XLSX.utils.sheet_add_json(wsSummary, summaryRows, { origin: 'A9' });
+  XLSX.utils.sheet_add_json(wsSummary, summaryRows, { origin: 'A10' });
+
+  // Feste Spaltenbreiten (Breite Spalten für Beschreibung)
+  wsSummary['!cols'] = [
+    { wch: 14 }, // Pos-Nr
+    { wch: 24 }, // Gewerk / Kategorie
+    { wch: 50 }, // Material / Leistungsbezeichnung (großzügig breit!)
+    { wch: 18 }, // Soll-Menge (Plan)
+    { wch: 22 }, // Kumuliert bis Stichtag
+    { wch: 24 }, // Delta seit vorigem Aufmaß
+    { wch: 10 }, // Einheit
+    { wch: 16 }, // Einzelpreis (€)
+    { wch: 22 }  // Abrechnungsbetrag (€)
+  ];
 
   // -------------------------------------------------------------
-  // SHEET 2: Räume (Detailaufstellung nach Räumen mit Begründungszeilen)
+  // SHEET 2: Räume (Detailaufstellung nach Räumen mit Planmäßig vs Sonderposten)
   // -------------------------------------------------------------
   const roomRows: any[] = [];
 
   aufmass.roomsData.forEach(room => {
-    // Room Header Row
+    const planned = room.plannedPositions || room.positions.filter(p => !p.isExtraPosition);
+    const special = room.specialPositions || room.positions.filter(p => p.isExtraPosition);
+
+    // 1. Room Header Row
     roomRows.push({
-      'Raum / Code': `${room.roomCode} - ${room.roomName} (Etage: ${room.floor})`,
+      'Bereich / Raum': `${room.roomCode} - ${room.roomName} (Etage: ${room.floor})`,
       'Pos-Nr': room.isCompleted ? '✓ 100% Abgeschlossen' : 'In Montage',
       'Materialbezeichnung': '',
       'Plan-Menge': '',
-      'Delta seit vorigem Aufmaß': '',
+      'Verbaut im Zeitraum': '',
       'Kumuliert bis Stichtag': '',
       'Einheit': '',
-      'Mehrverbrauch': '',
-      'Hinweis / Begründung': ''
+      'Art / Status': '',
+      'Begründung': '',
+      'Verursacher': ''
     });
 
-    if (room.positions.length === 0) {
+    // 2. Section: Planmäßig verbaut (laut Plan)
+    roomRows.push({
+      'Bereich / Raum': '--- 1. Planmäßig verbaut (laut Plan) ---',
+      'Pos-Nr': '',
+      'Materialbezeichnung': '',
+      'Plan-Menge': '',
+      'Verbaut im Zeitraum': '',
+      'Kumuliert bis Stichtag': '',
+      'Einheit': '',
+      'Art / Status': '',
+      'Begründung': '',
+      'Verursacher': ''
+    });
+
+    if (planned.length === 0) {
       roomRows.push({
-        'Raum / Code': '',
-        'Pos-Nr': '-',
-        'Materialbezeichnung': '(Keine Positionen für diesen Raum)',
+        'Bereich / Raum': '',
+        'Pos-Nr': '–',
+        'Materialbezeichnung': '(Keine planmäßigen Teile verbaut)',
         'Plan-Menge': '',
-        'Delta seit vorigem Aufmaß': '',
+        'Verbaut im Zeitraum': '',
         'Kumuliert bis Stichtag': '',
         'Einheit': '',
-        'Mehrverbrauch': '',
-        'Hinweis / Begründung': ''
+        'Art / Status': '–',
+        'Begründung': '',
+        'Verursacher': ''
       });
     } else {
-      room.positions.forEach(pos => {
-        let deviationText = '-';
-        if (pos.isOverconsumption) {
-          deviationText = `+${pos.excessQty} ${pos.qu} (MEHRVERBRAUCH)`;
-        } else if (pos.isExtraPosition) {
-          deviationText = `+${pos.installedInPeriod} ${pos.qu} (ZUSATZPOSITION)`;
-        }
-
-        // Primary row for position
+      planned.forEach(p => {
         roomRows.push({
-          'Raum / Code': '',
-          'Pos-Nr': pos.posNr,
-          'Materialbezeichnung': pos.isExtraPosition ? `[Zusatzposition] ${pos.shortText}` : pos.shortText,
-          'Plan-Menge': pos.plannedQty,
-          'Delta seit vorigem Aufmaß': pos.installedInPeriod,
-          'Kumuliert bis Stichtag': pos.totalInstalledToDate,
-          'Einheit': pos.qu,
-          'Mehrverbrauch': deviationText,
-          'Hinweis / Begründung': pos.reason || ''
+          'Bereich / Raum': '',
+          'Pos-Nr': p.posNr,
+          'Materialbezeichnung': p.shortText,
+          'Plan-Menge': p.plannedQty,
+          'Verbaut im Zeitraum': p.installedInPeriod > 0 ? p.installedInPeriod : '–',
+          'Kumuliert bis Stichtag': p.totalInstalledToDate,
+          'Einheit': p.qu,
+          'Art / Status': 'Planmäßig verbaut',
+          'Begründung': '',
+          'Verursacher': ''
         });
+      });
+    }
 
-        // If there's an explicit reason, also append a dedicated notice row underneath for clear printing
-        if ((pos.isOverconsumption || pos.isExtraPosition) && pos.reason) {
-          roomRows.push({
-            'Raum / Code': '',
-            'Pos-Nr': '',
-            'Materialbezeichnung': `  ↳ BEGRÜNDUNG: ${pos.reason}`,
-            'Plan-Menge': '',
-            'Delta seit vorigem Aufmaß': '',
-            'Kumuliert bis Stichtag': '',
-            'Einheit': '',
-            'Mehrverbrauch': '',
-            'Hinweis / Begründung': ''
-          });
-        }
+    // 3. Section: Sonderposten (Zusätzlich verbaut)
+    roomRows.push({
+      'Bereich / Raum': '--- 2. Sonderposten (Zusätzlich verbaut) ---',
+      'Pos-Nr': '',
+      'Materialbezeichnung': '',
+      'Plan-Menge': '',
+      'Verbaut im Zeitraum': '',
+      'Kumuliert bis Stichtag': '',
+      'Einheit': '',
+      'Art / Status': '',
+      'Begründung': '',
+      'Verursacher': ''
+    });
+
+    if (special.length === 0) {
+      roomRows.push({
+        'Bereich / Raum': '',
+        'Pos-Nr': '–',
+        'Materialbezeichnung': '(Keine Sonderposten – alle Arbeiten planmäßig ausgeführt)',
+        'Plan-Menge': '',
+        'Verbaut im Zeitraum': '',
+        'Kumuliert bis Stichtag': '',
+        'Einheit': '',
+        'Art / Status': 'Kein Mehrbedarf',
+        'Begründung': '–',
+        'Verursacher': '–'
+      });
+    } else {
+      special.forEach(p => {
+        roomRows.push({
+          'Bereich / Raum': '',
+          'Pos-Nr': p.posNr,
+          'Materialbezeichnung': p.shortText,
+          'Plan-Menge': '–',
+          'Verbaut im Zeitraum': p.installedInPeriod > 0 ? `+${p.installedInPeriod}` : '–',
+          'Kumuliert bis Stichtag': `+${p.totalInstalledToDate || p.excessQty}`,
+          'Einheit': p.qu,
+          'Art / Status': p.specialType === 'mehrverbrauch' ? 'Mehrverbrauch' : 'Zusatzmaterial',
+          'Begründung': p.reason || 'Baustellenanpassung',
+          'Verursacher': p.causedBy || 'Monteur'
+        });
       });
     }
 
     // Blank separator row between rooms
     roomRows.push({
-      'Raum / Code': '',
+      'Bereich / Raum': '',
       'Pos-Nr': '',
       'Materialbezeichnung': '',
       'Plan-Menge': '',
-      'Delta seit vorigem Aufmaß': '',
+      'Verbaut im Zeitraum': '',
       'Kumuliert bis Stichtag': '',
       'Einheit': '',
-      'Mehrverbrauch': '',
-      'Hinweis / Begründung': ''
+      'Art / Status': '',
+      'Begründung': '',
+      'Verursacher': ''
     });
   });
 
   const wsRooms = XLSX.utils.json_to_sheet(roomRows);
+
+  // Feste Spaltenbreiten für Räume-Sheet
+  wsRooms['!cols'] = [
+    { wch: 34 }, // Bereich / Raum
+    { wch: 14 }, // Pos-Nr
+    { wch: 48 }, // Materialbezeichnung (breit!)
+    { wch: 14 }, // Plan-Menge
+    { wch: 22 }, // Verbaut im Zeitraum
+    { wch: 22 }, // Kumuliert bis Stichtag
+    { wch: 10 }, // Einheit
+    { wch: 20 }, // Art / Status
+    { wch: 42 }, // Begründung (breit!)
+    { wch: 18 }  // Verursacher
+  ];
 
   // Append sheets
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Gesamtübersicht');
@@ -434,7 +509,7 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
 
 /**
  * PDF-Export: druckfertiges Aufmaß (Browser-Druckdialog -> "Als PDF speichern").
- * Enthält kumulierte Menge bis Stichtag UND Delta seit dem vorigen Aufmaß mit festen Spaltenbreiten.
+ * Enthält nur verbaute Posten, getrennt nach Planmäßig vs Sonderposten (mit Grund & Verursacher).
  */
 export function exportAufmassToPdf(aufmass: AufmassDocument) {
   const esc = (v: unknown) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -451,55 +526,100 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
     <td class="r">${i.unitPrice ? i.unitPrice.toFixed(2) : '-'}</td>
     <td class="r b">${i.totalCost ? i.totalCost.toFixed(2) : '-'}</td></tr>`).join('');
 
-  const roomBlocks = aufmass.roomsData.map(r => `
+  const roomBlocks = aufmass.roomsData.map(r => {
+    const planned = r.plannedPositions || r.positions.filter(p => !p.isExtraPosition);
+    const special = r.specialPositions || r.positions.filter(p => p.isExtraPosition);
+
+    return `
     <div class="room-block">
       <h3>${esc(r.roomCode)} – ${esc(r.roomName)} (Etage ${esc(r.floor)}) ${r.isCompleted ? '✓ abgeschlossen' : '(in Montage)'}</h3>
+      
+      <!-- Bereich 1: Planmäßig verbaut -->
+      <div class="sub-head">Planmäßig verbaut (laut Plan)</div>
       <table>
         <colgroup>
-          <col style="width: 11%;">
-          <col style="width: 33%;">
-          <col style="width: 9%;">
           <col style="width: 12%;">
-          <col style="width: 12%;">
-          <col style="width: 23%;">
+          <col style="width: 44%;">
+          <col style="width: 14%;">
+          <col style="width: 15%;">
+          <col style="width: 15%;">
         </colgroup>
         <thead>
           <tr>
             <th>Pos</th>
             <th>Material / Beschreibung</th>
-            <th class="r">Plan</th>
-            <th class="r">Kumuliert bis Stichtag</th>
-            <th class="r">Delta seit vorigem Aufmaß</th>
-            <th>Hinweis / Begründung</th>
+            <th class="r">Plan-Menge</th>
+            <th class="r">Kumuliert Ist</th>
+            <th class="r">Delta Zeitraum</th>
           </tr>
         </thead>
         <tbody>
-          ${r.positions.map(p => `<tr>
-            <td class="b" style="color: #1e40af;">${esc(p.posNr)}</td>
-            <td style="word-break: break-word;">${esc(p.shortText)}</td>
-            <td class="r">${p.plannedQty} ${esc(p.qu)}</td>
-            <td class="r b">${p.totalInstalledToDate}</td>
-            <td class="r b" style="color: #2563eb;">${p.installedInPeriod}</td>
-            <td style="word-break: break-word;">${p.isOverconsumption ? `<b style="color: #b91c1c;">+${p.excessQty} ${esc(p.qu)} </b>` : ''}${esc(p.reason || '')}</td>
-          </tr>`).join('')}
+          ${planned.length === 0 ? `<tr><td colspan="5" style="color: #94a3b8; text-align: center; font-style: italic;">Keine planmäßigen Teile verbaut</td></tr>` : 
+            planned.map(p => `<tr>
+              <td class="b" style="color: #1e40af;">${esc(p.posNr)}</td>
+              <td style="word-break: break-word;">${esc(p.shortText)}</td>
+              <td class="r">${p.plannedQty} ${esc(p.qu)}</td>
+              <td class="r b">${p.totalInstalledToDate} ${esc(p.qu)}</td>
+              <td class="r b" style="color: #2563eb;">${p.installedInPeriod > 0 ? `${p.installedInPeriod} ${esc(p.qu)}` : '–'}</td>
+            </tr>`).join('')}
         </tbody>
       </table>
-    </div>`).join('');
+
+      <!-- Bereich 2: Sonderposten -->
+      <div class="sub-head special">Sonderposten (Zusätzlich verbaut)</div>
+      ${special.length === 0 ? `
+        <div style="font-size: 9px; font-style: italic; color: #64748b; margin: 4px 0 10px 4px;">
+          ✓ Keine Sonderposten in diesem Raum – alle Arbeiten planmäßig ausgeführt.
+        </div>
+      ` : `
+        <table>
+          <colgroup>
+            <col style="width: 12%;">
+            <col style="width: 32%;">
+            <col style="width: 14%;">
+            <col style="width: 26%;">
+            <col style="width: 16%;">
+          </colgroup>
+          <thead>
+            <tr style="background: #fef2f2;">
+              <th>Pos</th>
+              <th>Material / Beschreibung</th>
+              <th class="r">Mehrung</th>
+              <th>Begründung</th>
+              <th>Verursacher</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${special.map(p => `<tr>
+              <td class="b" style="color: #b91c1c;">${esc(p.posNr)}</td>
+              <td style="word-break: break-word;">${esc(p.shortText)}</td>
+              <td class="r b" style="color: #b91c1c;">+${p.totalInstalledToDate || p.excessQty} ${esc(p.qu)}</td>
+              <td style="word-break: break-word; font-style: italic;">${esc(p.reason || 'Mehrverbrauch')}</td>
+              <td><span class="badge">${esc(p.causedBy || 'Monteur')}</span></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>`;
+  }).join('');
 
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${esc(aufmass.aufmassNumber)}</title>
   <style>
     @page { size: A4 landscape; margin: 12mm 14mm; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 10px; color: #0f172a; margin: 16px; }
     h1 { font-size: 18px; margin: 2px 0 6px; }
-    h2 { font-size: 14px; margin: 16px 0 6px; border-bottom: 2px solid #3B82C4; padding-bottom: 4px; }
+    h2 { font-size: 13px; margin: 14px 0 6px; border-bottom: 2px solid #3B82C4; padding-bottom: 4px; }
     h3 { font-size: 11px; margin: 10px 0 4px; background: #f1f5f9; padding: 4px 8px; border-left: 3px solid #3B82C4; }
+    .sub-head { font-size: 10px; font-weight: bold; color: #334155; margin: 6px 0 2px 2px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .sub-head.special { color: #b91c1c; margin-top: 8px; }
     .brand { color: #3B82C4; font-weight: 800; font-size: 12px; letter-spacing: 0.5px; }
-    table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; }
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 3px; margin-bottom: 6px; }
     th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: left; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; hyphens: auto; }
     th { background: #e2e8f0; font-weight: 700; color: #334155; font-size: 9.5px; }
     .r { text-align: right; }
     .b { font-weight: bold; }
     .c { text-align: center; }
+    .badge { display: inline-block; background: #f1f5f9; border: 1px solid #cbd5e1; padding: 1px 4px; border-radius: 4px; font-weight: 600; font-size: 9px; }
     .meta { width: auto; margin: 8px 0; border: none; table-layout: auto; }
     .meta td { border: none; padding: 2px 10px 2px 0; font-size: 10.5px; }
     .room-block { page-break-inside: avoid; margin-bottom: 12px; }
@@ -514,6 +634,7 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
   <h1>Aufmaß ${esc(aufmass.aufmassNumber)}</h1>
   <table class="meta">
     <tr><td>Projekt:</td><td><b>${esc(aufmass.projectName)}</b></td></tr>
+    <tr><td>Verbaute Positionen:</td><td><b>${aufmass.summaryItems.length} Positionen</b> in ${aufmass.roomsData.length} bearbeiteten Räumen</td></tr>
     <tr><td>Stichtag der Abrechnung:</td><td><b>${d(aufmass.dateTo)}</b></td></tr>
     <tr><td>Delta-Zeitraum (seit vorigem Aufmaß):</td><td>${d(aufmass.dateFrom)} bis ${d(aufmass.dateTo)}</td></tr>
     <tr><td>Erstellt:</td><td>${new Date(aufmass.createdAt).toLocaleString('de-DE')} von ${esc(aufmass.createdBy)}</td></tr>
@@ -521,7 +642,7 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
   </table>
   ${aufmass.notes ? `<p style="margin: 6px 0; font-style: italic; color: #475569;">Bemerkung: ${esc(aufmass.notes)}</p>` : ''}
   
-  <h2>Gesamtübersicht (Kumuliert)</h2>
+  <h2>Gesamtübersicht: ${aufmass.summaryItems.length} verbaute Positionen (Kumuliert)</h2>
   <table>
     <colgroup>
       <col style="width: 10%;">
@@ -549,7 +670,7 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
   </table>
 
   <div class="pb"></div>
-  <h2>Raumaufstellung (Aufgeschlüsselt)</h2>
+  <h2>Raumaufstellung (Aufgeschlüsselt nach Plan- und Sonderposten)</h2>
   ${roomBlocks}
   
   <div class="sig">

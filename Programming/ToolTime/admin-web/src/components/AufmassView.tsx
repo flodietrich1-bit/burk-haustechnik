@@ -7,7 +7,8 @@ import type {
   Alert, 
   Addendum, 
   User, 
-  AufmassDocument 
+  AufmassDocument,
+  AufmassRoomPosition
 } from '../types';
 import { 
   FileSpreadsheet, 
@@ -25,13 +26,15 @@ import {
   Eye, 
   Search,
   Check,
-  UserCheck
+  UserCheck,
+  Pencil
 } from 'lucide-react';
 import { 
   listenToAufmasse, 
   saveAufmassDocument, 
   deleteAufmassDocument, 
-  calculateAufmassSnapshot 
+  calculateAufmassSnapshot,
+  updateAufmassPositionReason
 } from '../services/aufmassService';
 import { exportAufmassToExcel, exportAufmassToPdf } from '../services/excelExporter';
 
@@ -66,6 +69,20 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   // Discard Confirmation Modal State
   const [discardTarget, setDiscardTarget] = useState<AufmassDocument | null>(null);
   const [isDiscarding, setIsDiscarding] = useState(false);
+
+  // Edit Reason Modal State
+  const [editReasonModal, setEditReasonModal] = useState<{
+    roomId: string;
+    roomName: string;
+    positionId: string;
+    posNr: string;
+    shortText: string;
+    currentReason: string;
+    currentCausedBy: string;
+  } | null>(null);
+  const [editReasonText, setEditReasonText] = useState('');
+  const [editCausedBy, setEditCausedBy] = useState('Monteur');
+  const [isSavingReason, setIsSavingReason] = useState(false);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -200,6 +217,90 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     exportAufmassToPdf(aufmass);
   };
 
+  // Open modal to edit reason and originator for a special position
+  const handleOpenEditReason = (roomId: string, roomName: string, pos: AufmassRoomPosition) => {
+    setEditReasonModal({
+      roomId,
+      roomName,
+      positionId: pos.positionId || pos.posNr,
+      posNr: pos.posNr,
+      shortText: pos.shortText,
+      currentReason: pos.reason || '',
+      currentCausedBy: pos.causedBy || 'Monteur'
+    });
+    setEditReasonText(pos.reason || '');
+    setEditCausedBy(pos.causedBy || 'Monteur');
+  };
+
+  // Save updated reason and originator
+  const handleSaveReason = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editReasonModal || !selectedAufmass) return;
+    setIsSavingReason(true);
+    try {
+      const updated = await updateAufmassPositionReason(
+        projectId,
+        selectedAufmass.id,
+        editReasonModal.roomId,
+        editReasonModal.positionId,
+        editReasonText,
+        editCausedBy
+      );
+      if (updated) {
+        setSelectedAufmass(updated);
+        setAufmasse(prev => prev.map(a => a.id === updated.id ? updated : a));
+      } else {
+        const updatePos = (p: AufmassRoomPosition) => {
+          if (p.positionId === editReasonModal.positionId || p.posNr === editReasonModal.positionId) {
+            return { ...p, reason: editReasonText, causedBy: editCausedBy };
+          }
+          return p;
+        };
+        const updatedRoomsData = selectedAufmass.roomsData.map(r => {
+          if (r.roomId !== editReasonModal.roomId) return r;
+          return {
+            ...r,
+            positions: r.positions.map(updatePos),
+            plannedPositions: r.plannedPositions?.map(updatePos),
+            specialPositions: r.specialPositions?.map(updatePos)
+          };
+        });
+        const updatedDoc = { ...selectedAufmass, roomsData: updatedRoomsData };
+        setSelectedAufmass(updatedDoc);
+        setAufmasse(prev => prev.map(a => a.id === updatedDoc.id ? updatedDoc : a));
+      }
+      setEditReasonModal(null);
+    } catch (err: any) {
+      console.error('Error saving reason:', err);
+      alert('Fehler beim Speichern der Begründung: ' + (err.message || err));
+    } finally {
+      setIsSavingReason(false);
+    }
+  };
+
+  // Live preview snapshot when creating a new Aufmaß
+  const previewSnapshot = useMemo(() => {
+    if (!isCreateModalOpen || !dateTo || !customDateFrom) return null;
+    try {
+      return calculateAufmassSnapshot(
+        project,
+        positions,
+        rooms,
+        bookings,
+        alerts,
+        addendums,
+        customDateFrom,
+        dateTo,
+        creatorName,
+        notes,
+        latestSavedAufmass
+      );
+    } catch (e) {
+      console.error('Error calculating preview snapshot:', e);
+      return null;
+    }
+  }, [isCreateModalOpen, project, positions, rooms, bookings, alerts, addendums, customDateFrom, dateTo, creatorName, notes, latestSavedAufmass]);
+
   // Filtered Summary in Detail View
   const filteredSummaryItems = useMemo(() => {
     if (!selectedAufmass) return [];
@@ -224,10 +325,13 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       list = list.filter(r => r.roomId === selectedRoomFilter);
     }
     if (onlyInstalled) {
+      const isInstalled = (p: AufmassRoomPosition) => (Number(p.totalInstalledToDate) || 0) > 0 || (Number(p.installedInPeriod) || 0) > 0;
       list = list.map(r => ({
         ...r,
-        positions: r.positions.filter(p => (Number(p.totalInstalledToDate) || 0) > 0 || (Number(p.installedInPeriod) || 0) > 0)
-      })).filter(r => r.positions.length > 0);
+        positions: r.positions.filter(isInstalled),
+        plannedPositions: (r.plannedPositions || []).filter(isInstalled),
+        specialPositions: (r.specialPositions || []).filter(isInstalled)
+      })).filter(r => r.positions.length > 0 || (r.plannedPositions && r.plannedPositions.length > 0) || (r.specialPositions && r.specialPositions.length > 0));
     }
     if (!searchTerm.trim()) return list;
     const term = searchTerm.toLowerCase();
@@ -235,7 +339,8 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       r.roomName.toLowerCase().includes(term) ||
       r.roomCode.toLowerCase().includes(term) ||
       r.floor.toLowerCase().includes(term) ||
-      r.positions.some(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term))
+      r.positions.some(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term)) ||
+      (r.specialPositions && r.specialPositions.some(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term) || (p.reason && p.reason.toLowerCase().includes(term))))
     );
   }, [selectedAufmass, selectedRoomFilter, searchTerm, onlyInstalled]);
 
@@ -521,11 +626,25 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
               </div>
             ) : (
               filteredRoomsData.map((room) => {
-                const roomOverconsumptionCount = room.positions.filter(p => p.isOverconsumption).length;
-                const roomExtraPositionsCount = room.positions.filter(p => p.isExtraPosition).length;
+                const plannedList = (room.plannedPositions && room.plannedPositions.length > 0)
+                  ? room.plannedPositions
+                  : room.positions.filter(p => !p.isOverconsumption && !p.isExtraPosition && ((Number(p.totalInstalledToDate) || 0) > 0 || (Number(p.installedInPeriod) || 0) > 0));
+
+                const specialList = (room.specialPositions && room.specialPositions.length > 0)
+                  ? room.specialPositions
+                  : room.positions.filter(p => (p.isOverconsumption || p.isExtraPosition) && ((Number(p.totalInstalledToDate) || 0) > 0 || (Number(p.installedInPeriod) || 0) > 0));
+
+                const term = searchTerm.toLowerCase().trim();
+                const displayedPlanned = term
+                  ? plannedList.filter(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term))
+                  : plannedList;
+
+                const displayedSpecial = term
+                  ? specialList.filter(p => p.shortText.toLowerCase().includes(term) || p.posNr.toLowerCase().includes(term) || (p.reason && p.reason.toLowerCase().includes(term)) || (p.causedBy && p.causedBy.toLowerCase().includes(term)))
+                  : specialList;
 
                 return (
-                  <div key={room.roomId} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div key={room.roomId} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-0">
                     {/* Room Header */}
                     <div className="bg-slate-50 p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center space-x-2.5">
@@ -551,95 +670,201 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                       </div>
 
                       <div className="flex items-center space-x-2 text-xs">
-                        {roomOverconsumptionCount > 0 && (
-                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-red-700 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full">
-                            <AlertTriangle className="w-3 h-3 text-red-600" />
-                            <span>{roomOverconsumptionCount} Mehrverbrauch</span>
-                          </span>
-                        )}
-                        {roomExtraPositionsCount > 0 && (
-                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full">
-                            <span>+{roomExtraPositionsCount} Zusatzpositionen</span>
+                        <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                          <span>{plannedList.length} Planmäßig verbaut</span>
+                        </span>
+                        {specialList.length > 0 && (
+                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-amber-800 bg-amber-100 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            <span>{specialList.length} Sonderposten</span>
                           </span>
                         )}
                       </div>
                     </div>
 
-                    {/* Room Positions Table with FIXED column widths and break-words */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs table-fixed min-w-[950px]">
-                        <thead>
-                          <tr className="bg-slate-100/70 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
-                            <th className="py-2.5 px-3.5 w-28">Pos-Nr</th>
-                            <th className="py-2.5 px-3.5 w-[30%] min-w-[220px]">Materialbezeichnung</th>
-                            <th className="py-2.5 px-3.5 w-20 text-right">Plan</th>
-                            <th className="py-2.5 px-3.5 w-28 text-right">Im Zeitraum</th>
-                            <th className="py-2.5 px-3.5 w-28 text-right">Kumuliert</th>
-                            <th className="py-2.5 px-3.5 w-28 text-center">Status / Delta</th>
-                            <th className="py-2.5 px-3.5 w-[25%] min-w-[180px]">Hinweis / Begründung</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {room.positions.length === 0 ? (
-                            <tr>
-                              <td colSpan={7} className="py-4 text-center text-slate-400">
-                                Keine Positionen für diesen Raum erfasst.
-                              </td>
-                            </tr>
-                          ) : (
-                            room.positions.map((pos) => (
-                              <tr key={pos.positionId} className={`hover:bg-slate-50/80 transition-colors ${
-                                pos.isOverconsumption ? 'bg-red-50/20' : (pos.isExtraPosition ? 'bg-purple-50/20' : '')
-                              }`}>
-                                <td className="py-3 px-3.5 font-mono font-bold text-[#3B82C4]">
-                                  {pos.posNr}
-                                </td>
-                                <td className="py-3 px-3.5">
-                                  <div className="font-semibold text-slate-900 break-words whitespace-normal leading-snug">
-                                    {pos.shortText}
-                                  </div>
-                                  {pos.isExtraPosition && (
-                                    <span className="inline-block mt-0.5 text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded">
-                                      Zusatzposition
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-3.5 text-right font-medium text-slate-600">
-                                  {pos.plannedQty} {pos.qu}
-                                </td>
-                                <td className="py-3 px-3.5 text-right font-bold text-blue-600 bg-blue-50/30">
-                                  {pos.installedInPeriod > 0 ? `${pos.installedInPeriod} ${pos.qu}` : <span className="text-slate-400 font-normal">–</span>}
-                                </td>
-                                <td className="py-3 px-3.5 text-right font-bold text-slate-900">
-                                  {pos.totalInstalledToDate} {pos.qu}
-                                </td>
-                                <td className="py-3 px-3.5 text-center">
-                                  {pos.isOverconsumption ? (
-                                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-red-700 border border-red-200">
-                                      <span>+{pos.excessQty} {pos.qu}</span>
-                                    </span>
-                                  ) : pos.isExtraPosition ? (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
-                                      Sonderposten
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px]">–</span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-3.5 text-slate-700">
-                                  {pos.reason ? (
-                                    <div className="text-[11px] break-words whitespace-normal italic">
-                                      {pos.reason}
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 text-[11px]">–</span>
-                                  )}
-                                </td>
+                    {/* SECTION 1: Planmäßig verbaut (laut Plan) */}
+                    <div className="border-b border-slate-200">
+                      <div className="bg-slate-100/80 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span className="font-bold text-xs text-slate-800 uppercase tracking-wide">
+                            1. Planmäßig verbaut (laut Plan)
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                          {displayedPlanned.length} Positionen
+                        </span>
+                      </div>
+
+                      {displayedPlanned.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-slate-400 italic">
+                          Keine planmäßigen Positionen in diesem Raum verbaut.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs table-fixed min-w-[850px]">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
+                                <th className="py-2 px-3.5 w-28">Pos-Nr</th>
+                                <th className="py-2 px-3.5 w-[38%] min-w-[220px]">Materialbezeichnung</th>
+                                <th className="py-2 px-3.5 w-24 text-right">Plan (Raum)</th>
+                                <th className="py-2 px-3.5 w-28 text-right">Im Zeitraum</th>
+                                <th className="py-2 px-3.5 w-28 text-right">Kumuliert verbaut</th>
+                                <th className="py-2 px-3.5 w-16 text-center">Einheit</th>
+                                <th className="py-2 px-3.5 w-28 text-center">Status</th>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {displayedPlanned.map((pos) => (
+                                <tr key={`planned_${pos.positionId || pos.posNr}`} className="hover:bg-slate-50/80 transition-colors">
+                                  <td className="py-2.5 px-3.5 font-mono font-bold text-[#3B82C4]">
+                                    {pos.posNr}
+                                  </td>
+                                  <td className="py-2.5 px-3.5">
+                                    <div className="font-semibold text-slate-900 break-words whitespace-normal leading-snug">
+                                      {pos.shortText}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 px-3.5 text-right font-medium text-slate-600">
+                                    {pos.plannedQty}
+                                  </td>
+                                  <td className="py-2.5 px-3.5 text-right font-bold text-blue-600 bg-blue-50/20">
+                                    {pos.installedInPeriod > 0 ? `${pos.installedInPeriod}` : <span className="text-slate-400 font-normal">–</span>}
+                                  </td>
+                                  <td className="py-2.5 px-3.5 text-right font-bold text-slate-900">
+                                    {pos.totalInstalledToDate}
+                                  </td>
+                                  <td className="py-2.5 px-3.5 text-center text-slate-500">
+                                    {pos.qu}
+                                  </td>
+                                  <td className="py-2.5 px-3.5 text-center">
+                                    {pos.totalInstalledToDate >= pos.plannedQty ? (
+                                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                        <Check className="w-3 h-3 text-emerald-600" />
+                                        <span>100% Plan</span>
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                                        Teilverbau
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SECTION 2: Sonderposten (Zusätzlich verbaut) */}
+                    <div>
+                      <div className="bg-amber-50/70 px-4 py-2 border-b border-amber-200/70 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          <span className="font-bold text-xs text-amber-900 uppercase tracking-wide">
+                            2. Sonderposten (Zusätzlich verbaut / Mehrverbrauch)
+                          </span>
+                        </div>
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                          displayedSpecial.length > 0
+                            ? 'bg-amber-100 text-amber-800 border-amber-300'
+                            : 'bg-white text-slate-500 border-slate-200'
+                        }`}>
+                          {displayedSpecial.length} Sonderposten
+                        </span>
+                      </div>
+
+                      {displayedSpecial.length === 0 ? (
+                        <div className="py-3.5 bg-slate-50/40 text-center text-xs text-slate-400 italic">
+                          Keine Sonderposten oder Mehrverbräuche in diesem Raum.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse text-xs table-fixed min-w-[950px]">
+                            <thead>
+                              <tr className="bg-amber-50/30 text-amber-900 text-[11px] font-semibold uppercase border-b border-amber-200/50">
+                                <th className="py-2 px-3.5 w-28">Pos-Nr</th>
+                                <th className="py-2 px-3.5 w-[26%] min-w-[200px]">Materialbezeichnung</th>
+                                <th className="py-2 px-3.5 w-28 text-center">Art</th>
+                                <th className="py-2 px-3.5 w-24 text-right">Im Zeitraum</th>
+                                <th className="py-2 px-3.5 w-24 text-right">Zusätzlich</th>
+                                <th className="py-2 px-3.5 w-28 text-center">Verursacher</th>
+                                <th className="py-2 px-3.5 w-[30%] min-w-[220px]">Begründung & Korrektur</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-amber-100/60 bg-amber-50/10">
+                              {displayedSpecial.map((pos) => {
+                                const causedBy = pos.causedBy || 'Monteur';
+                                const causedBadgeClass = 
+                                  causedBy === 'Monteur' ? 'bg-slate-100 text-slate-800 border-slate-300' :
+                                  causedBy === 'Kunde' ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                                  causedBy === 'Architekt' ? 'bg-purple-100 text-purple-800 border-purple-300' :
+                                  'bg-blue-100 text-blue-800 border-blue-300';
+
+                                return (
+                                  <tr key={`special_${pos.positionId || pos.posNr}`} className="hover:bg-amber-50/40 transition-colors">
+                                    <td className="py-3 px-3.5 font-mono font-bold text-[#3B82C4]">
+                                      {pos.posNr}
+                                    </td>
+                                    <td className="py-3 px-3.5">
+                                      <div className="font-semibold text-slate-900 break-words whitespace-normal leading-snug">
+                                        {pos.shortText}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3.5 text-center">
+                                      {pos.specialType === 'mehrverbrauch' ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                                          Mehrverbrauch
+                                        </span>
+                                      ) : pos.specialType === 'zusatzmaterial' ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
+                                          Zusatzmaterial
+                                        </span>
+                                      ) : (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                          Sonderposten
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-3 px-3.5 text-right font-medium text-slate-700">
+                                      {pos.installedInPeriod > 0 ? `+${pos.installedInPeriod} ${pos.qu}` : <span className="text-slate-400 font-normal">–</span>}
+                                    </td>
+                                    <td className="py-3 px-3.5 text-right font-bold text-red-600">
+                                      +{pos.excessQty || pos.totalInstalledToDate} {pos.qu}
+                                    </td>
+                                    <td className="py-3 px-3.5 text-center">
+                                      <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold border ${causedBadgeClass}`}>
+                                        {causedBy}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-[11px] text-slate-800 break-words whitespace-normal leading-snug">
+                                          {pos.reason ? (
+                                            <span className="italic">„{pos.reason}“</span>
+                                          ) : (
+                                            <span className="text-slate-400 italic">Keine Begründung angegeben</span>
+                                          )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenEditReason(room.roomId, room.roomName, pos)}
+                                          className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-blue-50 text-[#3B82C4] hover:bg-blue-100 hover:text-blue-700 border border-blue-200 transition-colors shrink-0 cursor-pointer shadow-2xs"
+                                          title="Begründung und Verursacher bearbeiten"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                          <span>Bearbeiten</span>
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -693,6 +918,120 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Sonderposten-Begründung bearbeiten */}
+        {editReasonModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="bg-[#1C2A3B] text-white p-5 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-[#3B82C4] uppercase tracking-wider block">
+                    Aufmaß-Korrektur & VOB-Dokumentation
+                  </span>
+                  <h3 className="text-base font-bold text-white mt-0.5">
+                    Begründung & Verursacher bearbeiten
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditReasonModal(null)}
+                  className="text-slate-400 hover:text-white transition-colors text-lg cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveReason} className="p-6 space-y-4 text-xs">
+                {/* Position / Raum Details */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                    <span>Raum: <strong className="text-slate-800">{editReasonModal.roomName}</strong></span>
+                    <span className="font-mono font-bold text-[#3B82C4]">{editReasonModal.posNr}</span>
+                  </div>
+                  <div className="font-bold text-slate-900 text-sm">
+                    {editReasonModal.shortText}
+                  </div>
+                </div>
+
+                {/* Verursacher Picker */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1.5">
+                    Verursacher / Auslöser der Abweichung *
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'Monteur', label: 'Monteur', desc: 'Bruch bei Montage, Verschnitt' },
+                      { id: 'Kunde', label: 'Kunde', desc: 'Änderungswunsch Kunde / Bauherr' },
+                      { id: 'Architekt', label: 'Architekt', desc: 'Planänderung Architekt / Planer' },
+                      { id: 'Bauleitung', label: 'Bauleitung', desc: 'Planungsabweichung / GAEB vs DWG' }
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEditCausedBy(opt.id)}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          editCausedBy === opt.id
+                            ? 'border-[#3B82C4] bg-blue-50/60 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 bg-white hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="font-bold text-slate-900 text-xs">{opt.label}</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[11px] text-slate-400 mt-1 block">
+                    Hinweis: Keine Personennamen verwenden – neutrale Rollenbezeichnung nach VOB.
+                  </span>
+                </div>
+
+                {/* Begründung Textarea */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Offizielle Begründung (erscheint auf PDF & Excel) *
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={editReasonText}
+                    onChange={(e) => setEditReasonText(e.target.value)}
+                    placeholder="z. B. Bruch bei Montage (ersetzt durch Monteur) oder Änderungswunsch Kunde vor Ort..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  />
+                  <div className="bg-amber-50/70 border border-amber-200 rounded-lg p-2.5 mt-1.5 text-[11px] text-amber-900 leading-snug">
+                    <strong>Tipp:</strong> Monteursnotizen (z. B. auf polnisch wie <em>„złamana rura“</em>) können hier in eine saubere deutsche Begründung (z. B. <em>„Bruch bei Montage, ersetzt“</em>) übersetzt und korrigiert werden.
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="pt-3 border-t border-slate-200 flex items-center justify-end space-x-3">
+                  <button
+                    type="button"
+                    disabled={isSavingReason}
+                    onClick={() => setEditReasonModal(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold transition-colors cursor-pointer"
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingReason}
+                    className="px-5 py-2 bg-[#3B82C4] hover:bg-blue-600 text-white rounded-xl font-bold shadow-md shadow-blue-500/20 transition-all flex items-center space-x-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingReason ? (
+                      <span>Wird gespeichert...</span>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Begründung speichern</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
@@ -822,10 +1161,10 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                     {/* Umfang */}
                     <td className="py-3.5 px-4 text-right">
                       <div className="font-bold text-slate-800">
-                        {aufmass.summaryItems.length} Positionen
+                        {aufmass.summaryItems.length} verbaute Positionen
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        in {aufmass.roomsData.length} Räumen
+                        in {aufmass.roomsData.length} bearbeiteten Räumen
                       </div>
                     </td>
 
@@ -951,10 +1290,10 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       {/* Modal: Neues Aufmaß anlegen */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] flex flex-col">
             
             {/* Modal Header */}
-            <div className="bg-[#1C2A3B] text-white p-5 flex items-center justify-between">
+            <div className="bg-[#1C2A3B] text-white p-5 flex items-center justify-between shrink-0">
               <div>
                 <span className="text-xs font-bold text-[#3B82C4] uppercase tracking-wider block">
                   VOB Stichtags-Abrechnung
@@ -972,7 +1311,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleCreateSubmit} className="p-6 space-y-4 text-xs">
+            <form onSubmit={handleCreateSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
               
               {/* Info if follow-up Aufmaß */}
               {latestSavedAufmass && (
@@ -988,63 +1327,181 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                 </div>
               )}
 
-              <div className="bg-blue-50 border-2 border-[#3B82C4] rounded-xl p-3">
-                <label className="block font-bold text-[#1C2A3B] mb-1">
-                  Stichtag der Abrechnung *
-                </label>
-                <input
-                  type="date"
-                  required
-                  autoFocus
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-[#3B82C4] rounded-xl font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-                />
-                <span className="text-[11px] text-slate-500 mt-1 block">
-                  Vorbelegt mit heutigem Datum. Alle bis zu diesem Stichtag verbauten Materialien werden kumuliert abgerechnet.
-                </span>
+              {/* Form Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                <div className="bg-blue-50/70 border-2 border-[#3B82C4] rounded-xl p-3">
+                  <label className="block font-bold text-[#1C2A3B] mb-1">
+                    Stichtag der Abrechnung *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    autoFocus
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-[#3B82C4] rounded-lg font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Bis zu diesem Tag kumulierte Verbauungen.
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Beginn des Zeitraums (Von-Datum) *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={customDateFrom}
+                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                  />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Automatisch abgeleitet aus dem Voraufmaß.
+                  </span>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Ersteller / Sachbearbeiter
+                  </label>
+                  <input
+                    type="text"
+                    value={creatorName}
+                    onChange={(e) => setCreatorName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                    placeholder="z. B. Florian Burk"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Notiz / Bemerkung zum Aufmaß
+                  </label>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
+                    placeholder="z. B. Abschlagsaufmaß Nr. 1"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Beginn des Abrechnungszeitraums (Von-Datum) *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={customDateFrom}
-                  onChange={(e) => setCustomDateFrom(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-                />
-                <span className="text-[11px] text-slate-400 mt-1 block">
-                  Automatisch aus vorherigem Aufmaß abgeleitet. Bei Bedarf anpassbar.
-                </span>
-              </div>
+              {/* LIVE PREVIEW SECTION */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
+                <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <Eye className="w-4 h-4 text-[#3B82C4]" />
+                    <span className="font-bold text-xs text-slate-900">
+                      Vorschau des Aufmaßes (wird erfasst)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="font-bold text-slate-800 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                      {previewSnapshot?.summaryItems.length || 0} verbaute Positionen
+                    </span>
+                    <span className="font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
+                      in {previewSnapshot?.roomsData.length || 0} bearbeiteten Räumen
+                    </span>
+                    {(previewSnapshot?.roomsData.reduce((acc, r) => acc + (r.specialPositions?.length || 0), 0) || 0) > 0 && (
+                      <span className="font-bold text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                        {previewSnapshot?.roomsData.reduce((acc, r) => acc + (r.specialPositions?.length || 0), 0)} Sonderposten
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Ersteller / Sachbearbeiter
-                </label>
-                <input
-                  type="text"
-                  value={creatorName}
-                  onChange={(e) => setCreatorName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-                  placeholder="z. B. Florian Burk"
-                />
-              </div>
+                <div className="p-3 max-h-56 overflow-y-auto space-y-3">
+                  {!previewSnapshot || previewSnapshot.roomsData.length === 0 ? (
+                    <div className="py-6 text-center text-slate-400 italic">
+                      Keine verbauten Positionen bis zum Stichtag {new Date(dateTo).toLocaleDateString('de-DE')} vorhanden.
+                    </div>
+                  ) : (
+                    previewSnapshot.roomsData.map(room => {
+                      const planned = room.plannedPositions || [];
+                      const special = room.specialPositions || [];
+                      return (
+                        <div key={`preview_${room.roomId}`} className="bg-white rounded-lg border border-slate-200 p-2.5 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-slate-900 border-b border-slate-100 pb-1">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-mono text-[10px] bg-[#3B82C4] text-white px-1.5 py-0.2 rounded">
+                                {room.roomCode}
+                              </span>
+                              <span>{room.roomName}</span>
+                              <span className="text-[10px] font-normal text-slate-400">(Etage: {room.floor})</span>
+                            </div>
+                            <div className="text-[10px] space-x-2 text-slate-500 font-normal">
+                              <span>{planned.length} planmäßig</span>
+                              {special.length > 0 && (
+                                <span className="text-amber-700 font-bold">• {special.length} Sonderposten</span>
+                              )}
+                            </div>
+                          </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Notiz / Bemerkung zum Aufmaß
-                </label>
-                <textarea
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-                  placeholder="z. B. Abschlagsaufmaß Nr. 1 nach Rohinstallation Sanitär"
-                />
+                          {/* Planmäßig verbaut */}
+                          {planned.length > 0 && (
+                            <div className="space-y-0.5">
+                              <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wide flex items-center space-x-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                <span>Planmäßig verbaut ({planned.length})</span>
+                              </div>
+                              <div className="divide-y divide-slate-100">
+                                {planned.map(p => (
+                                  <div key={`prev_p_${p.positionId || p.posNr}`} className="flex items-center justify-between py-0.5 text-[11px]">
+                                    <div className="flex items-center space-x-1.5 truncate pr-2">
+                                      <span className="font-mono text-slate-400 shrink-0 text-[10px]">{p.posNr}</span>
+                                      <span className="text-slate-800 truncate">{p.shortText}</span>
+                                    </div>
+                                    <div className="font-bold text-slate-900 shrink-0">
+                                      {p.totalInstalledToDate} {p.qu}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Sonderposten */}
+                          {special.length > 0 && (
+                            <div className="space-y-0.5 pt-1 border-t border-slate-100">
+                              <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wide flex items-center space-x-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                <span>Sonderposten ({special.length})</span>
+                              </div>
+                              <div className="divide-y divide-amber-100/60 bg-amber-50/20 rounded p-1.5">
+                                {special.map(p => (
+                                  <div key={`prev_s_${p.positionId || p.posNr}`} className="py-0.5 text-[11px] space-y-0.5">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-1.5 truncate pr-2">
+                                        <span className="font-mono text-slate-400 shrink-0 text-[10px]">{p.posNr}</span>
+                                        <span className="text-slate-800 font-semibold truncate">{p.shortText}</span>
+                                      </div>
+                                      <div className="font-bold text-red-600 shrink-0">
+                                        +{p.excessQty || p.totalInstalledToDate} {p.qu}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center space-x-2 text-[10px] text-slate-500">
+                                      <span className="bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded font-bold">
+                                        {p.causedBy || 'Monteur'}
+                                      </span>
+                                      {p.reason && (
+                                        <span className="italic text-slate-600 truncate">
+                                          {p.reason}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-800 space-y-1">
@@ -1058,7 +1515,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-3 border-t border-slate-200 flex items-center justify-end space-x-3">
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end space-x-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}

@@ -330,6 +330,8 @@ export interface AufmassRoomPosition {
   excessQty: number;
   reason?: string;                 // Begründung aus Alert / Monteurbuchung
   isExtraPosition?: boolean;       // Zusatzposition (außerplanmäßig)
+  causedBy?: string;               // Verursacher: "Monteur" | "Kunde" | "Architekt" | "Bauleitung"
+  specialType?: 'mehrverbrauch' | 'zusatzmaterial' | 'planabweichung';
 }
 
 export interface AufmassRoomData {
@@ -339,6 +341,8 @@ export interface AufmassRoomData {
   floor: string;
   isCompleted: boolean;
   positions: AufmassRoomPosition[];
+  plannedPositions?: AufmassRoomPosition[]; // Planmäßig verbaut (laut Plan)
+  specialPositions?: AufmassRoomPosition[]; // Sonderposten (Zusätzlich verbaut)
 }
 
 export interface AufmassDocument {

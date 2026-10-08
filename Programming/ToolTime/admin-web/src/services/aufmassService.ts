@@ -107,6 +107,53 @@ export async function deleteAufmassDocument(projectId: string, aufmassId: string
   }
 }
 
+// Helper to determine cause and clean originator without personal names
+export function determineCauseAndOriginator(
+  rawReason?: string,
+  _posNr?: string,
+  _roomId?: string
+): { reasonText: string; causedBy: string; causeType: string } {
+  const r = (rawReason || '').trim();
+  const lower = r.toLowerCase();
+
+  let causedBy = 'Monteur';
+  let causeType = 'sonstiges';
+  let reasonText = r;
+
+  if (lower.includes('kunde') || lower.includes('kundenwunsch') || lower.includes('bauherr') || lower.includes('sonderwunsch')) {
+    causedBy = 'Kunde';
+    causeType = 'kunde';
+    if (!reasonText) reasonText = 'Änderungswunsch Kunde';
+  } else if (lower.includes('architekt') || lower.includes('fachplaner') || lower.includes('statik') || lower.includes('planer')) {
+    causedBy = 'Architekt';
+    causeType = 'architekt';
+    if (!reasonText) reasonText = 'Änderungswunsch Architekt';
+  } else if (lower.includes('gaeb') || lower.includes('dwg') || lower.includes('planabweichung') || lower.includes('bauleiter') || lower.includes('bauleitung')) {
+    causedBy = 'Bauleitung';
+    causeType = 'bauleitung';
+    if (!reasonText) reasonText = 'Planungsabweichung / GAEB vs. DWG';
+  } else if (lower.includes('bruch') || lower.includes('beschädigt') || lower.includes('defekt') || lower.includes('kaputt')) {
+    causedBy = 'Monteur';
+    causeType = 'bruch';
+    if (!reasonText) reasonText = 'Bruch bei Montage';
+  } else if (lower.includes('verschnitt') || lower.includes('verschnitten')) {
+    causedBy = 'Monteur';
+    causeType = 'verschnitt';
+    if (!reasonText) reasonText = 'Verschnitt';
+  } else {
+    causedBy = 'Monteur';
+    if (!reasonText) reasonText = 'Mehrverbrauch / Baustellenanpassung';
+  }
+
+  // Clean out specific personal name patterns from reason text
+  reasonText = reasonText
+    .replace(/(?:Herr|Frau)\s+[A-ZÄÖÜ][a-zäöüß]+/g, '')
+    .replace(/von\s+[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+/g, '')
+    .trim();
+
+  return { reasonText, causedBy, causeType };
+}
+
 /**
  * Calculate immutable snapshot for a given date interval [dateFrom, dateTo]
  */
@@ -170,14 +217,15 @@ export function calculateAufmassSnapshot(
     }
   });
 
-  // 1. Calculate Room Data
+  // 1. Calculate Room Data (Only rooms with actual installed items)
   const roomsData: AufmassRoomData[] = [];
 
   rooms.forEach(room => {
     const isUnlocked = room.isCompleted === false || room.status === 'in_progress';
     const isDone = !isUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
 
-    const roomPositions: AufmassRoomPosition[] = [];
+    const plannedPositions: AufmassRoomPosition[] = [];
+    const specialPositions: AufmassRoomPosition[] = [];
     const plannedPosKeys = new Set<string>();
 
     // A. Regular planned materials in room
@@ -193,7 +241,12 @@ export function calculateAufmassSnapshot(
       // Total installed in room up to dateTo
       const totalInstalledToDate = getMaterialActualQty(m, room, bookingsUpToDate);
 
-      // Quantity installed prior to this Aufmaß (from previous Aufmaß if available, else bookings before period)
+      // SKIP if nothing was ever installed for this material in this room
+      if (totalInstalledToDate <= 0) {
+        return;
+      }
+
+      // Quantity installed prior to this Aufmaß
       let installedBeforePeriod = 0;
       if (previousAufmass) {
         const prevRoom = previousAufmass.roomsData?.find(r => r.roomId === room.id);
@@ -213,35 +266,72 @@ export function calculateAufmassSnapshot(
       // Period Delta = what was installed within this Aufmaß period
       const installedInPeriod = Math.max(0, totalInstalledToDate - installedBeforePeriod);
 
-      // Overconsumption check:
-      // In this room, actual > planned
-      const diff = totalInstalledToDate - planned;
-      const isOverconsumption = diff > 0;
-      const excessQty = isOverconsumption ? diff : 0;
+      // Check for overconsumption
+      if (totalInstalledToDate <= planned) {
+        // Entirely planned installation
+        plannedPositions.push({
+          positionId: m.positionId || pos?.id || `pos_${m.posNr}`,
+          posNr: m.posNr || pos?.posNr || '–',
+          shortText: m.shortText || pos?.shortText || 'Material',
+          group: m.group || pos?.group || '',
+          qu,
+          unitPrice,
+          plannedQty: planned,
+          installedInPeriod,
+          totalInstalledToDate,
+          isOverconsumption: false,
+          excessQty: 0,
+          isExtraPosition: false,
+        });
+      } else {
+        // Overconsumption: Split into plan-adherent part and Sonderposten part
+        const excessQty = totalInstalledToDate - planned;
+        const plannedInPeriod = Math.min(installedInPeriod, planned);
+        const excessInPeriod = Math.max(0, installedInPeriod - plannedInPeriod);
 
-      // Reason lookup
-      const reasonKey = `${room.id}_${m.posNr}`;
-      const reasonKeyName = `${room.id}_${(m.shortText || '').toLowerCase()}`;
-      const reason = reasonMap.get(reasonKey) || reasonMap.get(reasonKeyName) || '';
+        // 1. Planned part
+        plannedPositions.push({
+          positionId: m.positionId || pos?.id || `pos_${m.posNr}`,
+          posNr: m.posNr || pos?.posNr || '–',
+          shortText: m.shortText || pos?.shortText || 'Material',
+          group: m.group || pos?.group || '',
+          qu,
+          unitPrice,
+          plannedQty: planned,
+          installedInPeriod: plannedInPeriod,
+          totalInstalledToDate: planned,
+          isOverconsumption: false,
+          excessQty: 0,
+          isExtraPosition: false,
+        });
 
-      roomPositions.push({
-        positionId: m.positionId || pos?.id || `pos_${m.posNr}`,
-        posNr: m.posNr || pos?.posNr || '–',
-        shortText: m.shortText || pos?.shortText || 'Material',
-        group: m.group || pos?.group || '',
-        qu,
-        unitPrice,
-        plannedQty: planned,
-        installedInPeriod,
-        totalInstalledToDate,
-        isOverconsumption,
-        excessQty,
-        reason,
-        isExtraPosition: false,
-      });
+        // 2. Sonderposten part (Mehrverbrauch)
+        const reasonKey = `${room.id}_${m.posNr}`;
+        const reasonKeyName = `${room.id}_${(m.shortText || '').toLowerCase()}`;
+        const rawReason = reasonMap.get(reasonKey) || reasonMap.get(reasonKeyName) || 'Mehrverbrauch im Raum';
+        const { reasonText, causedBy } = determineCauseAndOriginator(rawReason, m.posNr, room.id);
+
+        specialPositions.push({
+          positionId: `${m.positionId || pos?.id || m.posNr}_excess`,
+          posNr: m.posNr || pos?.posNr || '–',
+          shortText: m.shortText || pos?.shortText || 'Material',
+          group: m.group || pos?.group || 'Mehrverbrauch',
+          qu,
+          unitPrice,
+          plannedQty: 0,
+          installedInPeriod: excessInPeriod,
+          totalInstalledToDate: excessQty,
+          isOverconsumption: true,
+          excessQty,
+          reason: reasonText,
+          causedBy,
+          isExtraPosition: true,
+          specialType: 'mehrverbrauch',
+        });
+      }
     });
 
-    // B. Check for Extra Positions (Zusatzpositionen / außerplanmäßig verbaut)
+    // B. Extra Positions (Zusatzpositionen / außerplanmäßig verbaut)
     // 1. Extra Bookings in this room not part of planned materials
     bookingsInPeriod.forEach(b => {
       if (b.roomId === room.id) {
@@ -250,25 +340,31 @@ export function calculateAufmassSnapshot(
         const isPlanned = (bPosId && plannedPosKeys.has(bPosId)) || (bPosNr && plannedPosKeys.has(bPosNr));
 
         if (!isPlanned && bPosNr !== 'FERTIG' && bPosNr !== 'DOKU') {
-          // Check if already added
-          const alreadyAdded = roomPositions.find(p => p.posNr === bPosNr || p.positionId === bPosId);
-          if (!alreadyAdded) {
-            const pos = (bPosId ? posMap.get(bPosId) : undefined) || (bPosNr ? posByNrMap.get(bPosNr) : undefined);
-            roomPositions.push({
-              positionId: bPosId || `extra_${b.id}`,
-              posNr: bPosNr || pos?.posNr || 'Sonder',
-              shortText: b.positionName || (b as any).itemText || pos?.shortText || 'Außerplanmäßiges Material',
-              group: pos?.group || 'Sonderbedarf',
-              qu: b.qu || pos?.qu || 'Stk',
-              unitPrice: pos?.unitPrice || 0,
-              plannedQty: 0,
-              installedInPeriod: Number(b.quantity) || 0,
-              totalInstalledToDate: Number(b.quantity) || 0,
-              isOverconsumption: true,
-              excessQty: Number(b.quantity) || 0,
-              reason: b.note || 'Außerplanmäßige Monteurbuchung',
-              isExtraPosition: true,
-            });
+          const qty = Number(b.quantity) || 0;
+          if (qty > 0) {
+            const alreadyAdded = specialPositions.find(p => p.posNr === bPosNr || p.positionId === bPosId);
+            if (!alreadyAdded) {
+              const pos = (bPosId ? posMap.get(bPosId) : undefined) || (bPosNr ? posByNrMap.get(bPosNr) : undefined);
+              const { reasonText, causedBy } = determineCauseAndOriginator(b.note || 'Außerplanmäßige Monteurbuchung', bPosNr, room.id);
+
+              specialPositions.push({
+                positionId: bPosId || `extra_${b.id}`,
+                posNr: bPosNr || pos?.posNr || 'Sonder',
+                shortText: b.positionName || (b as any).itemText || pos?.shortText || 'Außerplanmäßiges Material',
+                group: pos?.group || 'Sonderbedarf',
+                qu: b.qu || pos?.qu || 'Stk',
+                unitPrice: pos?.unitPrice || 0,
+                plannedQty: 0,
+                installedInPeriod: qty,
+                totalInstalledToDate: qty,
+                isOverconsumption: true,
+                excessQty: qty,
+                reason: reasonText,
+                causedBy,
+                isExtraPosition: true,
+                specialType: 'zusatzmaterial',
+              });
+            }
           }
         }
       }
@@ -280,71 +376,67 @@ export function calculateAufmassSnapshot(
         const aKey = a.itemOz || a.materialId;
         const isPlanned = aKey && plannedPosKeys.has(aKey);
         if (!isPlanned) {
-          const alreadyAdded = roomPositions.find(p => p.shortText.toLowerCase() === a.title.toLowerCase());
-          if (!alreadyAdded) {
-            const rawQty = typeof a.quantity === 'number' ? a.quantity : parseFloat(String(a.quantity).replace(',', '.')) || 1;
-            roomPositions.push({
-              positionId: a.materialId || `addendum_${a.id}`,
-              posNr: a.itemOz || 'Sonder-Mat',
-              shortText: a.title,
-              group: 'Sonderbedarf / Mehrbedarf',
-              qu: a.qu || 'Stk',
-              unitPrice: 0,
-              plannedQty: 0,
-              installedInPeriod: rawQty,
-              totalInstalledToDate: rawQty,
-              isOverconsumption: true,
-              excessQty: rawQty,
-              reason: a.note || (a.status === 'approved' ? 'Freigegebener Mehrbedarf' : 'Erfasster Mehrbedarf'),
-              isExtraPosition: true,
-            });
+          const rawQty = typeof a.quantity === 'number' ? a.quantity : parseFloat(String(a.quantity).replace(',', '.')) || 1;
+          if (rawQty > 0) {
+            const alreadyAdded = specialPositions.find(p => p.shortText.toLowerCase() === a.title.toLowerCase());
+            if (!alreadyAdded) {
+              const rawNote = a.note || (a.status === 'approved' ? 'Freigegebener Mehrbedarf' : 'Erfasster Mehrbedarf');
+              const { reasonText, causedBy } = determineCauseAndOriginator(rawNote, a.itemOz, room.id);
+
+              specialPositions.push({
+                positionId: a.materialId || `addendum_${a.id}`,
+                posNr: a.itemOz || 'Sonder-Mat',
+                shortText: a.title,
+                group: 'Sonderbedarf / Mehrbedarf',
+                qu: a.qu || 'Stk',
+                unitPrice: a.unitPrice || 0,
+                plannedQty: 0,
+                installedInPeriod: rawQty,
+                totalInstalledToDate: rawQty,
+                isOverconsumption: true,
+                excessQty: rawQty,
+                reason: reasonText,
+                causedBy: a.createdByRole === 'bauleiter' ? 'Bauleitung' : causedBy,
+                isExtraPosition: true,
+                specialType: 'zusatzmaterial',
+              });
+            }
           }
         }
       }
     });
 
-    // Sort room positions: Planned positions first, then extra positions at the end
-    roomPositions.sort((a, b) => {
-      if (a.isExtraPosition && !b.isExtraPosition) return 1;
-      if (!a.isExtraPosition && b.isExtraPosition) return -1;
-      return a.posNr.localeCompare(b.posNr, undefined, { numeric: true });
-    });
+    // Sort
+    plannedPositions.sort((a, b) => a.posNr.localeCompare(b.posNr, undefined, { numeric: true }));
+    specialPositions.sort((a, b) => a.posNr.localeCompare(b.posNr, undefined, { numeric: true }));
 
-    roomsData.push({
-      roomId: room.id,
-      roomName: room.name,
-      roomCode: room.code || 'Raum',
-      floor: room.floor,
-      isCompleted: isDone,
-      positions: roomPositions,
-    });
+    // Combined positions array (for backward compatibility)
+    const combinedPositions = [...plannedPositions, ...specialPositions];
+
+    // Only include room if work has been performed (at least 1 position installed)
+    if (combinedPositions.length > 0) {
+      roomsData.push({
+        roomId: room.id,
+        roomName: room.name,
+        roomCode: room.code || 'Raum',
+        floor: room.floor,
+        isCompleted: isDone,
+        plannedPositions,
+        specialPositions,
+        positions: combinedPositions,
+      });
+    }
   });
 
-  // 2. Calculate Summary Items across the whole project
-  // Aggregate all unique positions that have planned, period or total installed quantity
+  // 2. Calculate Summary Items across the whole project (ONLY INSTALLED MATERIALS)
   const summaryMap = new Map<string, AufmassMaterialItem>();
 
-  // A. Start with all LV positions
-  positions.forEach(pos => {
-    summaryMap.set(pos.posNr || pos.id, {
-      positionId: pos.id,
-      posNr: pos.posNr || '–',
-      shortText: pos.shortText || 'Material',
-      group: pos.group || '',
-      qu: pos.qu || 'Stk',
-      unitPrice: pos.unitPrice || 0,
-      plannedQty: Number(pos.qty) || 0,
-      totalInstalledUpToDate: 0,
-      periodInstalledQty: 0,
-      totalCost: 0,
-    });
-  });
-
-  // B. Accumulate quantities from rooms
   roomsData.forEach(r => {
     r.positions.forEach(p => {
       const key = p.posNr || p.positionId;
       if (!summaryMap.has(key)) {
+        // Find matching original position for overall planned quantity if available
+        const pos = posByNrMap.get(p.posNr) || posMap.get(p.positionId);
         summaryMap.set(key, {
           positionId: p.positionId,
           posNr: p.posNr || '–',
@@ -352,7 +444,7 @@ export function calculateAufmassSnapshot(
           group: p.group || '',
           qu: p.qu || 'Stk',
           unitPrice: p.unitPrice || 0,
-          plannedQty: p.plannedQty || 0,
+          plannedQty: pos ? Number(pos.qty) || 0 : p.plannedQty || 0,
           totalInstalledUpToDate: 0,
           periodInstalledQty: 0,
           totalCost: 0,
@@ -366,9 +458,9 @@ export function calculateAufmassSnapshot(
     });
   });
 
-  // Filter summary items: include all positions with plannedQty > 0 or periodInstalledQty > 0 or totalInstalledUpToDate > 0
+  // Summary items: ONLY positions with actual installation (> 0)
   const summaryItems = Array.from(summaryMap.values())
-    .filter(item => item.plannedQty > 0 || item.periodInstalledQty > 0 || item.totalInstalledUpToDate > 0)
+    .filter(item => item.totalInstalledUpToDate > 0 || item.periodInstalledQty > 0)
     .sort((a, b) => a.posNr.localeCompare(b.posNr, undefined, { numeric: true }));
 
   const totalPeriodVolume = summaryItems.reduce((acc, item) => acc + item.totalCost, 0);
@@ -393,4 +485,49 @@ export function calculateAufmassSnapshot(
     summaryItems,
     roomsData,
   };
+}
+
+/**
+ * Update reason and originator for a position in an existing Aufmass document (e.g. translate from Polish to German)
+ */
+export async function updateAufmassPositionReason(
+  projectId: string,
+  aufmassId: string,
+  roomId: string,
+  positionId: string,
+  newReason: string,
+  newCausedBy?: string
+): Promise<AufmassDocument | null> {
+  const localList = getLocalAufmasse(projectId);
+  const target = localList.find(a => a.id === aufmassId);
+  if (!target) return null;
+
+  // Clone document
+  const updated: AufmassDocument = JSON.parse(JSON.stringify(target));
+  const room = updated.roomsData.find(r => r.roomId === roomId);
+  if (room) {
+    const updatePos = (pos: AufmassRoomPosition) => {
+      pos.reason = newReason;
+      if (newCausedBy) pos.causedBy = newCausedBy;
+    };
+
+    // Update in positions
+    const pos = room.positions.find(p => p.positionId === positionId || p.posNr === positionId);
+    if (pos) updatePos(pos);
+
+    // Update in specialPositions
+    if (room.specialPositions) {
+      const sPos = room.specialPositions.find(p => p.positionId === positionId || p.posNr === positionId);
+      if (sPos) updatePos(sPos);
+    }
+
+    // Update in plannedPositions
+    if (room.plannedPositions) {
+      const pPos = room.plannedPositions.find(p => p.positionId === positionId || p.posNr === positionId);
+      if (pPos) updatePos(pPos);
+    }
+  }
+
+  await saveAufmassDocument(projectId, updated);
+  return updated;
 }
