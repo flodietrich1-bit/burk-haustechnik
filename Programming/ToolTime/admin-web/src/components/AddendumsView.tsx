@@ -16,12 +16,18 @@ import {
   Eye,
   CheckCircle2,
   Minus,
-  ShoppingCart,
   Send,
   PackageCheck,
-  AlertTriangle
+  AlertTriangle,
+  Mail
 } from 'lucide-react';
-import { updateAddendumStatus, createAddendum, addPositionDeliveredQty, getMaterialActualQty } from '../services/firestoreService';
+import { 
+  updateAddendumStatus, 
+  createAddendum, 
+  addPositionDeliveredQty, 
+  getMaterialActualQty,
+  batchUpdateAddendumsRequested
+} from '../services/firestoreService';
 import type { Booking } from '../types';
 
 interface AddendumsViewProps {
@@ -141,7 +147,7 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   bookings = []
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'requested' | 'approved' | 'rejected'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [hoveredSigId, setHoveredSigId] = useState<string | null>(null);
   const [selectedSignatureItem, setSelectedSignatureItem] = useState<Addendum | null>(null);
@@ -155,12 +161,19 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [newNote, setNewNote] = useState('');
   const [newRequestedBy, setNewRequestedBy] = useState('Projektleiter');
 
-  // Reorder Modal State ("Material Nachbestellen")
+  // Single Material Request Modal State ("Material anfragen")
   const [reorderItem, setReorderItem] = useState<Addendum | null>(null);
   const [reorderQty, setReorderQty] = useState<number>(1);
   const [mailSubject, setMailSubject] = useState<string>('');
   const [mailBody, setMailBody] = useState<string>('');
   const [isProcessingReorder, setIsProcessingReorder] = useState<boolean>(false);
+
+  // Batch Material Request Modal State ("Sammel-Anfrage")
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
+  const [batchRecipient, setBatchRecipient] = useState<string>('');
+  const [batchSubject, setBatchSubject] = useState<string>('');
+  const [batchBody, setBatchBody] = useState<string>('');
+  const [isProcessingBatch, setIsProcessingBatch] = useState<boolean>(false);
 
   // Rejection Modal State ("Ablehnen" mit Begründung)
   const [rejectItem, setRejectItem] = useState<Addendum | null>(null);
@@ -239,25 +252,30 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
     };
   };
 
-  const managerFirstName = (project?.commercialManager || 'Sabine').trim().split(/\s+/)[0];
+  const managerFirstName = (project?.commercialManager || 'Andreas').trim().split(/\s+/)[0];
+  const managerEmail = project?.commercialManagerEmail || 'andreas@burk-haustechnik.de';
 
   const generateMailContent = (item: Addendum, qty: number, unit: string) => {
     const pName = project?.name || 'Bauvorhaben';
-    const subj = `Nachbestellung erforderlich: ${qty} ${unit} ${item.title} (Projekt ${pName})`;
+    const posStr = item.itemOz ? `Pos. ${item.itemOz}: ` : '';
+    const creator = item.createdByRole === 'bauleiter' ? `Bauleiter (${item.requestedBy})` : (item.requestedBy || 'Monteur');
+    const reason = item.description || item.note || 'Abweichung GAEB vs. DWG / Mehrbedarf';
+
+    const subj = `Materialanfrage: ${qty} ${unit} ${posStr}${item.title} (Projekt ${pName})`;
     const body = `Hallo ${managerFirstName},
 
-für das Bauvorhaben "${pName}" muss folgendes Material dringend nachbestellt werden:
+für das Bauvorhaben "${pName}" muss folgendes Material aus einem Nachtrag angefragt und bestellt werden:
 
-• Material: ${item.title}
+• Material: ${posStr}${item.title}
 • Menge: ${qty} ${unit}
 • Raum: ${item.roomName || item.roomId || 'Baustelle'}
-• Anforderer: ${item.requestedBy || 'Monteur'}
-• Begründung / Notiz: ${item.note || 'Mehrbedarf / ungeplant verbautes Material auf der Baustelle'}
+• Begründung: ${reason}
+• Erfasst von: ${creator}
 
-Bitte veranlasse die Nachbestellung zeitnah, damit die Montage vor Ort zügig fortgesetzt werden kann.
+Bitte prüfe die kaufmännische Freigabe und veranlasse die Bestellung beim Großhändler.
 
 Viele Grüße,
-Bauleitung`;
+Bauleitung Burk Haustechnik`;
     return { subj, body };
   };
 
@@ -288,7 +306,7 @@ Bauleitung`;
     });
   };
 
-  // 2. Open Reorder Modal: "Material Nachbestellen"
+  // 3. Open Reorder / Request Modal for single item
   const handleOpenReorderModal = (item: Addendum) => {
     const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
     const initQty = Math.max(1, rawQty);
@@ -320,18 +338,156 @@ Bauleitung`;
       const unit = reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
       const targetKey = reorderItem.materialId || reorderItem.itemOz || reorderItem.title;
 
-      // Verfügbare Menge erhöht sich entsprechend
       await addPositionDeliveredQty(projectId, targetKey, reorderQty, unit);
-      await updateAddendumStatus(reorderItem.id, 'approved', projectId, {
-        approvalType: 'reordered',
+      await updateAddendumStatus(reorderItem.id, 'requested', projectId, {
+        requestedAt: new Date().toISOString(),
+        requestedTo: managerFirstName,
         reorderedQty: reorderQty,
       });
+
+      // Open mailto link
+      const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
+      window.open(mailtoUrl, '_blank');
 
       setReorderItem(null);
     } catch (err: any) {
       console.warn('Error confirming reorder:', err.message);
     } finally {
       setIsProcessingReorder(false);
+    }
+  };
+
+  // Classify each addendum into 1 of the 3 requested categories:
+  // 1. time: 'stunden' | 'zeit' | 'regie'
+  // 2. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Planabweichung in note/title/reason
+  // 3. material: 'material' (Mehr Material angefragt)
+  const getItemCategory = (item: Addendum): 'time' | 'material' | 'unclear' => {
+    const t = (item.type || '').toLowerCase();
+    const note = (item.note || '').toLowerCase();
+    const title = (item.title || '').toLowerCase();
+    const reason = ((item as any).reason || '').toLowerCase();
+    const itemOz = (item.itemOz || '').toUpperCase();
+
+    // 1. Time / Regie
+    if (t === 'stunden' || t === 'zeit' || t === 'regie' || item.qu === 'h' || item.qu === 'Std') {
+      return 'time';
+    }
+
+    // Explicit overrides
+    if (item.isUnclear === true || t === 'unklar' || t === 'ausserplanmaessig' || t === 'außerplanmäßig' || t === 'abweichung' || t === 'planabweichung' || t === 'anders') {
+      return 'unclear';
+    }
+
+    // 2. Anderes Material verbaut (Unklar, außerplanmäßig, Planabweichung, Zusatz etc.)
+    if (
+      t === 'unplanned' ||
+      itemOz === 'UNKLAR' ||
+      itemOz === 'ZUSATZ' ||
+      note.includes('planabweichung') ||
+      note.includes('außerplanmäßig') ||
+      note.includes('ausserplanmäßig') ||
+      note.includes('nicht im raumplan') ||
+      note.includes('nicht im plan') ||
+      note.includes('anders verbaut') ||
+      note.includes('anderes material') ||
+      reason.includes('planabweichung') ||
+      reason.includes('außerplanmäßig') ||
+      reason.includes('ausserplanmäßig') ||
+      reason.includes('nicht im raumplan') ||
+      reason.includes('abweichung') ||
+      title.includes('außerplanmäßig') ||
+      title.includes('ausserplanmäßig') ||
+      title.includes('planabweichung') ||
+      title.includes('anderes material') ||
+      title.includes('anders verbaut')
+    ) {
+      return 'unclear';
+    }
+
+    // 3. Mehr Material angefragt
+    return 'material';
+  };
+
+  // Metrics
+  const totalCount = addendums.length;
+  const timeItems = addendums.filter(a => getItemCategory(a) === 'time');
+  const materialItems = addendums.filter(a => getItemCategory(a) === 'material');
+  const unclearItems = addendums.filter(a => getItemCategory(a) === 'unclear');
+
+  const unrequestedMaterialItems = materialItems.filter(a => a.status === 'pending');
+  const requestedMaterialItems = materialItems.filter(a => a.status === 'requested');
+
+  const openTimeCount = timeItems.filter(a => a.status === 'pending').length;
+  const openMaterialCount = unrequestedMaterialItems.length;
+  const openUnclearCount = unclearItems.filter(a => a.status === 'pending').length;
+
+  // 4. Batch Request Modal handlers
+  const handleOpenBatchRequestModal = () => {
+    if (unrequestedMaterialItems.length === 0) return;
+    const pName = project?.name || 'Bauvorhaben';
+    const subj = `Materialanfrage / Nachträge: ${unrequestedMaterialItems.length} Positionen (Projekt ${pName})`;
+
+    const itemsList = unrequestedMaterialItems.map((item, idx) => {
+      const posStr = item.itemOz ? `Pos. ${item.itemOz}: ` : '';
+      const creator = item.createdByRole === 'bauleiter' ? `Bauleiter (${item.requestedBy})` : (item.requestedBy || 'Monteur');
+      const reason = item.description || item.note || 'Abweichung GAEB vs. DWG / Mehrbedarf';
+      return `${idx + 1}. ${posStr}${item.title}
+   • Menge: ${item.quantity} ${item.qu || 'Stk'}
+   • Raum: ${item.roomName || item.roomId || 'Baustelle'}
+   • Begründung: ${reason}
+   • Erfasst von: ${creator}`;
+    }).join('\n\n');
+
+    const body = `Hallo ${managerFirstName},
+
+für das Bauvorhaben "${pName}" müssen folgende ${unrequestedMaterialItems.length} Materialien aus Nachträgen und Planungsabweichungen angefragt und bestellt werden:
+
+${itemsList}
+
+Bitte prüfe die kaufmännische Freigabe und veranlasse die Bestellung beim Großhändler.
+
+Viele Grüße,
+Bauleitung Burk Haustechnik`;
+
+    setBatchRecipient(managerEmail);
+    setBatchSubject(subj);
+    setBatchBody(body);
+    setIsBatchModalOpen(true);
+  };
+
+  const handleConfirmBatchRequest = async () => {
+    setIsProcessingBatch(true);
+    try {
+      const ids = unrequestedMaterialItems.map(i => i.id);
+      await batchUpdateAddendumsRequested(projectId, ids, managerFirstName);
+
+      // Open mailto URL
+      const mailtoUrl = `mailto:${encodeURIComponent(batchRecipient)}?subject=${encodeURIComponent(batchSubject)}&body=${encodeURIComponent(batchBody)}`;
+      window.open(mailtoUrl, '_blank');
+
+      setIsBatchModalOpen(false);
+    } catch (err: any) {
+      console.warn('Error confirming batch request:', err.message);
+      alert('Fehler beim Absenden: ' + err.message);
+    } finally {
+      setIsProcessingBatch(false);
+    }
+  };
+
+  // Mark requested item as ordered / approved
+  const handleMarkAsOrdered = async (item: Addendum) => {
+    try {
+      const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
+      const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
+      const targetKey = item.materialId || item.itemOz || item.title;
+
+      await addPositionDeliveredQty(projectId, targetKey, rawQty, unit);
+      await updateAddendumStatus(item.id, 'approved', projectId, {
+        approvalType: 'reordered',
+        reorderedQty: rawQty,
+      });
+    } catch (err: any) {
+      console.warn('Error marking addendum as ordered:', err.message);
     }
   };
 
@@ -394,67 +550,6 @@ Bauleitung`;
       console.warn('Error switching category:', err.message);
     }
   };
-
-  // Classify each addendum into 1 of the 3 requested categories:
-  // 1. time: 'stunden' | 'zeit' | 'regie'
-  // 2. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Planabweichung in note/title/reason
-  // 3. material: 'material' (Mehr Material angefragt)
-  const getItemCategory = (item: Addendum): 'time' | 'material' | 'unclear' => {
-    const t = (item.type || '').toLowerCase();
-    const note = (item.note || '').toLowerCase();
-    const title = (item.title || '').toLowerCase();
-    const reason = ((item as any).reason || '').toLowerCase();
-    const itemOz = (item.itemOz || '').toUpperCase();
-
-    // 1. Time / Regie
-    if (t === 'stunden' || t === 'zeit' || t === 'regie' || item.qu === 'h' || item.qu === 'Std') {
-      return 'time';
-    }
-
-    // Explicit overrides
-    if (item.isUnclear === true || t === 'unklar' || t === 'ausserplanmaessig' || t === 'außerplanmäßig' || t === 'abweichung' || t === 'planabweichung' || t === 'anders') {
-      return 'unclear';
-    }
-
-    // 2. Anderes Material verbaut (Unklar, außerplanmäßig, Planabweichung, Zusatz etc.)
-    if (
-      t === 'unplanned' ||
-      itemOz === 'UNKLAR' ||
-      itemOz === 'ZUSATZ' ||
-      note.includes('planabweichung') ||
-      note.includes('außerplanmäßig') ||
-      note.includes('ausserplanmäßig') ||
-      note.includes('nicht im raumplan') ||
-      note.includes('nicht im plan') ||
-      note.includes('anders verbaut') ||
-      note.includes('anderes material') ||
-      reason.includes('planabweichung') ||
-      reason.includes('außerplanmäßig') ||
-      reason.includes('ausserplanmäßig') ||
-      reason.includes('nicht im raumplan') ||
-      reason.includes('abweichung') ||
-      title.includes('außerplanmäßig') ||
-      title.includes('ausserplanmäßig') ||
-      title.includes('planabweichung') ||
-      title.includes('anderes material') ||
-      title.includes('anders verbaut')
-    ) {
-      return 'unclear';
-    }
-
-    // 3. Mehr Material angefragt
-    return 'material';
-  };
-
-  // Metrics
-  const totalCount = addendums.length;
-  const timeItems = addendums.filter(a => getItemCategory(a) === 'time');
-  const materialItems = addendums.filter(a => getItemCategory(a) === 'material');
-  const unclearItems = addendums.filter(a => getItemCategory(a) === 'unclear');
-
-  const openTimeCount = timeItems.filter(a => a.status === 'pending').length;
-  const openMaterialCount = materialItems.filter(a => a.status === 'pending').length;
-  const openUnclearCount = unclearItems.filter(a => a.status === 'pending').length;
 
   // Filtered List
   const displayedList = addendums.filter(item => {
@@ -527,30 +622,59 @@ Bauleitung`;
         {/* Category 2: Additional Material */}
         <div 
           onClick={() => setCategoryFilter(categoryFilter === 'material' ? 'all' : 'material')}
-          className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-blue-400 ${
+          className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-blue-400 flex flex-col justify-between ${
             categoryFilter === 'material' ? 'ring-2 ring-[#3B82C4] border-[#3B82C4]' : 'border-slate-200'
           }`}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#3B82C4] flex items-center justify-center font-bold">
-                <Package className="w-5 h-5" />
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#3B82C4] flex items-center justify-center font-bold">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-slate-800 block">Mehr Material angefragt</span>
+                  <span className="text-[10px] text-slate-400">Zusatzmaterial, Mehrbedarf</span>
+                </div>
               </div>
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">Mehr Material angefragt</span>
-                <span className="text-[10px] text-slate-400">Zusatzmaterial, Mehrbedarf</span>
+              <span className="text-xl font-black text-[#3B82C4]">
+                {materialItems.length}
+              </span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
+              <div className="flex items-center space-x-1.5">
+                <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full text-[10px]">
+                  {openMaterialCount} ausstehend
+                </span>
+                {requestedMaterialItems.length > 0 && (
+                  <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full text-[10px]">
+                    {requestedMaterialItems.length} angefragt
+                  </span>
+                )}
               </div>
             </div>
-            <span className="text-xl font-black text-[#3B82C4]">
-              {materialItems.length}
-            </span>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full text-[10px]">
-              {openMaterialCount} ausstehend
-            </span>
-          </div>
+
+          {/* Action button inside card */}
+          {unrequestedMaterialItems.length > 0 ? (
+            <div className="mt-3 pt-3 border-t border-slate-100" onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                onClick={handleOpenBatchRequestModal}
+                className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                title={`${unrequestedMaterialItems.length} offene Positionen gesammelt per E-Mail bei ${managerFirstName} anfragen`}
+              >
+                <Mail className="w-4 h-4" />
+                <span>Material anfragen ({unrequestedMaterialItems.length})</span>
+              </button>
+            </div>
+          ) : requestedMaterialItems.length > 0 ? (
+            <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-center space-x-1.5 text-[11px] text-indigo-700 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Alle offenen Posten bei {managerFirstName} angefragt</span>
+            </div>
+          ) : null}
         </div>
 
         {/* Category 3: Unplanned Material Installed */}
@@ -611,7 +735,8 @@ Bauleitung`;
         <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-xl">
           {[
             { id: 'all' as const, label: 'Alle Status' },
-            { id: 'pending' as const, label: 'Ausstehend' },
+            { id: 'pending' as const, label: `Ausstehend (${openTimeCount + openMaterialCount + openUnclearCount})` },
+            { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
             { id: 'approved' as const, label: 'Freigegeben' },
             { id: 'rejected' as const, label: 'Abgelehnt' },
           ].map(s => (
@@ -646,6 +771,7 @@ Bauleitung`;
           {displayedList.map(item => {
             const cat = getItemCategory(item);
             const isPending = item.status === 'pending';
+            const isRequested = item.status === 'requested';
             const isApproved = item.status === 'approved';
             const isRejected = item.status === 'rejected';
             const stockInfo = (cat === 'material' || cat === 'unclear') ? getItemStockInfo(item) : null;
@@ -703,13 +829,16 @@ Bauleitung`;
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
                       isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                       isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
+                      isRequested ? 'bg-blue-100 text-blue-800 border border-blue-200' :
                       'bg-amber-100 text-amber-800 border border-amber-200'
                     }`}>
                       {isApproved 
                         ? (item.approvalType === 'reordered' 
                             ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
                             : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
-                        : isRejected ? 'Abgelehnt' : 'Ausstehend'}
+                        : isRejected ? 'Abgelehnt' 
+                        : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
+                        : 'Ausstehend'}
                     </span>
                   </div>
 
@@ -732,22 +861,65 @@ Bauleitung`;
                   </div>
 
                   {/* Room & Submitter Meta Info */}
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 pt-1">
+                  <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-500 pt-1">
                     <div className="flex items-center space-x-1 text-[#3B82C4] font-medium bg-blue-50/60 px-2 py-0.5 rounded-md">
                       <MapPin className="w-3.5 h-3.5" />
                       <span>{item.roomName || item.roomId || 'Baustelle'}</span>
                     </div>
 
-                    <div className="flex items-center space-x-1 font-medium">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
+                    <div className={`flex items-center space-x-1 font-medium px-2 py-0.5 rounded-md ${
+                      item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')
+                        ? 'bg-amber-50 text-amber-800 border border-amber-200/80 font-bold'
+                        : 'text-slate-600 bg-slate-100'
+                    }`}>
+                      <User className={`w-3.5 h-3.5 ${
+                        item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')
+                          ? 'text-amber-600'
+                          : 'text-slate-400'
+                      }`} />
                       <span>{item.requestedBy || 'Monteur'}</span>
+                      {(item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')) && (
+                        <span className="text-[9px] bg-amber-200/90 text-amber-900 px-1 py-0.2 rounded font-black tracking-wider uppercase ml-1">
+                          Bauleiter
+                        </span>
+                      )}
                     </div>
+
+                    {item.deviationSource === 'gaeb_vs_dwg' && (
+                      <div className="flex items-center space-x-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[11px]">
+                        <span>Abweichung GAEB vs. DWG</span>
+                      </div>
+                    )}
 
                     <div className="flex items-center space-x-1 text-slate-400">
                       <Calendar className="w-3.5 h-3.5" />
                       <span>{item.createdAt ? new Date(item.createdAt).toLocaleDateString('de-DE') : '-'}</span>
                     </div>
                   </div>
+
+                  {/* Info-Banner if status is requested */}
+                  {isRequested && (
+                    <div className="p-3 rounded-xl bg-blue-50/90 border border-blue-200 text-xs text-blue-900 flex items-center justify-between shadow-2xs">
+                      <div className="flex items-center space-x-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-bold">Bei kfm. Leitung ({item.requestedTo || managerFirstName}) angefragt</span>
+                            <span className="text-[10px] bg-blue-200/80 text-blue-800 font-semibold px-1.5 py-0.2 rounded-full">
+                              Offene Anfrage
+                            </span>
+                          </div>
+                          {item.requestedAt && (
+                            <span className="text-[11px] text-blue-700 block mt-0.5">
+                              Versendet am: {new Date(item.requestedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} Uhr
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Monteur Note / Begründung */}
                   {item.note && (
@@ -905,7 +1077,40 @@ Bauleitung`;
                 </div>
 
                 {/* Bottom Actions for Bauleiter / Admin */}
-                {isPending ? (
+                {isRequested ? (
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
+                      className="text-slate-400 hover:text-slate-700 text-[11px] underline cursor-pointer"
+                      title="Status zurück auf 'Ausstehend' setzen"
+                    >
+                      Status zurücksetzen
+                    </button>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenReorderModal(item)}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[#3B82C4] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
+                        title={`E-Mail an kfm. Leitung (${managerFirstName}) erneut öffnen`}
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                        <span>Erneut anfragen</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAsOrdered(item)}
+                        className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01] cursor-pointer"
+                        title="Material wurde geliefert / bestellt: Als freigegeben markieren"
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" />
+                        <span>Als bestellt / freigegeben buchen</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : isPending ? (
                   <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
                     {cat === 'unclear' ? (
                       <>
@@ -925,8 +1130,8 @@ Bauleitung`;
                           className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
                           title="Material reicht nicht für Restprojekt – Modal zur Nachbestellung öffnen"
                         >
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                          <span>Material Nachbestellen</span>
+                          <Mail className="w-3.5 h-3.5" />
+                          <span>Material anfragen</span>
                         </button>
                       </>
                     ) : (
@@ -971,10 +1176,10 @@ Bauleitung`;
                               type="button"
                               onClick={() => handleOpenReorderModal(item)}
                               className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
-                              title="Material ist nicht mehr im Lager vorhanden – Modal zur Nachbestellung öffnen"
+                              title={`Material per E-Mail bei ${managerFirstName} anfragen`}
                             >
-                              <ShoppingCart className="w-3.5 h-3.5" />
-                              <span>Material Nachbestellen</span>
+                              <Mail className="w-3.5 h-3.5" />
+                              <span>Material anfragen</span>
                             </button>
                           </>
                         )}
@@ -984,7 +1189,7 @@ Bauleitung`;
                 ) : (
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
                     <span className="font-medium text-slate-600">
-                      {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & freigegeben'}
+                      {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & verbucht'}
                       {isApproved && item.approvalType !== 'reordered' && (cat === 'unclear' ? '✓ Geprüft & Hinweis geschlossen' : '✓ Aus Lagerbestand freigegeben')}
                       {isRejected && '✕ Durch Bauleitung abgelehnt'}
                     </span>
@@ -1467,6 +1672,135 @@ Bauleitung`;
                 className="px-5 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold shadow-md shadow-red-600/20 transition-all hover:scale-[1.01] disabled:opacity-50"
               >
                 Endgültig ablehnen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Sammelanfrage Material an kaufmännische Leitung (Andreas) */}
+      {isBatchModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#3B82C4]">
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">
+                    Sammelanfrage Material an kaufmännische Leitung
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {unrequestedMaterialItems.length} offene Position(en) werden an {managerFirstName} übermittelt
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto space-y-4 text-xs pr-1">
+              {/* Info banner */}
+              <div className="p-3 bg-blue-50/80 border border-blue-200/90 rounded-xl text-blue-900 text-xs flex items-start space-x-2.5">
+                <CheckCircle2 className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <div className="leading-relaxed">
+                  Nach dem Klick auf Absenden wird das Standard-E-Mail-Programm mit vorausgefüllter E-Mail an <strong>{managerFirstName}</strong> ({batchRecipient}) geöffnet.
+                  Alle {unrequestedMaterialItems.length} Positionen werden im System direkt auf den Status <strong>„angefragt“</strong> gesetzt.
+                </div>
+              </div>
+
+              {/* Items Summary Table / List */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-slate-100 px-3 py-2 text-[11px] font-bold text-slate-700 flex justify-between">
+                  <span>Enthaltene Positionen ({unrequestedMaterialItems.length})</span>
+                  <span>Menge / Raum</span>
+                </div>
+                <div className="divide-y divide-slate-100 max-h-44 overflow-y-auto bg-white">
+                  {unrequestedMaterialItems.map((item, idx) => (
+                    <div key={item.id} className="p-2.5 flex items-center justify-between text-xs hover:bg-slate-50">
+                      <div className="pr-3">
+                        <div className="font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <span className="text-slate-400 font-mono text-[11px]">{idx + 1}.</span>
+                          <span>{item.title}</span>
+                          {(item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')) && (
+                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-bold uppercase">
+                              Bauleiter
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-md">
+                          Grund: {item.description || item.note || 'Abweichung GAEB vs. DWG'}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="font-bold text-slate-900">{item.quantity} {item.qu || 'Stk'}</span>
+                        <span className="block text-[10px] text-slate-400">{item.roomName || item.roomId || 'Baustelle'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recipient */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Empfänger (Kaufmännische Leitung) *</label>
+                <input
+                  type="text"
+                  value={batchRecipient}
+                  onChange={e => setBatchRecipient(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                />
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Betreffzeile *</label>
+                <input
+                  type="text"
+                  value={batchSubject}
+                  onChange={e => setBatchSubject(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs font-semibold"
+                />
+              </div>
+
+              {/* Body */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  E-Mail Nachrichtentext (Persönliche Anrede: Hallo {managerFirstName}) *
+                </label>
+                <textarea
+                  rows={7}
+                  value={batchBody}
+                  onChange={e => setBatchBody(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
+                />
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsBatchModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs cursor-pointer"
+              >
+                Abbrechen
+              </button>
+
+              <button
+                type="button"
+                disabled={isProcessingBatch || unrequestedMaterialItems.length === 0}
+                onClick={handleConfirmBatchRequest}
+                className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50 text-xs cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>E-Mail öffnen &amp; als angefragt markieren ({unrequestedMaterialItems.length})</span>
               </button>
             </div>
           </div>

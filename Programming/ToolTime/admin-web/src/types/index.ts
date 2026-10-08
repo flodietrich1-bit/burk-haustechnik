@@ -238,7 +238,7 @@ export interface Addendum {
   quantity: number | string;
   qu?: string;
   requestedBy: string;
-  status: 'pending' | 'approved' | 'rejected' | 'synced';
+  status: 'pending' | 'approved' | 'rejected' | 'synced' | 'requested';
   note?: string;
   signature?: string | null;
   signatureUrl?: string;
@@ -254,6 +254,12 @@ export interface Addendum {
   rejectionReason?: string;
   approvalType?: 'in_stock' | 'reordered';
   reorderedQty?: number;
+  requestedAt?: string;
+  requestedTo?: string;
+  createdByRole?: 'bauleiter' | 'monteur' | 'admin' | string;
+  deviationSource?: 'gaeb_vs_dwg' | 'monteur' | 'manual' | string;
+  unitPrice?: number;
+  totalPrice?: number;
 }
 
 export interface PlanDeviationItem {

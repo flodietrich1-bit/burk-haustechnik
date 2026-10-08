@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { Position, Room, User } from '../types';
+import type { Position, Room, User, Addendum } from '../types';
 import { 
   Scale, 
   Search, 
@@ -23,6 +23,7 @@ interface GaebVsDwgViewProps {
   projectName?: string;
   positions: Position[];
   rooms: Room[];
+  addendums?: Addendum[];
   currentUser?: User | null;
   onNavigateToAddendums?: () => void;
 }
@@ -54,6 +55,7 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
   projectName = 'Projekt',
   positions,
   rooms,
+  addendums = [],
   currentUser,
   onNavigateToAddendums
 }) => {
@@ -62,7 +64,12 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [createdAddendums, setCreatedAddendums] = useState<Set<string>>(new Set());
-  const [isCreatingAddendum, setIsCreatingAddendum] = useState<string | null>(null);
+  
+  // Modal State for "Nachtrag anlegen"
+  const [modalRow, setModalRow] = useState<ComparisonRow | null>(null);
+  const [modalQty, setModalQty] = useState<number>(1);
+  const [modalReason, setModalReason] = useState<string>('');
+  const [modalSubmitting, setModalSubmitting] = useState<boolean>(false);
 
   // Toggle room details row
   const toggleRow = (id: string) => {
@@ -246,33 +253,49 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
     XLSX.writeFile(wb, `${projectName}_GAEB_vs_DWG_Vergleich.xlsx`);
   };
 
-  // Create Addendum from Overplanning
-  const handleCreateAddendumFromRow = async (row: ComparisonRow) => {
-    if (isCreatingAddendum || createdAddendums.has(row.pos.id)) return;
-    setIsCreatingAddendum(row.pos.id);
+  // Open Addendum Modal for Overplanning
+  const handleOpenAddendumModal = (row: ComparisonRow) => {
+    setModalRow(row);
+    setModalQty(row.delta > 0 ? row.delta : 1);
+    const roomsText = row.roomBreakdown.map(r => `${r.roomName} (${r.qty} ${row.qu})`).join(', ');
+    setModalReason(
+      `Abweichung GAEB vs. DWG: Laut Ausführungs- und Montageplanung (DWG) werden insgesamt ${row.dwgQty} ${row.qu} benötigt, im ursprünglichen Ausschreibungs-LV (GAEB) waren nur ${row.gaebQty} ${row.qu} enthalten (+${row.delta} ${row.qu} Mehrbedarf).${roomsText ? ` Aufteilung in Räumen: ${roomsText}.` : ''}`
+    );
+  };
+
+  const handleConfirmAddendum = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalRow || modalSubmitting) return;
+    setModalSubmitting(true);
 
     try {
-      const addendumTitle = `Mengenmehrung: ${row.shortText} (+${row.delta} ${row.qu})`;
-      const roomsText = row.roomBreakdown.map(r => `${r.roomName} (${r.qty} ${row.qu})`).join(', ');
+      const qty = Math.max(1, modalQty);
+      const addendumTitle = `Mengenmehrung: ${modalRow.shortText} (+${qty} ${modalRow.qu})`;
       
       await createAddendum(projectId, {
         title: addendumTitle,
-        itemOz: row.posNr,
-        materialId: row.pos.id,
-        quantity: row.delta,
-        qu: row.qu,
-        description: `Ausführungsplanung (DWG) erfordert ${row.dwgQty} ${row.qu}, während das Ausschreibungs-LV (GAEB) nur ${row.gaebQty} ${row.qu} vorsah. Aufteilung in Räumen: ${roomsText}.`,
-        note: `VOB/B § 2 Mengenmehrung (+${row.deltaPercent}%)`,
+        itemOz: modalRow.posNr,
+        materialId: modalRow.pos.id,
+        quantity: qty,
+        qu: modalRow.qu,
+        unitPrice: modalRow.unitPrice || 0,
+        totalPrice: qty * (modalRow.unitPrice || 0),
+        description: modalReason.trim(),
+        note: `Abweichung GAEB vs. DWG (+${modalRow.deltaPercent}%)`,
         status: 'pending',
-        requestedBy: currentUser?.name || 'Bauleiter'
+        requestedBy: currentUser?.name || 'Bauleiter',
+        createdByRole: 'bauleiter',
+        deviationSource: 'gaeb_vs_dwg',
+        type: 'material'
       });
 
-      setCreatedAddendums(prev => new Set(prev).add(row.pos.id));
+      setCreatedAddendums(prev => new Set(prev).add(modalRow.pos.id));
+      setModalRow(null);
     } catch (err: any) {
       console.error('Fehler beim Erstellen des Nachtrags:', err);
       alert('Fehler beim Erstellen des Nachtrags: ' + err.message);
     } finally {
-      setIsCreatingAddendum(null);
+      setModalSubmitting(false);
     }
   };
 
@@ -533,7 +556,13 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
               ) : (
                 filteredRows.map((row) => {
                   const isExpanded = expandedRows.has(row.pos.id);
-                  const isAddendumCreated = createdAddendums.has(row.pos.id);
+                  const existingAddendum = (addendums || []).find(a => 
+                    (a.materialId && a.materialId === row.pos.id) ||
+                    (a.itemOz && a.itemOz === row.posNr)
+                  );
+                  const isCreatedInSession = createdAddendums.has(row.pos.id);
+                  const hasAddendum = Boolean(existingAddendum || isCreatedInSession);
+                  const addendumStatus = existingAddendum?.status || (isCreatedInSession ? 'pending' : null);
 
                   return (
                     <React.Fragment key={row.pos.id}>
@@ -662,16 +691,28 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
                         {/* Aktion: Nachtrag anlegen */}
                         <td className="py-3 px-4 text-right">
                           {row.delta > 0 ? (
-                            isAddendumCreated ? (
+                            hasAddendum ? (
                               <div className="flex items-center justify-end space-x-1.5">
-                                <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                <span className={`inline-flex items-center space-x-1 text-[11px] font-semibold px-2 py-0.5 rounded border ${
+                                  addendumStatus === 'requested'
+                                    ? 'bg-blue-50 text-[#3B82C4] border-blue-200'
+                                    : addendumStatus === 'approved'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-amber-50 text-amber-800 border-amber-200'
+                                }`}>
                                   <FileCheck className="w-3 h-3" />
-                                  <span>Vorgemerkt</span>
+                                  <span>
+                                    {addendumStatus === 'requested'
+                                      ? 'Angefragt'
+                                      : addendumStatus === 'approved'
+                                      ? 'Freigegeben'
+                                      : 'Eingereicht'}
+                                  </span>
                                 </span>
                                 {onNavigateToAddendums && (
                                   <button
                                     onClick={onNavigateToAddendums}
-                                    className="p-1 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded cursor-pointer"
+                                    className="p-1 text-[#3B82C4] hover:text-blue-800 hover:bg-blue-50 rounded cursor-pointer"
                                     title="Zu Nachträgen wechseln"
                                   >
                                     <ArrowRight className="w-3.5 h-3.5" />
@@ -680,13 +721,12 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
                               </div>
                             ) : (
                               <button
-                                onClick={() => handleCreateAddendumFromRow(row)}
-                                disabled={isCreatingAddendum === row.pos.id}
-                                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                                title="Mengenmehrung als Nachtragsentwurf anlegen"
+                                onClick={() => handleOpenAddendumModal(row)}
+                                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                                title="Nachtrag für Mengenmehrung erfassen"
                               >
                                 <PlusCircle className="w-3.5 h-3.5" />
-                                <span>{isCreatingAddendum === row.pos.id ? 'Erstelle...' : 'Nachtrag anlegen'}</span>
+                                <span>Nachtrag anlegen</span>
                               </button>
                             )
                           ) : (
@@ -741,6 +781,137 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal: Nachtrag erfassen (GAEB vs. DWG Abweichung) */}
+      {modalRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                  <PlusCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    Nachtrag erfassen: GAEB vs. DWG Abweichung
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Pos. {modalRow.posNr} – {modalRow.shortText}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalRow(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleConfirmAddendum} className="p-6 space-y-4">
+              {/* Overview Box */}
+              <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">GAEB LV-Soll</span>
+                  <span className="font-semibold text-slate-800 mt-0.5 block">{modalRow.gaebQty} {modalRow.qu}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">DWG Montage</span>
+                  <span className="font-bold text-[#3B82C4] mt-0.5 block">{modalRow.dwgQty} {modalRow.qu}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 uppercase font-bold block">Plan-Mehrung</span>
+                  <span className="font-black text-rose-700 mt-0.5 block">+{modalRow.delta} {modalRow.qu}</span>
+                </div>
+              </div>
+
+              {/* Quantity Input */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Nachtragsmenge ({modalRow.qu}) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    value={modalQty}
+                    onChange={(e) => setModalQty(parseFloat(e.target.value) || 1)}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-[#3B82C4] focus:outline-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Erfasser
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={`Bauleiter (${currentUser?.name || 'Florian Dietrich'})`}
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              {/* Reason Textarea */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Begründung für Nachtrag *
+                </label>
+                <textarea
+                  rows={4}
+                  value={modalReason}
+                  onChange={(e) => setModalReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs leading-relaxed text-slate-800 focus:ring-2 focus:ring-[#3B82C4] focus:outline-none resize-none"
+                  required
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Wird in der Nachtragsverwaltung unter „Mehr Material angefragt“ erfasst.
+                </span>
+              </div>
+
+              {/* Room tags preview */}
+              {modalRow.roomBreakdown.length > 0 && (
+                <div>
+                  <span className="text-[11px] font-bold text-slate-600 block mb-1">
+                    Betroffene Räume aus DWG-Montageplanung:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    {modalRow.roomBreakdown.map((r, i) => (
+                      <span key={i} className="text-[10px] font-semibold bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700">
+                        {r.roomName}: {r.qty} {modalRow.qu}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setModalRow(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold cursor-pointer transition-all shadow-xs flex items-center space-x-1.5 disabled:opacity-50"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>{modalSubmitting ? 'Wird gespeichert...' : 'Nachtrag einreichen'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

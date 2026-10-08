@@ -1030,7 +1030,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
 
 export async function updateAddendumStatus(
   addendumId: string, 
-  status: 'approved' | 'rejected' | 'pending',
+  status: 'approved' | 'rejected' | 'pending' | 'requested',
   projectId?: string,
   extraData?: Partial<Addendum>
 ): Promise<void> {
@@ -1053,6 +1053,40 @@ export async function updateAddendumStatus(
       await setDoc(projRef, payload, { merge: true });
     } catch (err: any) {
       console.warn('Firestore updateAddendumStatus project error:', err.message);
+    }
+  }
+}
+
+export async function batchUpdateAddendumsRequested(
+  projectId: string,
+  addendumIds: string[],
+  requestedTo: string
+): Promise<void> {
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+
+  for (const id of addendumIds) {
+    const payload = {
+      status: 'requested' as const,
+      requestedAt: now,
+      requestedTo,
+      updatedAt: now
+    };
+    if (projectId) {
+      batch.set(doc(db, 'projects', projectId, 'addendums', id), payload, { merge: true });
+    }
+    batch.set(doc(db, 'addendums', id), payload, { merge: true });
+  }
+
+  try {
+    await batch.commit();
+  } catch (err: any) {
+    console.warn('batchUpdateAddendumsRequested commit error:', err.message);
+    for (const id of addendumIds) {
+      await updateAddendumStatus(id, 'requested', projectId, {
+        requestedAt: now,
+        requestedTo
+      });
     }
   }
 }

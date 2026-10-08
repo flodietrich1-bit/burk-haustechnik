@@ -358,6 +358,7 @@ export function App() {
                     projectName={activeProject?.name}
                     positions={positions}
                     rooms={rooms}
+                    addendums={addendums}
                     currentUser={currentUser}
                     onNavigateToAddendums={() => setActiveTab('addendums')}
                   />
