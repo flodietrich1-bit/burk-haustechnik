@@ -893,7 +893,7 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
                   required
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block">
-                  Wird in der Nachtragsverwaltung unter „Mehr Material angefragt“ erfasst.
+                  Wird in der Nachtragsverwaltung unter „Mehr Material benötigt“ erfasst.
                 </span>
               </div>
 

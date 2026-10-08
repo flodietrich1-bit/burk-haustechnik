@@ -358,8 +358,8 @@ Bauleitung Burk Haustechnik`;
   };
 
   // Classify each addendum into 1 of the 3 requested categories:
-  // 1. time: 'stunden' | 'zeit' | 'regie'
-  // 2. material: 'material' | 'gaeb_vs_dwg' (Mehr Material angefragt / Mehrbedarf)
+  // 1. time: 'stunden' | 'zeit' | 'regie' (Mehr Zeit, Regie benötigt)
+  // 2. material: 'material' | 'gaeb_vs_dwg' (Mehr Material benötigt / Mehrbedarf)
   // 3. unclear: 'unklar' | 'ausserplanmaessig' | isUnclear | Anderes Material verbaut
   const getItemCategory = (item: Addendum): 'time' | 'material' | 'unclear' => {
     const t = (item.type || '').toLowerCase();
@@ -373,7 +373,7 @@ Bauleitung Burk Haustechnik`;
       return 'time';
     }
 
-    // Explicit Material / GAEB vs DWG Nachtrag -> MUST be in 'material' (Mehr Material angefragt)
+    // Explicit Material / GAEB vs DWG Nachtrag -> MUST be in 'material' (Mehr Material benötigt)
     if (item.deviationSource === 'gaeb_vs_dwg' || t === 'material') {
       return 'material';
     }
@@ -401,7 +401,7 @@ Bauleitung Burk Haustechnik`;
       return 'unclear';
     }
 
-    // 3. Mehr Material angefragt (Default für alle Material-Nachträge & Mehrbedarfe)
+    // 3. Mehr Material benötigt (Default für alle Material-Nachträge & Mehrbedarfe)
     return 'material';
   };
 
@@ -613,17 +613,19 @@ Bauleitung Burk Haustechnik`;
                 <Clock className="w-5 h-5" />
               </div>
               <div>
-                <span className="text-xs font-bold text-slate-800 block">Mehr Zeit / Regie</span>
+                <span className="text-xs font-bold text-slate-800 block">Mehr Zeit, Regie benötigt</span>
                 <span className="text-[10px] text-slate-400">Verzögerung, Mehraufwand</span>
               </div>
             </div>
             <span className="text-xl font-black text-amber-600">
-              {timeItems.length}
+              {openTimeCount}
             </span>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-            <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full text-[10px]">
+            <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+              openTimeCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'
+            }`}>
               {openTimeCount} ausstehend
             </span>
           </div>
@@ -643,18 +645,20 @@ Bauleitung Burk Haustechnik`;
                   <Package className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-800 block">Mehr Material angefragt</span>
+                  <span className="text-xs font-bold text-slate-800 block">Mehr Material benötigt</span>
                   <span className="text-[10px] text-slate-400">Zusatzmaterial, Mehrbedarf</span>
                 </div>
               </div>
               <span className="text-xl font-black text-[#3B82C4]">
-                {materialItems.length}
+                {openMaterialCount}
               </span>
             </div>
             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
               <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
               <div className="flex items-center space-x-1.5">
-                <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full text-[10px]">
+                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+                  openMaterialCount > 0 ? 'text-blue-700 bg-blue-50' : 'text-slate-500 bg-slate-100'
+                }`}>
                   {openMaterialCount} ausstehend
                 </span>
                 {requestedMaterialItems.length > 0 && (
@@ -705,12 +709,14 @@ Bauleitung Burk Haustechnik`;
               </div>
             </div>
             <span className="text-xl font-black text-purple-600">
-              {unclearItems.length}
+              {openUnclearCount}
             </span>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-            <span className="font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full text-[10px]">
+            <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
+              openUnclearCount > 0 ? 'text-purple-700 bg-purple-50' : 'text-slate-500 bg-slate-100'
+            }`}>
               {openUnclearCount} ausstehend
             </span>
           </div>
@@ -723,8 +729,8 @@ Bauleitung Burk Haustechnik`;
         <div className="flex flex-wrap items-center gap-1.5">
           {[
             { id: 'all' as const, label: `Alle Meldungen (${totalCount})` },
-            { id: 'time' as const, label: `⏱ Mehr Zeit (${timeItems.length})` },
-            { id: 'material' as const, label: `📦 Mehr Material (${materialItems.length})` },
+            { id: 'time' as const, label: `⏱ Mehr Zeit, Regie (${timeItems.length})` },
+            { id: 'material' as const, label: `📦 Mehr Material benötigt (${materialItems.length})` },
             { id: 'unclear' as const, label: `❓ Anderes Material (${unclearItems.length})` },
           ].map(tab => (
             <button
@@ -745,7 +751,7 @@ Bauleitung Burk Haustechnik`;
         <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-xl">
           {[
             { id: 'all' as const, label: 'Alle Status' },
-            { id: 'pending' as const, label: `Ausstehend (${openTimeCount + openMaterialCount + openUnclearCount})` },
+            { id: 'pending' as const, label: `To-Do / Offen (${openTimeCount + openMaterialCount + openUnclearCount})` },
             { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
             { id: 'approved' as const, label: 'Freigegeben' },
             { id: 'rejected' as const, label: 'Abgelehnt' },
@@ -791,7 +797,7 @@ Bauleitung Burk Haustechnik`;
               badgeBg: 'bg-amber-50 text-amber-800 border-amber-200',
               icon: Clock,
               iconColor: 'text-amber-600',
-              label: '⏱ Mehr Zeit / Regie',
+              label: '⏱ Mehr Zeit, Regie benötigt',
               tagBg: 'bg-amber-50 text-amber-700',
             } : cat === 'unclear' ? {
               badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
@@ -803,7 +809,7 @@ Bauleitung Burk Haustechnik`;
               badgeBg: 'bg-blue-50 text-blue-800 border-blue-200',
               icon: Package,
               iconColor: 'text-[#3B82C4]',
-              label: '📦 Mehr Material angefragt',
+              label: '📦 Mehr Material benötigt',
               tagBg: 'bg-blue-50 text-[#3B82C4]',
             };
 
@@ -829,9 +835,9 @@ Bauleitung Burk Haustechnik`;
                           type="button"
                           onClick={() => handleSwitchCategory(item, cat === 'material' ? 'unclear' : 'material')}
                           className="text-[10px] text-slate-400 hover:text-slate-700 hover:underline transition-colors"
-                          title={cat === 'material' ? "Als 'Anderes Material verbaut' einstufen" : "Als 'Mehr Material angefragt' einstufen"}
+                          title={cat === 'material' ? "Als 'Anderes Material verbaut' einstufen" : "Als 'Mehr Material benötigt' einstufen"}
                         >
-                          {cat === 'material' ? "→ Zu 'Anderes Material' wechseln" : "→ Zu 'Mehr Material' wechseln"}
+                          {cat === 'material' ? "→ Zu 'Anderes Material' wechseln" : "→ Zu 'Mehr Material benötigt' wechseln"}
                         </button>
                       )}
                     </div>
