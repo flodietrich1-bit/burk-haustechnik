@@ -175,6 +175,8 @@ export interface Room {
   completedBy?: string;
   materials?: RoomMaterialRequirement[];
   photos?: string[];
+  draftQuantities?: Record<string, number>;
+  completionDelta?: any[];
   sourcePlanId?: string;
   sourcePlanFileName?: string;
 }

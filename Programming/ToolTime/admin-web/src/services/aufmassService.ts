@@ -260,7 +260,7 @@ export function calculateAufmassSnapshot(
           if (!t) return false;
           return new Date(t).getTime() < fromDateStartTimestamp;
         });
-        installedBeforePeriod = getMaterialActualQty(m, room, bookingsBeforePeriod);
+        installedBeforePeriod = getMaterialActualQty(m, room, bookingsBeforePeriod, false);
       }
 
       // Period Delta = what was installed within this Aufmaß period

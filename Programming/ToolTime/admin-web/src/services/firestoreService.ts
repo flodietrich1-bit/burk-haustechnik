@@ -1319,6 +1319,7 @@ export async function completeRoom(
     return r;
   });
   localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+  notifyRoomsSubscribers(projectId, updated);
 
   try {
     const ref = doc(db, 'projects', projectId, 'rooms', roomId);
@@ -1360,8 +1361,9 @@ export function isRoomMatch(
 
 export function getMaterialActualQty(
   mat: { positionId?: string; posNr?: string; plannedQty?: number; actualQty?: number; id?: string },
-  room: { id?: string; code?: string; name?: string; status?: string; isCompleted?: boolean; completionDelta?: any[] } | null,
-  bookings: Booking[] = []
+  room: { id?: string; code?: string; name?: string; status?: string; isCompleted?: boolean; completionDelta?: any[]; draftQuantities?: Record<string, number> } | null,
+  bookings: Booking[] = [],
+  includeDrafts: boolean = true
 ): number {
   if (!room || !mat) return 0;
 
@@ -1413,10 +1415,8 @@ export function getMaterialActualQty(
     )
   );
 
+  let directBookingQty = 0;
   if (directBookings.length > 0) {
-    // If an alert booking exists, it represents an over-consumption event where:
-    // - requestedTotal is the absolute total installed in the room, OR
-    // - quantity/exceededBy is the excess delta on top of plannedQty.
     const alertBooking = directBookings.find(b => 
       b.type === 'over_consumption_alert' || 
       (b as any).isAlert || 
@@ -1425,17 +1425,46 @@ export function getMaterialActualQty(
 
     if (alertBooking) {
       if ((alertBooking as any).requestedTotal !== undefined && Number((alertBooking as any).requestedTotal) > 0) {
-        return Number((alertBooking as any).requestedTotal);
+        directBookingQty = Number((alertBooking as any).requestedTotal);
+      } else if ((alertBooking as any).exceededBy !== undefined && Number((alertBooking as any).exceededBy) > 0) {
+        directBookingQty = (Number(mat.plannedQty) || 0) + Number((alertBooking as any).exceededBy);
+      } else if (alertBooking.type === 'over_consumption_alert' && alertBooking.quantity) {
+        directBookingQty = (Number(mat.plannedQty) || 0) + Number(alertBooking.quantity);
       }
-      if ((alertBooking as any).exceededBy !== undefined && Number((alertBooking as any).exceededBy) > 0) {
-        return (Number(mat.plannedQty) || 0) + Number((alertBooking as any).exceededBy);
-      }
-      if (alertBooking.type === 'over_consumption_alert' && alertBooking.quantity) {
-        return (Number(mat.plannedQty) || 0) + Number(alertBooking.quantity);
+    } else {
+      directBookingQty = directBookings.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+    }
+  }
+
+  // 4. Draft quantities recorded by installer in the mobile app during work
+  let draftQty = 0;
+  if (includeDrafts) {
+    const drafts = (room as any).draftQuantities;
+    if (drafts && typeof drafts === 'object') {
+      const match = (mat.positionId && drafts[mat.positionId] !== undefined)
+        ? drafts[mat.positionId]
+        : ((mat.id && drafts[mat.id] !== undefined)
+          ? drafts[mat.id]
+          : ((mat.posNr && drafts[mat.posNr] !== undefined) ? drafts[mat.posNr] : undefined));
+      if (match !== undefined) {
+        draftQty = Number(match) || 0;
       }
     }
+  }
 
-    return directBookings.reduce((sum, b) => sum + (Number(b.quantity) || 0), 0);
+  // 5. Installed quantity stored directly on the room material
+  const matInstalledQty = Number((mat as any).installedQty || 0);
+
+  const highestRecorded = Math.max(directBookingQty, draftQty, matInstalledQty);
+  if (highestRecorded > 0) {
+    return highestRecorded;
+  }
+
+  // 6. If room is marked as completed (100%) and no explicit deltas were found,
+  // then all planned materials are 100% installed according to plan
+  const isCompleted = room.isCompleted === true || room.status === 'completed' || (room as any).pct === 100;
+  if (isCompleted && mat.plannedQty) {
+    return Number(mat.plannedQty);
   }
 
   return 0;
@@ -1462,6 +1491,7 @@ export async function updateRoomMaterialActual(
     return r;
   });
   localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+  notifyRoomsSubscribers(projectId, updated);
 
   try {
     const targetRoom = updated.find(r => r.id === roomId);
