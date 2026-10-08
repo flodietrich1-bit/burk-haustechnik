@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
 import type { Position, Booking, Room, AufmassDocument, Alert, Addendum } from '../types';
 import { getMaterialActualQty } from './firestoreService';
 import { getAufmassRoomPercent } from './aufmassService';
@@ -693,19 +694,228 @@ export function exportAufmassToPdf(aufmass: AufmassDocument) {
 }
 
 /**
- * Downloads Aufmaß as a real binary PDF file from the backend service,
- * falling back to HTML print if backend is unavailable.
+ * Generates and downloads a real DIN A4 PDF directly in the browser using jsPDF.
+ * 100% reliable, zero network latency, no popup blocker issues.
+ */
+export function generateClientAufmassPdf(aufmass: AufmassDocument): void {
+  const sanitizedProject = (aufmass.projectName || 'Projekt').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `Aufmass_${aufmass.aufmassNumber}_${sanitizedProject}.pdf`;
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+  const margin = 14;
+  const contentWidth = pageWidth - (margin * 2); // 182mm
+
+  // 1. Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(30, 41, 59);
+  doc.text('BURK Haustechnik GmbH', margin, 18);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Sanitär • Heizung • Klimatechnik | Werk- & Montageaufmaß', margin, 24);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Aufmaß ${aufmass.aufmassNumber}`, margin, 34);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Bauvorhaben: ${aufmass.projectName || 'Projekt'}`, margin, 40);
+
+  // Metadata Box
+  const startY = 46;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(margin, startY, contentWidth, 24, 'FD');
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  const dTo = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
+  const dFrom = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
+  doc.text(`Stichtag: ${dTo}`, margin + 4, startY + 6);
+  doc.text(`Zeitraum: ${dFrom} bis ${dTo}`, margin + 4, startY + 12);
+  doc.text(`Erstellt von: ${aufmass.createdBy || 'Bauleitung'}`, margin + 4, startY + 18);
+
+  doc.text(`Verbaute Positionen: ${aufmass.summaryItems?.length || 0}`, margin + 95, startY + 6);
+  doc.text(`Bearbeitete Räume: ${aufmass.roomsData?.length || 0}`, margin + 95, startY + 12);
+  doc.setFont('helvetica', 'bold');
+  const volStr = Number(aufmass.totalPeriodVolume || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+  doc.text(`Abrechnungsvolumen: ${volStr}`, margin + 95, startY + 18);
+
+  // Positions Table
+  let currentY = startY + 31;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Kumulierte Gesamtübersicht der Positionen', margin, currentY);
+  currentY += 5;
+
+  // Table Header
+  doc.setFillColor(15, 23, 42);
+  doc.rect(margin, currentY, contentWidth, 7, 'F');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Pos-Nr', margin + 2, currentY + 4.8);
+  doc.text('Bezeichnung', margin + 22, currentY + 4.8);
+  doc.text('Plan', margin + 110, currentY + 4.8, { align: 'right' });
+  doc.text('Kumuliert', margin + 132, currentY + 4.8, { align: 'right' });
+  doc.text('Delta', margin + 152, currentY + 4.8, { align: 'right' });
+  doc.text('Einheit', margin + 164, currentY + 4.8, { align: 'center' });
+  doc.text('Betrag (€)', margin + 180, currentY + 4.8, { align: 'right' });
+  currentY += 7;
+
+  // Table rows
+  (aufmass.summaryItems || []).forEach((item, idx) => {
+    if (currentY > 275) {
+      doc.addPage();
+      currentY = 16;
+    }
+    doc.setFillColor(idx % 2 === 0 ? 255 : 248, idx % 2 === 0 ? 255 : 250, idx % 2 === 0 ? 255 : 252);
+    doc.rect(margin, currentY, contentWidth, 6, 'F');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(30, 41, 59);
+
+    doc.text(item.posNr || '-', margin + 2, currentY + 4.2);
+    const short = (item.shortText || '-').substring(0, 48);
+    doc.text(short, margin + 22, currentY + 4.2);
+    doc.text(String(item.plannedQty ?? 0), margin + 110, currentY + 4.2, { align: 'right' });
+    doc.text(String(item.totalInstalledUpToDate ?? 0), margin + 132, currentY + 4.2, { align: 'right' });
+
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(item.periodInstalledQty ?? 0), margin + 152, currentY + 4.2, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.text(item.qu || 'Stk', margin + 164, currentY + 4.2, { align: 'center' });
+    const cost = Number(item.totalCost ?? ((item.periodInstalledQty || 0) * (item.unitPrice || 0))).toFixed(2);
+    doc.text(cost, margin + 180, currentY + 4.2, { align: 'right' });
+
+    currentY += 6;
+  });
+
+  // Room details section
+  if (aufmass.roomsData && aufmass.roomsData.length > 0) {
+    doc.addPage();
+    currentY = 16;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('Detailliertes Raumaufmaß (Raumübersicht)', margin, currentY);
+    currentY += 7;
+
+    aufmass.roomsData.forEach(r => {
+      const pct = getAufmassRoomPercent(r);
+      if (currentY > 260) {
+        doc.addPage();
+        currentY = 16;
+      }
+
+      // Room Header Box
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, currentY, contentWidth, 7, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(`${r.roomCode || 'Raum'} – ${r.roomName || ''} (Etage ${r.floor || '-'})`, margin + 3, currentY + 4.8);
+
+      // Bold completion text
+      const statusText = `${pct}% fertiggestellt${r.isCompleted ? ' ✓' : ''}`;
+      doc.text(statusText, margin + contentWidth - 3, currentY + 4.8, { align: 'right' });
+      currentY += 8.5;
+
+      const planned = r.plannedPositions || (r.positions ? r.positions.filter(p => !p.isExtraPosition) : []);
+      const special = r.specialPositions || (r.positions ? r.positions.filter(p => p.isExtraPosition) : []);
+      const allPos = [...planned, ...special];
+
+      if (allPos.length > 0) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.text('POS', margin + 2, currentY + 3.5);
+        doc.text('MATERIAL / BESCHREIBUNG', margin + 22, currentY + 3.5);
+        doc.text('PLAN', margin + 115, currentY + 3.5, { align: 'right' });
+        doc.text('IST', margin + 138, currentY + 3.5, { align: 'right' });
+        doc.text('DELTA', margin + 162, currentY + 3.5, { align: 'right' });
+        doc.text('EINHEIT', margin + 180, currentY + 3.5, { align: 'right' });
+        currentY += 5;
+
+        allPos.forEach(p => {
+          if (currentY > 275) {
+            doc.addPage();
+            currentY = 16;
+          }
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(51, 65, 85);
+          doc.text(p.posNr || '-', margin + 2, currentY + 3.8);
+          doc.text((p.shortText || '-').substring(0, 48), margin + 22, currentY + 3.8);
+          doc.text(String(p.plannedQty || 0), margin + 115, currentY + 3.8, { align: 'right' });
+          doc.text(String(p.totalInstalledToDate || 0), margin + 138, currentY + 3.8, { align: 'right' });
+
+          doc.setFont('helvetica', 'bold');
+          doc.text(`+${p.installedInPeriod || 0}`, margin + 162, currentY + 3.8, { align: 'right' });
+          doc.setFont('helvetica', 'normal');
+          doc.text(p.qu || 'Stk', margin + 180, currentY + 3.8, { align: 'right' });
+          currentY += 5;
+        });
+        currentY += 3;
+      }
+      currentY += 3;
+    });
+  }
+
+  // Signatures
+  if (currentY > 240) {
+    doc.addPage();
+    currentY = 24;
+  } else {
+    currentY += 15;
+  }
+  doc.setDrawColor(148, 163, 184);
+  doc.line(margin, currentY, margin + 70, currentY);
+  doc.line(margin + 105, currentY, margin + 175, currentY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Datum / Unterschrift Auftragnehmer (BURK)', margin, currentY + 4);
+  doc.text('Datum / Unterschrift Bauleitung / Auftraggeber', margin + 105, currentY + 4);
+
+  // Save PDF directly to disk
+  doc.save(filename);
+}
+
+/**
+ * Downloads Aufmaß as a real binary PDF file.
+ * Tries backend PDF service first, falling back smoothly to direct browser jsPDF generation.
  */
 export async function downloadAufmassPdf(aufmass: AufmassDocument): Promise<void> {
   const sanitizedProject = (aufmass.projectName || 'Projekt').replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Aufmass_${aufmass.aufmassNumber}_${sanitizedProject}.pdf`;
 
   try {
-    const res = await fetch('http://localhost:3001/api/aufmass-pdf', {
+    const host = (typeof window !== 'undefined' && window.location?.hostname) ? window.location.hostname : 'localhost';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    const res = await fetch(`http://${host}:3001/api/aufmass-pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aufmass)
+      body: JSON.stringify(aufmass),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const blob = await res.blob();
@@ -720,9 +930,9 @@ export async function downloadAufmassPdf(aufmass: AufmassDocument): Promise<void
       return;
     }
   } catch (err) {
-    console.warn('Backend PDF endpoint error, falling back to print dialog:', err);
+    console.warn('Backend PDF endpoint error/timeout, generating PDF in browser directly:', err);
   }
 
-  // Fallback to HTML print dialog
-  exportAufmassToPdf(aufmass);
+  // Reliable client-side PDF generation & download
+  generateClientAufmassPdf(aufmass);
 }

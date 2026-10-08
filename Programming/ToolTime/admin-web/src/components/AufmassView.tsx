@@ -38,7 +38,7 @@ import {
   updateAufmassPositionReason,
   getAufmassRoomPercent
 } from '../services/aufmassService';
-import { exportAufmassToExcel, exportAufmassToPdf, downloadAufmassPdf } from '../services/excelExporter';
+import { exportAufmassToExcel, downloadAufmassPdf } from '../services/excelExporter';
 
 interface AufmassViewProps {
   projectId: string;
@@ -215,9 +215,9 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     exportAufmassToExcel(aufmass);
   };
 
-  const handleExportPdf = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
+  const handleExportPdf = async (aufmass: AufmassDocument, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    exportAufmassToPdf(aufmass);
+    await downloadAufmassPdf(aufmass);
   };
 
   // Send Aufmaß to commercial manager via Email with prefilled text and auto-download of Excel & PDF
@@ -258,20 +258,25 @@ ${aufmass.createdBy || 'Bauleitung'}`;
     const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     // 2. OPEN EMAIL PROGRAM IMMEDIATELY USING NATIVE LINK
-    // We execute this immediately to preserve user gesture context so the OS mail client opens without popup blocker interference:
     const mailLink = document.createElement('a');
     mailLink.href = mailtoUrl;
     document.body.appendChild(mailLink);
     mailLink.click();
     document.body.removeChild(mailLink);
 
-    // 3. Download both Excel and PDF files
-    exportAufmassToExcel(aufmass);
+    // 3. Download both PDF and Excel files automatically
     try {
       await downloadAufmassPdf(aufmass);
     } catch (err) {
       console.warn('PDF download error:', err);
     }
+    setTimeout(() => {
+      try {
+        exportAufmassToExcel(aufmass);
+      } catch (err) {
+        console.warn('Excel export error:', err);
+      }
+    }, 250);
 
     // 4. Open status & guidance modal
     setEmailSentModal({
@@ -1644,6 +1649,24 @@ ${aufmass.createdBy || 'Bauleitung'}`;
               <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
                 💡 <strong>Hinweis zum Anhang:</strong> Aus Sicherheitsgründen dürfen Web-Browser Dateien nicht direkt in Desktop-Mailprogramme einfügen. Ziehe die beiden heruntergeladenen Dateien einfach kurz per Drag & Drop in die geöffnete E-Mail.
               </p>
+              <div className="flex items-center space-x-2 pt-1 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => downloadAufmassPdf(emailSentModal.aufmass)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#3B82C4]" />
+                  <span>PDF herunterladen</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportAufmassToExcel(emailSentModal.aufmass)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 shadow-2xs transition-colors cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Excel herunterladen</span>
+                </button>
+              </div>
             </div>
 
             <div className="space-y-1.5">
