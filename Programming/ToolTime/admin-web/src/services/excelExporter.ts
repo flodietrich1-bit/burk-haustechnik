@@ -192,9 +192,9 @@ export function exportMaterialReportToExcel(
     'Art': a.type === 'stunden' ? 'Arbeitszeit / Regie' : 'Material-Nachtrag',
     'Titel': a.title,
     'Menge': a.quantity,
-    'Raum': a.roomName || roomMap.get(a.roomId) || 'Baustelle allgemein',
-    'Erfasst von': a.requestedBy,
-    'Status': a.status === 'approved' ? 'Freigegeben' : a.status === 'rejected' ? 'Abgelehnt' : 'Offen / In Prüfung',
+    'Erfasst von': (a.createdByRole === 'bauleiter' || (a.requestedBy && /bauleiter|projektleiter|portal/i.test(a.requestedBy)))
+      ? (a.requestedBy && !/^(bauleiter|projektleiter)$/i.test(a.requestedBy.trim()) ? a.requestedBy : 'Bauleiter (Portal)')
+      : (a.requestedBy || 'Monteur'),
     'Begründung': a.note || a.description || '-',
     'Datum': a.createdAt ? new Date(a.createdAt).toLocaleString('de-DE') : '-'
   }));

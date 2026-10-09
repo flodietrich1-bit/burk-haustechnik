@@ -9,11 +9,9 @@ import {
   Package, 
   HelpCircle, 
   Plus, 
-  FileSignature, 
   Calendar,
   Check,
   X,
-  Eye,
   CheckCircle2,
   Minus,
   Send,
@@ -39,103 +37,43 @@ interface AddendumsViewProps {
   bookings?: Booking[];
 }
 
-function getSignatureDetails(sig: any, sigUrl?: string) {
-  let imageUrl: string | null = null;
-  let paths: string[] = [];
+/**
+ * Determines whether an addendum was created by the Bauleiter via the portal
+ * or submitted by an installer (Monteur) with their specific name.
+ */
+export function getAddendumCreator(item: Addendum): {
+  isBauleiter: boolean;
+  label: string;
+  displayName: string;
+} {
+  const isBauleiter =
+    item.createdByRole === 'bauleiter' ||
+    item.deviationSource === 'gaeb_vs_dwg' ||
+    Boolean(item.requestedBy && /bauleiter|projektleiter|portal/i.test(item.requestedBy));
 
-  if (typeof sigUrl === 'string' && (sigUrl.startsWith('http') || sigUrl.startsWith('data:image') || sigUrl.startsWith('blob:'))) {
-    imageUrl = sigUrl;
-  } else if (typeof sig === 'string' && (sig.startsWith('http') || sig.startsWith('data:image') || sig.startsWith('blob:'))) {
-    imageUrl = sig;
-  } else if (Array.isArray(sig)) {
-    paths = sig.filter(p => typeof p === 'string' && p.trim().length > 0);
-  } else if (typeof sig === 'string') {
-    const trimmed = sig.trim();
-    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          paths = parsed.filter(p => typeof p === 'string' && p.trim().length > 0);
-        }
-      } catch {}
-    } else if (trimmed.startsWith('M') || trimmed.startsWith('m')) {
-      paths = [trimmed];
+  if (isBauleiter) {
+    let name = item.requestedBy || 'Bauleiter';
+    if (/^(bauleiter|projektleiter)$/i.test(name.trim())) {
+      return {
+        isBauleiter: true,
+        label: 'Bauleiter',
+        displayName: 'Bauleiter (Portal)'
+      };
     }
+    const cleanName = name.replace(/^bauleiter\s*\((.*)\)$/i, '$1').trim();
+    return {
+      isBauleiter: true,
+      label: `Bauleiter (${cleanName})`,
+      displayName: `Bauleiter (${cleanName})`
+    };
   }
 
-  let viewBox = '0 0 340 120';
-  if (paths.length > 0) {
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    paths.forEach(p => {
-      const nums = p.match(/-?\d+(\.\d+)?/g);
-      if (nums && nums.length >= 2) {
-        for (let i = 0; i < nums.length; i += 2) {
-          const x = parseFloat(nums[i]);
-          const y = parseFloat(nums[i + 1]);
-          if (!isNaN(x) && !isNaN(y)) {
-            if (x < minX) minX = x;
-            if (x > maxX) maxX = x;
-            if (y < minY) minY = y;
-            if (y > maxY) maxY = y;
-          }
-        }
-      }
-    });
-    if (minX !== Infinity && maxX > minX && maxY > minY) {
-      const padX = 16;
-      const padY = 14;
-      const w = Math.max(80, (maxX - minX) + padX * 2);
-      const h = Math.max(50, (maxY - minY) + padY * 2);
-      viewBox = `${Math.max(0, minX - padX)} ${Math.max(0, minY - padY)} ${w} ${h}`;
-    }
-  }
-
-  const hasSignature = Boolean(imageUrl || paths.length > 0 || (sig !== null && sig !== undefined && sig !== false && sig !== ''));
-  return { imageUrl, paths, viewBox, hasSignature };
-}
-
-function renderSignatureContent(details: ReturnType<typeof getSignatureDetails>, signerName: string) {
-  if (details.imageUrl) {
-    return (
-      <img
-        src={details.imageUrl}
-        alt="Digitale Unterschrift"
-        className="w-full h-full object-contain p-2"
-        loading="lazy"
-      />
-    );
-  }
-  if (details.paths.length > 0) {
-    return (
-      <svg viewBox={details.viewBox} className="w-full h-full p-2">
-        {details.paths.map((d, idx) => (
-          <path
-            key={idx}
-            d={d}
-            stroke="#1A365D"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            fill="none"
-          />
-        ))}
-      </svg>
-    );
-  }
-  // Simulated / Authenticated Signature Presentation
-  return (
-    <div className="relative w-full h-full flex flex-col justify-end p-2.5">
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <span className="font-serif italic text-2xl font-bold text-[#1A365D] tracking-wider select-none drop-shadow-xs rotate-[-2deg]">
-          {signerName}
-        </span>
-      </div>
-      <div className="flex items-center space-x-2 text-slate-300">
-        <span className="text-xs font-black text-slate-400">✕</span>
-        <div className="flex-1 h-[1.5px] bg-slate-200 rounded" />
-      </div>
-    </div>
-  );
+  const monteurName = item.requestedBy && item.requestedBy.trim() ? item.requestedBy.trim() : 'Monteur';
+  return {
+    isBauleiter: false,
+    label: monteurName,
+    displayName: `${monteurName} (Monteur)`
+  };
 }
 
 export const AddendumsView: React.FC<AddendumsViewProps> = ({ 
@@ -149,8 +87,6 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'requested' | 'approved' | 'rejected'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [hoveredSigId, setHoveredSigId] = useState<string | null>(null);
-  const [selectedSignatureItem, setSelectedSignatureItem] = useState<Addendum | null>(null);
 
   // New Addendum Form State
   const [newType, setNewType] = useState<'stunden' | 'material' | 'unklar'>('material');
@@ -159,7 +95,7 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [newUnit, setNewUnit] = useState('Stk');
   const [newRoomId, setNewRoomId] = useState('');
   const [newNote, setNewNote] = useState('');
-  const [newRequestedBy, setNewRequestedBy] = useState('Projektleiter');
+  const [newRequestedBy, setNewRequestedBy] = useState('');
 
   // Single Material Request Modal State ("Material anfragen")
   const [reorderItem, setReorderItem] = useState<Addendum | null>(null);
@@ -259,7 +195,7 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const generateMailContent = (item: Addendum, qty: number, unit: string) => {
     const pName = project?.name || 'Bauvorhaben';
     const posStr = item.itemOz ? `Pos. ${item.itemOz}: ` : '';
-    const creator = item.createdByRole === 'bauleiter' ? `Bauleiter (${item.requestedBy})` : (item.requestedBy || 'Monteur');
+    const creator = getAddendumCreator(item).displayName;
     const reason = item.description || item.note || 'Abweichung GAEB vs. DWG / Mehrbedarf';
 
     const subj = `Materialanfrage: ${qty} ${unit} ${posStr}${item.title} (Projekt ${pName})`;
@@ -428,7 +364,7 @@ Bauleitung Burk Haustechnik`;
 
     const itemsList = unrequestedMaterialItems.map((item, idx) => {
       const posStr = item.itemOz ? `Pos. ${item.itemOz}: ` : '';
-      const creator = item.createdByRole === 'bauleiter' ? `Bauleiter (${item.requestedBy})` : (item.requestedBy || 'Monteur');
+      const creator = getAddendumCreator(item).displayName;
       const reason = item.description || item.note || 'Abweichung GAEB vs. DWG / Mehrbedarf';
       return `${idx + 1}. ${posStr}${item.title}
    • Menge: ${item.quantity} ${item.qu || 'Stk'}
@@ -519,6 +455,7 @@ Bauleitung Burk Haustechnik`;
     if (!newTitle.trim()) return;
 
     const selectedRoom = rooms.find(r => r.id === newRoomId);
+    const creatorLabel = newRequestedBy.trim() ? `Bauleiter (${newRequestedBy.trim()})` : 'Bauleiter';
     await createAddendum(projectId, {
       type: newType,
       title: newTitle.trim(),
@@ -527,7 +464,9 @@ Bauleitung Burk Haustechnik`;
       roomId: newRoomId || 'allgemein',
       roomName: selectedRoom ? selectedRoom.name : 'Baustelle allgemein',
       note: newNote.trim(),
-      requestedBy: newRequestedBy.trim() || 'Projektleiter',
+      requestedBy: creatorLabel,
+      createdByRole: 'bauleiter',
+      deviationSource: 'manual',
       status: 'pending',
     });
 
@@ -535,6 +474,7 @@ Bauleitung Burk Haustechnik`;
     setNewTitle('');
     setNewQty('');
     setNewNote('');
+    setNewRequestedBy('');
   };
 
   // Bauleiter direct category switcher
@@ -885,23 +825,21 @@ Bauleitung Burk Haustechnik`;
                       <span>{item.roomName || item.roomId || 'Baustelle'}</span>
                     </div>
 
-                    <div className={`flex items-center space-x-1 font-medium px-2 py-0.5 rounded-md ${
-                      item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')
-                        ? 'bg-amber-50 text-amber-800 border border-amber-200/80 font-bold'
-                        : 'text-slate-600 bg-slate-100'
-                    }`}>
-                      <User className={`w-3.5 h-3.5 ${
-                        item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')
-                          ? 'text-amber-600'
-                          : 'text-slate-400'
-                      }`} />
-                      <span>{item.requestedBy || 'Monteur'}</span>
-                      {(item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')) && (
-                        <span className="text-[9px] bg-amber-200/90 text-amber-900 px-1 py-0.2 rounded font-black tracking-wider uppercase ml-1">
-                          Bauleiter
-                        </span>
-                      )}
-                    </div>
+                    {/* Submitter: Bauleiter (Portal) vs. Monteurname */}
+                    {(() => {
+                      const creator = getAddendumCreator(item);
+                      return (
+                        <div className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
+                          creator.isBauleiter
+                            ? 'bg-amber-50 text-amber-900 border-amber-300 shadow-2xs'
+                            : 'bg-slate-100 text-slate-800 border-slate-200'
+                        }`}>
+                          <User className={`w-3.5 h-3.5 ${creator.isBauleiter ? 'text-amber-600' : 'text-slate-500'}`} />
+                          <span className="text-slate-500 font-normal">Eingestellt von:</span>
+                          <span className="font-bold">{creator.displayName}</span>
+                        </div>
+                      );
+                    })()}
 
                     {item.deviationSource === 'gaeb_vs_dwg' && (
                       <div className="flex items-center space-x-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[11px]">
@@ -1020,80 +958,6 @@ Bauleitung Burk Haustechnik`;
                     </div>
                   )}
 
-                  {/* Signature badge if available with Mouseover Popover & Click Modal */}
-                  {(() => {
-                    const sigDetails = getSignatureDetails(item.signature, item.signatureUrl);
-                    if (!sigDetails.hasSignature) return null;
-                    return (
-                      <div 
-                        className="relative inline-block"
-                        onMouseEnter={() => setHoveredSigId(item.id)}
-                        onMouseLeave={() => setHoveredSigId(null)}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setSelectedSignatureItem(item)}
-                          className="flex items-center space-x-1.5 text-xs text-emerald-700 font-semibold bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/90 px-2.5 py-1 rounded-lg w-fit transition-all cursor-pointer shadow-2xs group"
-                          title="Digitale Unterschrift ansehen (Mouseover oder Klick)"
-                        >
-                          <FileSignature className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Digital unterschrieben</span>
-                          <Eye className="w-3 h-3 text-emerald-500 opacity-60 group-hover:opacity-100 transition-opacity ml-0.5" />
-                        </button>
-
-                        {/* Mouseover Popover */}
-                        {hoveredSigId === item.id && (
-                          <div 
-                            className="absolute left-0 bottom-full mb-2 z-50 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-slate-200 p-3.5 pointer-events-auto animate-in fade-in zoom-in-95 duration-150"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-                              <div className="flex items-center space-x-2">
-                                <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
-                                  <FileSignature className="w-4 h-4" />
-                                </div>
-                                <div>
-                                  <h5 className="font-bold text-xs text-slate-900 leading-tight">
-                                    Digitale Unterschrift
-                                  </h5>
-                                  <p className="text-[10px] text-slate-500">
-                                    Erfasst via Monteur-App
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
-                                <CheckCircle2 className="w-2.5 h-2.5" />
-                                <span>Verifiziert</span>
-                              </span>
-                            </div>
-
-                            {/* Signature Drawing / Canvas Box */}
-                            <div className="w-full h-28 bg-[#FAFCFE] border border-slate-200 rounded-xl overflow-hidden relative shadow-2xs flex items-center justify-center">
-                              {renderSignatureContent(sigDetails, item.requestedBy || 'Stefan Maier')}
-                            </div>
-
-                            {/* Meta & Timestamp */}
-                            <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-400">Unterzeichner:</span>
-                                <span className="font-semibold text-slate-800">{item.requestedBy || 'Monteur'}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-400">Raum:</span>
-                                <span className="font-medium text-slate-700">{item.roomName || item.roomId || 'Baustelle'}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-slate-400">Datum & Uhrzeit:</span>
-                                <span className="font-mono text-slate-600 text-[10.5px]">
-                                  {item.createdAt ? new Date(item.createdAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '22.09.2026'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 {/* Bottom Actions for Bauleiter / Admin */}
@@ -1358,14 +1222,19 @@ Bauleitung Burk Haustechnik`;
 
               {/* Requested By */}
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Gemeldet durch</label>
-                <input
-                  type="text"
-                  placeholder="z. B. Florian Buck (Projektleiter)"
-                  value={newRequestedBy}
-                  onChange={e => setNewRequestedBy(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
-                />
+                <label className="font-bold text-slate-700 block mb-1">Eingestellt von</label>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-amber-900 bg-amber-100 border border-amber-200 px-2.5 py-2 rounded-xl whitespace-nowrap">
+                    Bauleiter (Portal)
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Name des Bauleiters (optional, z. B. Florian Burk)"
+                    value={newRequestedBy}
+                    onChange={e => setNewRequestedBy(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                  />
+                </div>
               </div>
 
               {/* Action Buttons */}
@@ -1388,93 +1257,6 @@ Bauleitung Burk Haustechnik`;
           </div>
         </div>
       )}
-
-      {/* Modal: Digitale Unterschrift Detailansicht */}
-      {selectedSignatureItem && (() => {
-        const sigDetails = getSignatureDetails(selectedSignatureItem.signature, selectedSignatureItem.signatureUrl);
-        return (
-          <div 
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
-            onClick={() => setSelectedSignatureItem(null)}
-          >
-            <div 
-              className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center space-x-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
-                    <FileSignature className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base text-slate-900">
-                      Digitale Unterschrift
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Rechtsverbindlich signiert in Monteur-App
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSignatureItem(null)}
-                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Title & Info */}
-              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-1">
-                <span className="text-[10px] font-bold uppercase text-slate-400">Position / Mehrbedarf:</span>
-                <p className="font-bold text-sm text-slate-900">{selectedSignatureItem.title}</p>
-                <div className="flex items-center justify-between text-xs text-slate-600 pt-1">
-                  <span>Menge: <strong>{selectedSignatureItem.quantity} {selectedSignatureItem.qu || ''}</strong></span>
-                  <span>Raum: <strong>{selectedSignatureItem.roomName || selectedSignatureItem.roomId || 'Baustelle'}</strong></span>
-                </div>
-              </div>
-
-              {/* Large Signature Pad View */}
-              <div className="space-y-1">
-                <span className="text-xs font-bold text-slate-700">Signatur-Nachweis:</span>
-                <div className="w-full h-44 bg-[#FAFCFE] border-2 border-slate-200 rounded-xl overflow-hidden shadow-inner flex items-center justify-center relative">
-                  {renderSignatureContent(sigDetails, selectedSignatureItem.requestedBy || 'Stefan Maier')}
-                </div>
-              </div>
-
-              {/* Verification Details */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 space-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-emerald-800 font-medium">Unterzeichner:</span>
-                  <span className="font-bold text-emerald-950">{selectedSignatureItem.requestedBy || 'Monteur'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-emerald-800 font-medium">Erfasst am:</span>
-                  <span className="font-mono text-emerald-950">
-                    {selectedSignatureItem.createdAt ? new Date(selectedSignatureItem.createdAt).toLocaleString('de-DE') : '22.09.2026'}
-                  </span>
-                </div>
-                {selectedSignatureItem.note && (
-                  <div className="pt-1 border-t border-emerald-200/60 text-emerald-900 italic">
-                    „{selectedSignatureItem.note}“
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="pt-2 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => setSelectedSignatureItem(null)}
-                  className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors"
-                >
-                  Schließen
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Modal: Material Nachbestellen mit Stepper & E-Mail-Entwurf */}
       {reorderItem && (
@@ -1747,12 +1529,18 @@ Bauleitung Burk Haustechnik`;
                       <div className="pr-3">
                         <div className="font-semibold text-slate-800 flex items-center space-x-1.5">
                           <span className="text-slate-400 font-mono text-[11px]">{idx + 1}.</span>
-                          <span>{item.title}</span>
-                          {(item.createdByRole === 'bauleiter' || item.requestedBy?.includes('Bauleiter')) && (
-                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-bold uppercase">
-                              Bauleiter
-                            </span>
-                          )}
+                          {(() => {
+                            const creator = getAddendumCreator(item);
+                            return (
+                              <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                                creator.isBauleiter
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {creator.isBauleiter ? 'Bauleiter (Portal)' : creator.displayName}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5 truncate max-w-md">
                           Grund: {item.description || item.note || 'Abweichung GAEB vs. DWG'}
