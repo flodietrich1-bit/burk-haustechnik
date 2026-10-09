@@ -75,15 +75,14 @@ export default function MaterialBookingCard({
     ? Math.max(0, currentRoomVerb - (finalIsUnplanned ? projectDelivered : baseTarget))
     : 0;
 
-  // Progress percentage: unplanned items are completed (100%), not 0% or red over-limit
+  // Progress percentage: unplanned items are completed (100%), can exceed 100% on overconsumption
   const progressPct = finalIsUnplanned
     ? 100
     : baseTarget > 0
-    ? Math.min(100, Math.round((currentRoomVerb / baseTarget) * 100))
+    ? Math.round((currentRoomVerb / baseTarget) * 100)
     : 0;
 
-  const isStockExhausted = siteStockAvailable !== null ? siteStockAvailable <= 0 : false;
-  const isPlusDisabled = isLocked || isStockExhausted;
+  const isPlusDisabled = isLocked;
 
   const gloss = getForeignGloss(mat, currentLang);
 
@@ -91,14 +90,13 @@ export default function MaterialBookingCard({
     <View
       style={[
         styles.bookCard,
-        isOver && styles.bookCardOver,
         room?.isCompleted && styles.bookCardCompleted,
       ]}
     >
       {/* 1. TOP: Icon left + Full-width Title & Subtitle */}
       <View style={styles.cardHeaderRow}>
-        <View style={[styles.iconBox, isOver && styles.iconBoxOver]}>
-          <Text style={[styles.iconSymbol, isOver && styles.iconSymbolOver]}>
+        <View style={styles.iconBox}>
+          <Text style={styles.iconSymbol}>
             {getMatIconSymbol(mat.icon)}
           </Text>
         </View>
@@ -123,8 +121,20 @@ export default function MaterialBookingCard({
               </View>
             ) : null}
             {isOver ? (
-              <View style={styles.overBadge}>
-                <Text style={styles.overBadgeText}>
+              <View
+                style={[
+                  styles.overBadge,
+                  progressPct <= 110 ? styles.overBadgeYellow : styles.overBadgeRed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.overBadgeText,
+                    progressPct <= 110
+                      ? styles.overBadgeTextYellow
+                      : styles.overBadgeTextRed,
+                  ]}
+                >
                   +{formatQty(exceededBy)} {displayQu} {t('overConsumptionBadge', currentLang)}
                 </Text>
               </View>
@@ -173,7 +183,11 @@ export default function MaterialBookingCard({
           <Text
             style={[
               styles.metricValue,
-              isOver ? styles.metricValOver : availableQty === 0 ? styles.metricValDone : null,
+              isOver
+                ? (progressPct > 110 ? styles.metricValOverRed : styles.metricValOverYellow)
+                : availableQty === 0
+                ? styles.metricValDone
+                : null,
             ]}
           >
             {isOver ? `-${formatQty(exceededBy)}` : formatQty(availableQty)}{' '}
@@ -193,7 +207,12 @@ export default function MaterialBookingCard({
         {/* Verbaut */}
         <View style={styles.metricCell}>
           <Text style={styles.metricLabel}>{t('matrixInstalled', currentLang)}</Text>
-          <Text style={[styles.metricValue, isOver && styles.metricValOver]}>
+          <Text
+            style={[
+              styles.metricValue,
+              isOver ? (progressPct > 110 ? styles.metricValOverRed : styles.metricValOverYellow) : null,
+            ]}
+          >
             {formatQty(currentRoomVerb)} <Text style={styles.metricUnit}>{displayQu}</Text>
           </Text>
           <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
@@ -205,41 +224,29 @@ export default function MaterialBookingCard({
         <View style={{ flex: 1 }}>
           <ProgressBar progress={progressPct} isOver={isOver} height={6} />
         </View>
-        <Text style={[styles.progressPctText, isOver && styles.progressPctTextOver]}>
+        <Text
+          style={[
+            styles.progressPctText,
+            progressPct > 110
+              ? styles.progressPctTextRed
+              : progressPct > 100
+              ? styles.progressPctTextYellow
+              : null,
+          ]}
+        >
           {progressPct} %
         </Text>
       </View>
 
-      {/* 4. Bottom Row: Reason note (if over) + Stepper */}
+      {/* 4. Bottom Row: Stepper */}
       <View style={styles.cardFooterRow}>
         <View style={{ flex: 1, paddingRight: 8 }}>
           {userReason ? (
-            <TouchableOpacity
-              style={styles.reasonBadge}
-              onPress={() => {
-                if (isLocked) {
-                  if (onLockedAction) onLockedAction();
-                  return;
-                }
-                if (onReasonBadgePress) {
-                  onReasonBadgePress({
-                    mat,
-                    nextDelta: delta,
-                    exceededBy,
-                    planned: baseTarget,
-                    installedBefore: roomInstalledBefore,
-                    qu: mat.qu,
-                    userReason,
-                  });
-                }
-              }}
-            >
+            <View style={styles.reasonBadge}>
               <Text style={styles.reasonBadgeText} numberOfLines={1}>
-                ⚠️ {userReason}
+                ℹ️ {userReason}
               </Text>
-            </TouchableOpacity>
-          ) : isOver ? (
-            <Text style={styles.overWarningText}>⚠️ {t('overRecorded', currentLang)}</Text>
+            </View>
           ) : null}
         </View>
 
@@ -274,7 +281,6 @@ export default function MaterialBookingCard({
                 if (onLockedAction) onLockedAction();
                 return;
               }
-              if (isStockExhausted) return;
               onStep(mat.id, 1);
             }}
             disabled={isPlusDisabled}

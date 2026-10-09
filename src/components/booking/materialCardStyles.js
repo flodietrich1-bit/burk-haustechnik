@@ -198,6 +198,32 @@ export const styles = StyleSheet.create({
   progressPctTextOver: {
     color: COLORS.red,
   },
+  progressPctTextYellow: {
+    color: '#D97706',
+  },
+  progressPctTextRed: {
+    color: COLORS.red,
+  },
+  overBadgeYellow: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  overBadgeTextYellow: {
+    color: '#B45309',
+  },
+  overBadgeRed: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FCA5A5',
+  },
+  overBadgeTextRed: {
+    color: '#991B1B',
+  },
+  metricValOverYellow: {
+    color: '#D97706',
+  },
+  metricValOverRed: {
+    color: COLORS.red,
+  },
   cardFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -20,7 +20,6 @@ import {
 import MaterialBookingCard from '../components/booking/MaterialBookingCard';
 import NachtragModal from '../components/booking/NachtragModal';
 import UnplannedInstallModal from '../components/booking/UnplannedInstallModal';
-import OverConsumptionModal from '../components/booking/OverConsumptionModal';
 import CompleteRoomModal from '../components/booking/CompleteRoomModal';
 import { getRoomFloor } from '../services/storageService';
 import { styles } from '../components/booking/bookingStyles';
@@ -85,9 +84,6 @@ export default function BookingScreen({
 
   // Modals state
   const [showUnclearModal, setShowUnclearModal] = useState(false);
-  const [showOverModal, setShowOverModal] = useState(false);
-  const [pendingOverMat, setPendingOverMat] = useState(null);
-  const [overExplanations, setOverExplanations] = useState({});
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showNachtragModal, setShowNachtragModal] = useState(false);
 
@@ -168,16 +164,11 @@ export default function BookingScreen({
       return;
     }
 
-    // Stepping up: Check delivery stock
+    // Stepping up: Allow using more material directly without modal
     const isUnplannedMat = Boolean(
       mat.isUnplanned ||
       roomPlan?.isUnplanned ||
       unclearItems?.some((u) => u.materialId === matId || u.pos === mat?.pos)
-    );
-    const delivered = Number(
-      mat.deliveredQty !== undefined && mat.deliveredQty !== null && Number(mat.deliveredQty) > 0
-        ? mat.deliveredQty
-        : mat.qty || (roomPlan && roomPlan.plannedQty) || 0
     );
     const hasRoomPlan = Boolean(roomPlan) && !isUnplannedMat;
     const planned = hasRoomPlan ? Number(roomPlan.plannedQty) : 0;
@@ -185,41 +176,28 @@ export default function BookingScreen({
       ? Number(roomPlan.installedQty || 0)
       : Number(mat.installedQty || 0);
 
-    const totalInstalledAcrossSite = Number(mat.installedQty || 0) + currentDelta;
-    const siteStockAvailable = Math.max(0, delivered - totalInstalledAcrossSite);
-
     const nextDelta = currentDelta + stepDelta;
     const nextTotalVerb = installedBefore + nextDelta;
 
-    // If stepping UP and exceeding planned quantity (only for planned items)
+    // Mehrverbrauch automatisch erfassen für Admin (Abweichungen), ohne Monteur zu blockieren
     if (!isUnplannedMat && planned > 0 && nextTotalVerb > planned) {
-      // Trigger Mehrverbrauch explanation if not yet explained
-      if (!overExplanations[matId]) {
-        const exceeded = Math.max(1, nextTotalVerb - planned);
-        const maxPossibleExtra = Math.max(0, delivered - (hasRoomPlan ? planned : installedBefore));
-        const initialExtra = Math.max(1, exceeded);
-
-        setPendingOverMat({
-          mat,
-          nextDelta,
-          exceededBy: initialExtra,
-          planned,
-          installedBefore,
-          delivered,
-          maxPossibleExtra: maxPossibleExtra > 0 ? maxPossibleExtra : 9999,
+      const exceededBy = nextTotalVerb - planned;
+      if (onOverConsumptionAlert) {
+        onOverConsumptionAlert({
+          id: `alert_${room.id}_${matId}`,
+          timestamp: new Date().toISOString(),
+          roomId: room.id,
+          roomName: room.name,
+          materialId: mat.id,
+          materialPos: mat.pos || '–',
+          materialName: getMaterialDisplayName(mat, roomPlan),
+          plannedQty: planned,
+          requestedTotal: nextTotalVerb,
+          exceededBy,
           qu: formatUnit(mat.qu, currentLang),
+          reason: 'Mehrverbrauch Baustelle',
+          monteurName: monteur?.name || 'Monteur',
         });
-        setShowOverModal(true);
-        return;
-      }
-    } else {
-      // Normal booking within planned quantity or unplanned item: verify stock availability
-      if (delivered === 0 || siteStockAvailable <= 0 || stepDelta > siteStockAvailable) {
-        Alert.alert(
-          t('outOfStockTitle', currentLang),
-          t('outOfStockMsg', currentLang)
-        );
-        return;
       }
     }
 
@@ -231,65 +209,6 @@ export default function BookingScreen({
     onQuantityChange(matId, nextDelta);
   };
 
-  // Confirming Mehrverbrauch Overlay
-  const handleConfirmOverReason = (reasonToUse, extraNum) => {
-    if (!pendingOverMat) return;
-    const finalReason = reasonToUse.trim();
-    if (!finalReason) return;
-
-    const { roomPlan } = resolveMat(pendingOverMat.mat.id, materials, room);
-    const hasRoomPlan = Boolean(roomPlan);
-    const installedBefore =
-      pendingOverMat.installedBefore !== undefined
-        ? pendingOverMat.installedBefore
-        : hasRoomPlan
-        ? Number(roomPlan.installedQty || 0)
-        : Number(pendingOverMat.mat.installedQty || 0);
-
-    const neededToReachPlan = Math.max(0, pendingOverMat.planned - installedBefore);
-    const finalDelta = neededToReachPlan + extraNum;
-
-    setOverExplanations((prev) => ({
-      ...prev,
-      [pendingOverMat.mat.id]: finalReason,
-    }));
-
-    onQuantityChange(pendingOverMat.mat.id, finalDelta);
-
-    if (onOverConsumptionAlert) {
-      onOverConsumptionAlert({
-        id: `alert_${Date.now()}_${pendingOverMat.mat.id}`,
-        timestamp: new Date().toISOString(),
-        roomId: room.id,
-        roomName: room.name,
-        materialId: pendingOverMat.mat.id,
-        materialPos: pendingOverMat.mat.pos,
-        materialName: getMaterialDisplayName(
-          pendingOverMat.mat,
-          getRoomPlannedItem(pendingOverMat.mat.id, room)
-        ),
-        plannedQty: pendingOverMat.planned,
-        requestedTotal: installedBefore + finalDelta,
-        exceededBy: extraNum,
-        qu: pendingOverMat.qu,
-        reason: finalReason,
-        monteurName: monteur?.name || 'Monteur',
-      });
-    }
-
-    setShowOverModal(false);
-    setPendingOverMat(null);
-  };
-
-  const handleReasonBadgePress = (pendingData) => {
-    if (isLocked) {
-      handleLockedAction();
-      return;
-    }
-    setPendingOverMat(pendingData);
-    setShowOverModal(true);
-  };
-
   // Photos & room status
   const effectivePhotos =
     sessionPhotos && sessionPhotos.length > 0
@@ -299,7 +218,7 @@ export default function BookingScreen({
       : [];
   const effectivePhotoCount = effectivePhotos.length;
 
-  // Calculate live room percentage
+  // Calculate live room percentage (kann über 100 % gehen)
   const calculateCurrentRoomPct = () => {
     if (isLocked) return 100;
     let totalPlanned = 0;
@@ -325,7 +244,7 @@ export default function BookingScreen({
     });
 
     if (totalPlanned > 0) {
-      return Math.min(100, Math.round((totalInstalled / totalPlanned) * 100));
+      return Math.round((totalInstalled / totalPlanned) * 100);
     }
     return room.pct !== undefined ? room.pct : 0;
   };
@@ -556,12 +475,11 @@ export default function BookingScreen({
                 delta={currentDelta}
                 room={room}
                 currentLang={currentLang}
-                userReason={overExplanations[mat.id]}
+                userReason=""
                 isLocked={isLocked}
                 isUnplanned={isUnplannedMat}
                 siteStockAvailable={siteStockAvailable}
                 onStep={handleStep}
-                onReasonBadgePress={handleReasonBadgePress}
                 onLockedAction={handleLockedAction}
               />
             );
@@ -617,20 +535,6 @@ export default function BookingScreen({
         currentLang={currentLang}
         onClose={() => setShowNachtragModal(false)}
         onSave={handleSaveNachtrag}
-      />
-
-      {/* MODAL 2: MEHRVERBRAUCH (Over-Consumption) */}
-      <OverConsumptionModal
-        visible={showOverModal}
-        pendingOverMat={pendingOverMat}
-        room={room}
-        currentLang={currentLang}
-        initialReason={pendingOverMat?.userReason || overExplanations[pendingOverMat?.mat?.id] || ''}
-        onClose={() => {
-          setShowOverModal(false);
-          setPendingOverMat(null);
-        }}
-        onConfirm={handleConfirmOverReason}
       />
 
       {/* MODAL 3: AUSSERPLANMÄSSIG VERBAUT */}

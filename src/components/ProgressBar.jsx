@@ -11,7 +11,14 @@ export default function ProgressBar({
   style,
 }) {
   const clampedProgress = Math.min(100, Math.max(0, progress));
-  const activeColor = isOver ? COLORS.red : COLORS.green;
+
+  // Balken: Grün (<= 100%), Gelb (101% - 110%), Rot (> 110%)
+  let activeColor = COLORS.green;
+  if (progress > 110) {
+    activeColor = COLORS.red;
+  } else if (progress > 100) {
+    activeColor = '#EAB308';
+  }
 
   return (
     <View style={[styles.track, { height, borderRadius, backgroundColor: trackColor }, style]}>

@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.19` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, unblocked overconsumption booking flow via `OverConsumptionModal`, alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal (ohne Unterschrift, Monteur bereits authentifiziert), unplanned/außerplanmäßig material modal mit Erfassername (ohne Unterschrift), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.20` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal (ohne Unterschrift, Monteur bereits authentifiziert), unplanned/außerplanmäßig material modal mit Erfassername (ohne Unterschrift), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -142,6 +142,16 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-09 v2.20: Nahtlose Mehrverbrauchserfassung ohne störende Dialoge / Folgeseite:
+  - `BookingScreen.jsx`: `OverConsumptionModal` und Blockaden beim Überschreiten der Planmenge entfernt. Der Monteur kann Material ohne Zwischenschritt weiter buchen.
+  - Automatische Abweichungserfassung: Beim Überschreiten der Planmenge wird automatisch ein `over_consumption_alert` ausgelöst und via Firestore synchronisiert, sodass die Position direkt im Admin-Cockpit unter "Abweichungen" und im Nachbestell-Modul aufgeführt wird.
+  - Dynamische Prozentanzeige: Prozentwerte für Material (`MaterialBookingCard.jsx`) und Raum (`storageService.js`) können nun Werte über 100 % annehmen (z. B. 108 %, 115 %).
+  - Farblogik des Fortschrittsbalkens (`ProgressBar.jsx`, `ProgressRing.jsx`):
+    - Bis 100 %: Grün (`COLORS.green`)
+    - 101 % bis 110 %: Gelb (`#EAB308`)
+    - Über 110 %: Rot (`COLORS.red`)
+    - Der sichtbare Balken/Ring ist auf 100 % gedeckelt und wächst optisch nicht aus dem Rahmen.
+  - Kachel-Design (`materialCardStyles.js`): Die Kacheln werden bei Mehrverbrauch nicht mehr rötlich eingefärbt, sondern behalten ihren neutralen Hintergrund.
 - 2026-10-08 v2.19: Unterschriftenfeld bei Nachträgen und außerplanmäßigem Material entfernt:
   - `NachtragModal.jsx`: `SignaturePad` und Signaturvalidierung für Material- und Arbeitszeit-Nachträge entfernt.
   - `UnplannedInstallModal.jsx`: `SignaturePad` und Signaturvalidierung für außerplanmäßig verbautes Material entfernt.
@@ -215,5 +225,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-08 — v2.19 Update: Unterschriftenfeld bei Nachträgen und außerplanmäßig verbautem Material entfernt (`NachtragModal.jsx`, `UnplannedInstallModal.jsx`). Monteur-Identität bleibt durch Login-ID / Name verlässlich gewahrt.
+2026-10-09 — v2.20 Update: Nahtloser Mehrverbrauch ohne Modal/Unterbrechung, automatische Abweichungs-Synchronisation für Admin, dynamische Prozentwerte > 100 %, Balken-Farbwechsel (Grün -> Gelb bis 110 % -> Rot ab 110 %) und neutrale Kachel-Optik.
 

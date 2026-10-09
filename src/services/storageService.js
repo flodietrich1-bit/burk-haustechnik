@@ -109,7 +109,33 @@ export async function getRooms(projectId) {
 
 export function computeRoomPercentage(room, materials = []) {
   if (!room) return 0;
-  if (room.isCompleted || Number(room.pct) === 100) return 100;
+  if (room.isCompleted) {
+    let totalPlanned = 0;
+    let totalInstalled = 0;
+    if (room.plannedItems && Object.keys(room.plannedItems).length > 0) {
+      Object.entries(room.plannedItems).forEach(([matId, item]) => {
+        const planned = Number(item.plannedQty || 0);
+        const installed = Number(item.installedQty || 0);
+        if (planned > 0) {
+          totalPlanned += planned;
+          totalInstalled += installed;
+        }
+      });
+    } else if (Array.isArray(room.materials) && room.materials.length > 0) {
+      room.materials.forEach((m) => {
+        const planned = Number(m.plannedQty || 0);
+        const installed = Number(m.installedQty || 0);
+        if (planned > 0) {
+          totalPlanned += planned;
+          totalInstalled += installed;
+        }
+      });
+    }
+    if (totalPlanned > 0) {
+      return Math.max(100, Math.round((totalInstalled / totalPlanned) * 100));
+    }
+    return 100;
+  }
 
   let totalPlanned = 0;
   let totalInstalled = 0;
@@ -122,7 +148,7 @@ export function computeRoomPercentage(room, materials = []) {
       const draft = Number(room.draftQuantities?.[matId] || 0);
       if (planned > 0) {
         totalPlanned += planned;
-        totalInstalled += Math.min(planned, installed + draft);
+        totalInstalled += (installed + draft);
       }
     });
   } else if (Array.isArray(room.materials) && room.materials.length > 0) {
@@ -134,7 +160,7 @@ export function computeRoomPercentage(room, materials = []) {
       const draft = Number(room.draftQuantities?.[mId] || 0);
       if (planned > 0) {
         totalPlanned += planned;
-        totalInstalled += Math.min(planned, installed + draft);
+        totalInstalled += (installed + draft);
       }
     });
   } else if (Array.isArray(materials) && materials.length > 0) {
@@ -148,13 +174,13 @@ export function computeRoomPercentage(room, materials = []) {
       const draft = Number(room.draftQuantities?.[m.id] || 0);
       if (planned > 0) {
         totalPlanned += planned;
-        totalInstalled += Math.min(planned, installed + draft);
+        totalInstalled += (installed + draft);
       }
     });
   }
 
   if (totalPlanned > 0) {
-    return Math.min(100, Math.round((totalInstalled / totalPlanned) * 100));
+    return Math.round((totalInstalled / totalPlanned) * 100);
   }
 
   return Number(room.pct || 0);
