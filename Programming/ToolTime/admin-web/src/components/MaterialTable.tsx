@@ -357,7 +357,14 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
                   return (
                     <tr key={pos.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-mono font-bold text-[#3B82C4]">
-                        {pos.posNr}
+                        <div className="flex items-center space-x-1.5">
+                          <span>{pos.posNr}</span>
+                          {(pos.isAddendum || pos.group === 'Nachträge') && (
+                            <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0">
+                              Nachtrag
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="font-semibold text-slate-800 line-clamp-1">{pos.shortText}</div>

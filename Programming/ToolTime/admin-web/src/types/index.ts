@@ -138,6 +138,8 @@ export interface Position {
   assignedRoomNames?: string[];
   projectId?: string;
   updatedAt?: string;
+  isAddendum?: boolean;
+  addendumId?: string;
 }
 
 export interface RoomMaterialRequirement {
@@ -179,6 +181,7 @@ export interface Room {
   completionDelta?: any[];
   sourcePlanId?: string;
   sourcePlanFileName?: string;
+  updatedAt?: string;
 }
 
 export interface Alert {
@@ -262,6 +265,11 @@ export interface Addendum {
   deviationSource?: 'gaeb_vs_dwg' | 'monteur' | 'manual' | string;
   unitPrice?: number;
   totalPrice?: number;
+  lvPositionId?: string;
+  lvPosNr?: string;
+  isLvPosition?: boolean;
+  targetRoomId?: string;
+  targetRoomName?: string;
 }
 
 export interface PlanDeviationItem {

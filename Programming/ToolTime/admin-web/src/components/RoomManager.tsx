@@ -31,7 +31,8 @@ import {
   savePlan, 
   updatePlanFloor,
   deletePlan,
-  isRoomMatch 
+  isRoomMatch,
+  getMaterialActualQty 
 } from '../services/firestoreService';
 import { RoomDetailModal } from './RoomDetailModal';
 import { WebPlanViewerModal } from './WebPlanViewerModal';
@@ -200,15 +201,6 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
 
     await saveRoom(projectId, updatedRoom);
     setAssigningRoom(null);
-  };
-
-  const handleRemoveMaterialFromRoom = async (room: Room, positionId: string) => {
-    const updatedMaterials = (room.materials || []).filter(m => m.positionId !== positionId);
-    const updatedRoom: Room = {
-      ...room,
-      materials: updatedMaterials
-    };
-    await saveRoom(projectId, updatedRoom);
   };
 
   const getRoomPhotos = (r: Room): string[] => {
@@ -793,26 +785,34 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
                   ) : (
                     <div className="space-y-1">
                       {/* Show first 2 or all if expanded */}
-                      {(isExpanded ? room.materials : room.materials?.slice(0, 2))?.map((mat) => (
-                        <div key={mat.positionId} className="p-1.5 bg-slate-50 rounded border border-slate-200 text-xs flex items-center justify-between">
-                          <div className="truncate mr-2">
-                            <span className="font-mono font-bold text-[#3B82C4] mr-1.5">{mat.posNr}</span>
-                            <span className="text-slate-700">{mat.shortText}</span>
+                      {(isExpanded ? room.materials : room.materials?.slice(0, 2))?.map((mat) => {
+                        const actual = getMaterialActualQty(mat, room, bookings);
+                        const planned = Number(mat.plannedQty) || 0;
+                        const pct = planned > 0 ? Math.round((actual / planned) * 100) : (actual > 0 ? 100 : 0);
+
+                        return (
+                          <div key={mat.positionId} className="p-1.5 bg-slate-50 rounded border border-slate-200 text-xs flex items-center justify-between">
+                            <div className="truncate mr-2">
+                              <span className="font-mono font-bold text-[#3B82C4] mr-1.5">{mat.posNr}</span>
+                              <span className="text-slate-700">{mat.shortText}</span>
+                            </div>
+                            <div className="flex items-center space-x-1.5 shrink-0">
+                              <span className={`px-2 py-0.5 rounded border text-[11px] font-mono flex items-center space-x-1 shadow-2xs ${
+                                pct > 110
+                                  ? 'bg-red-50 text-red-700 border-red-300 font-bold'
+                                  : pct > 100
+                                  ? 'bg-amber-50 text-amber-800 border-amber-300 font-bold'
+                                  : pct === 100
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 font-semibold'
+                                  : 'bg-white text-slate-700 border-slate-200 font-medium'
+                              }`}>
+                                <span>{actual} / {planned} {mat.qu}</span>
+                                <span className="font-bold">({pct}%)</span>
+                              </span>
+                            </div>
                           </div>
-                          <div className="flex items-center space-x-1.5 shrink-0">
-                            <span className="font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[10px]">
-                              {mat.plannedQty} {mat.qu}
-                            </span>
-                            <button
-                              onClick={() => handleRemoveMaterialFromRoom(room, mat.positionId)}
-                              className="text-slate-400 hover:text-red-500 p-0.5"
-                              title="Material aus Raum entfernen"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
 
                       {materialCount > 2 && (
                         <button

@@ -17,14 +17,16 @@ import {
   Send,
   PackageCheck,
   AlertTriangle,
-  Mail
+  Mail,
+  FileText
 } from 'lucide-react';
 import { 
   updateAddendumStatus, 
   createAddendum, 
   addPositionDeliveredQty, 
   getMaterialActualQty,
-  batchUpdateAddendumsRequested
+  batchUpdateAddendumsRequested,
+  convertAddendumToLvPosition
 } from '../services/firestoreService';
 import type { Booking } from '../types';
 
@@ -116,6 +118,73 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [rejectReason, setRejectReason] = useState<string>('');
   const [rejectError, setRejectError] = useState<string>('');
   const [isProcessingReject, setIsProcessingReject] = useState<boolean>(false);
+
+  // Convert Addendum to LV Position Modal State
+  const [convertingItem, setConvertingItem] = useState<Addendum | null>(null);
+  const [lvPosNr, setLvPosNr] = useState<string>('');
+  const [lvTitle, setLvTitle] = useState<string>('');
+  const [lvQty, setLvQty] = useState<string>('');
+  const [lvUnit, setLvUnit] = useState<string>('Stk');
+  const [lvUnitPrice, setLvUnitPrice] = useState<string>('0');
+  const [lvRoomId, setLvRoomId] = useState<string>('');
+  const [isProcessingConvert, setIsProcessingConvert] = useState<boolean>(false);
+
+  // Auto-generate next Nachtrags-Positionsnummer (e.g. N-01, N-02)
+  const nextNachtragNr = useMemo(() => {
+    let highest = 0;
+    positions.forEach(p => {
+      const m = p.posNr?.match(/^N-?(\d+)$/i);
+      if (m) {
+        const num = parseInt(m[1], 10);
+        if (num > highest) highest = num;
+      }
+    });
+    const next = highest + 1;
+    return `N-${next.toString().padStart(2, '0')}`;
+  }, [positions]);
+
+  const handleOpenConvertModal = (item: Addendum) => {
+    const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
+    const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
+
+    const matchedRoom = rooms.find(r => 
+      (item.roomId && (r.id === item.roomId || r.code === item.roomId)) ||
+      (item.roomName && r.name.toLowerCase() === item.roomName.toLowerCase())
+    );
+
+    setConvertingItem(item);
+    setLvPosNr(item.lvPosNr || item.itemOz || nextNachtragNr);
+    setLvTitle(item.title || (item as any).materialName || 'Zusätzliche Leistung / Nachtrag');
+    setLvQty(String(rawQty));
+    setLvUnit(unit);
+    setLvUnitPrice(item.unitPrice ? String(item.unitPrice) : '0');
+    setLvRoomId(matchedRoom?.id || item.roomId || rooms[0]?.id || '');
+  };
+
+  const handleConvertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!convertingItem || !projectId) return;
+
+    try {
+      setIsProcessingConvert(true);
+      await convertAddendumToLvPosition(projectId, convertingItem, {
+        posNr: lvPosNr,
+        shortText: lvTitle,
+        group: 'Nachträge',
+        qty: parseFloat(lvQty.replace(',', '.')) || 1,
+        qu: lvUnit,
+        unitPrice: parseFloat(lvUnitPrice.replace(',', '.')) || 0,
+        roomId: lvRoomId,
+        rooms
+      });
+      setConvertingItem(null);
+    } catch (err: any) {
+      console.error('Fehler beim Konvertieren des Nachtrags:', err);
+      alert('Fehler: ' + (err?.message || err));
+    } finally {
+      setIsProcessingConvert(false);
+    }
+  };
 
   // Fast lookups for positions
   const posMap = useMemo(() => new Map(positions.map(p => [p.posNr, p])), [positions]);
@@ -960,6 +1029,33 @@ Bauleitung Burk Haustechnik`;
 
                 </div>
 
+                {/* LV Position Confirmation Badge */}
+                {(item.isLvPosition || item.lvPosNr) && (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950 shadow-2xs">
+                    <div className="flex items-center space-x-2 min-w-0">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div className="truncate">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-emerald-900">Echte LV-Position {item.lvPosNr}</span>
+                          <span className="text-[10px] font-bold bg-emerald-200/80 text-emerald-900 px-1.5 py-0.2 rounded shrink-0">
+                            Aufmessbar
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-emerald-700 block truncate mt-0.5">
+                          {item.targetRoomName ? `In Raum „${item.targetRoomName}“ hinterlegt` : 'Im Projekt hinterlegt'} • Für Monteure in der App aufmessbar
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenConvertModal(item)}
+                      className="text-[11px] font-semibold text-[#3B82C4] hover:underline shrink-0 ml-2"
+                    >
+                      Anpassen
+                    </button>
+                  </div>
+                )}
+
                 {/* Bottom Actions for Bauleiter / Admin */}
                 {isRequested ? (
                   <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
@@ -973,6 +1069,18 @@ Bauleitung Burk Haustechnik`;
                     </button>
 
                     <div className="flex items-center space-x-2">
+                      {!item.isLvPosition && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenConvertModal(item)}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01] cursor-pointer"
+                          title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-800" />
+                          <span>Als LV-Position ins Aufmaß</span>
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handleOpenReorderModal(item)}
@@ -998,6 +1106,16 @@ Bauleitung Burk Haustechnik`;
                   <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
                     {cat === 'unclear' ? (
                       <>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenConvertModal(item)}
+                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01]"
+                          title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-amber-800" />
+                          <span>Als LV-Position ins Aufmaß übernehmen</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => handleAcknowledgeUnclear(item)}
@@ -1048,6 +1166,16 @@ Bauleitung Burk Haustechnik`;
                           <>
                             <button
                               type="button"
+                              onClick={() => handleOpenConvertModal(item)}
+                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01]"
+                              title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-amber-800" />
+                              <span>Als LV-Position ins Aufmaß übernehmen</span>
+                            </button>
+
+                            <button
+                              type="button"
                               onClick={() => handleApproveInStock(item)}
                               className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
                               title="Material ist im Lager vorhanden und wird zum Verbauen freigegeben (verfügbare Menge erhöht sich)"
@@ -1071,18 +1199,31 @@ Bauleitung Burk Haustechnik`;
                     )}
                   </div>
                 ) : (
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
                     <span className="font-medium text-slate-600">
                       {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & verbucht'}
                       {isApproved && item.approvalType !== 'reordered' && (cat === 'unclear' ? '✓ Geprüft & Hinweis geschlossen' : '✓ Aus Lagerbestand freigegeben')}
                       {isRejected && '✕ Durch Bauleitung abgelehnt'}
                     </span>
-                    <button
-                      onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
-                      className="text-[#3B82C4] hover:underline text-[11px]"
-                    >
-                      Status zurücksetzen
-                    </button>
+                    <div className="flex items-center space-x-3">
+                      {!item.isLvPosition && !item.lvPosNr && cat !== 'time' && !isRejected && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenConvertModal(item)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors"
+                          title="Nachträglich als echte LV-Position im Raum hinterlegen"
+                        >
+                          <FileText className="w-3 h-3 text-amber-800" />
+                          <span>Als LV-Position ins Aufmaß</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
+                        className="text-[#3B82C4] hover:underline text-[11px]"
+                      >
+                        Status zurücksetzen
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1611,6 +1752,141 @@ Bauleitung Burk Haustechnik`;
                 <span>E-Mail öffnen &amp; als angefragt markieren ({unrequestedMaterialItems.length})</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Als echte LV-Position ins Aufmaß & Raum übernehmen */}
+      {convertingItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-base text-slate-900 flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-amber-600" />
+                <span>Nachtrag als echte LV-Position anlegen</span>
+              </h3>
+              <button 
+                type="button"
+                onClick={() => setConvertingItem(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Erstellt eine offizielle LV-Position im Projekt und hinterlegt sie im Raum, damit Monteure diese Position in der App direkt aufmessen können.
+            </p>
+
+            <form onSubmit={handleConvertSubmit} className="space-y-4 text-xs">
+              {/* Positionsnummer & Einheitspreis */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Nachtrags-Pos-Nr. *</label>
+                  <input
+                    type="text"
+                    required
+                    value={lvPosNr}
+                    onChange={e => setLvPosNr(e.target.value)}
+                    placeholder="z. B. N-01 oder 01.05.0010.N1"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Einheitspreis (€ netto)</label>
+                  <input
+                    type="text"
+                    value={lvUnitPrice}
+                    onChange={e => setLvUnitPrice(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Leistungsbezeichnung (Kurztext) */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Leistungsbezeichnung (Kurztext) *</label>
+                <input
+                  type="text"
+                  required
+                  value={lvTitle}
+                  onChange={e => setLvTitle(e.target.value)}
+                  placeholder="z. B. Zusätzliche Brandschottung DN 110"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                />
+              </div>
+
+              {/* Nachtragsmenge & Einheit */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Nachtragsmenge (Plan) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={lvQty}
+                    onChange={e => setLvQty(e.target.value)}
+                    placeholder="z. B. 10"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Einheit (qu) *</label>
+                  <select
+                    value={lvUnit}
+                    onChange={e => setLvUnit(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs font-semibold"
+                  >
+                    <option value="Stk">Stk (Stück)</option>
+                    <option value="m">m (Meter)</option>
+                    <option value="qm">qm (Quadratmeter)</option>
+                    <option value="kg">kg (Kilogramm)</option>
+                    <option value="Std">Std (Stunden)</option>
+                    <option value="Psch">Psch (Pauschal)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Raum-Zuordnung */}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Betroffener Raum (Zuweisung) *</label>
+                <select
+                  required
+                  value={lvRoomId}
+                  onChange={e => setLvRoomId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs font-semibold"
+                >
+                  <option value="">-- Raum auswählen --</option>
+                  {rooms.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.name} ({r.code || 'Raum'}) {r.floor ? `• ${r.floor}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  In diesem Raum wird das Material als Planmenge hinterlegt und erscheint sofort in der Monteur-App.
+                </p>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setConvertingItem(null)}
+                  className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold text-xs cursor-pointer"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  disabled={isProcessingConvert}
+                  className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#2FA36B] hover:bg-[#258757] text-white font-bold shadow-md shadow-emerald-500/20 transition-all hover:scale-[1.01] disabled:opacity-50 text-xs cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isProcessingConvert ? 'Wird angelegt...' : '✓ Als LV-Position im Raum anlegen & freigeben'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

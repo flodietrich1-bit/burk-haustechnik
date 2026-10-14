@@ -3,7 +3,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocument, PlanLevel } from '../types';
+import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocument, PlanLevel, RoomMaterialRequirement } from '../types';
 
 export const DEFAULT_PROJECT_ID = '';
 
@@ -1014,6 +1014,107 @@ export async function addPositionDeliveredQty(projectId: string, positionIdOrPos
   } catch (err: any) {
     console.warn('Firestore addPositionDeliveredQty error:', err.message);
   }
+}
+
+/**
+ * Converts an approved Addendum into an official LV Position (in positions and items subcollections)
+ * and assigns it to the designated room (room.materials), so installers can measure it directly in the app.
+ */
+export async function convertAddendumToLvPosition(
+  projectId: string,
+  addendum: Addendum,
+  data: {
+    posNr: string;
+    shortText: string;
+    group?: string;
+    qty: number;
+    qu: string;
+    unitPrice?: number;
+    roomId?: string;
+    rooms?: Room[];
+  }
+) {
+  const posId = addendum.lvPositionId || `pos_addendum_${addendum.id}`;
+  const finalPosNr = data.posNr.trim();
+  const finalShortText = data.shortText.trim();
+  const finalQty = Number(data.qty) || 0;
+  const finalQu = data.qu || 'Stk';
+  const finalUnitPrice = Number(data.unitPrice) || 0;
+  const finalGroup = data.group || 'Nachträge';
+
+  // 1. Resolve target room
+  let targetRoom: Room | undefined = undefined;
+  if (data.roomId && data.rooms) {
+    targetRoom = data.rooms.find(r => r.id === data.roomId || r.code === data.roomId);
+  } else if (data.roomId) {
+    const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+    const list: Room[] = saved ? JSON.parse(saved) : [];
+    targetRoom = list.find(r => r.id === data.roomId || r.code === data.roomId);
+  }
+
+  // 2. Create official LV Position
+  const newPos: Position = {
+    id: posId,
+    projectId,
+    posNr: finalPosNr,
+    group: finalGroup,
+    shortText: finalShortText,
+    qty: finalQty,
+    deliveredQty: finalQty, // Available immediately on site
+    qu: finalQu,
+    unitPrice: finalUnitPrice,
+    isAddendum: true,
+    addendumId: addendum.id,
+    assignedRoomNames: targetRoom ? [targetRoom.name] : [],
+    status: 'open',
+    updatedAt: new Date().toISOString()
+  };
+
+  await savePositionsBatch(projectId, [newPos]);
+
+  // 3. Add requirement to target room
+  if (targetRoom) {
+    const currentMaterials = targetRoom.materials || [];
+    const existingIndex = currentMaterials.findIndex(m => m.positionId === posId || m.posNr === finalPosNr);
+
+    const newReq: RoomMaterialRequirement = {
+      positionId: posId,
+      posNr: finalPosNr,
+      shortText: finalShortText,
+      plannedQty: finalQty,
+      qu: finalQu,
+      unitPrice: finalUnitPrice,
+      group: finalGroup
+    };
+
+    let updatedMaterials: RoomMaterialRequirement[];
+    if (existingIndex >= 0) {
+      updatedMaterials = [...currentMaterials];
+      updatedMaterials[existingIndex] = newReq;
+    } else {
+      updatedMaterials = [...currentMaterials, newReq];
+    }
+
+    const updatedRoom: Room = {
+      ...targetRoom,
+      materials: updatedMaterials,
+      updatedAt: new Date().toISOString()
+    };
+
+    await saveRoom(projectId, updatedRoom);
+  }
+
+  // 4. Update Addendum Status to approved with LV metadata
+  await updateAddendumStatus(addendum.id, 'approved', projectId, {
+    approvalType: 'in_stock',
+    lvPositionId: posId,
+    lvPosNr: finalPosNr,
+    isLvPosition: true,
+    targetRoomId: targetRoom ? targetRoom.id : data.roomId,
+    targetRoomName: targetRoom ? targetRoom.name : undefined
+  });
+
+  return newPos;
 }
 
 export async function saveRoom(projectId: string, room: Room) {
