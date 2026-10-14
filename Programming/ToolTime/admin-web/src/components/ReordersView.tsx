@@ -196,14 +196,16 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
         const diff = actual - planned;
 
-        // RULE:
-        // Overconsumption (diff > 0) counts immediately (even in progress).
-        // Underconsumption (diff < 0) counts towards savings only when the room is finished;
-        // otherwise it is pending (remaining work) and only shown informatively.
-        const countsTowardsNet = (diff > 0) || (diff < 0 && isCompleted);
+        // REGEL:
+        // 1. Mehrverbrauch (diff > 0): Abweichung sofort anzeigen (egal ob Raum fertig oder in Arbeit)
+        // 2. Minderverbrauch (diff < 0): Abweichung erst anzeigen, wenn Raum fertiggestellt ist!
+        // 3. Keine Abweichung (diff === 0): Keine Kachel anzeigen.
+        const isOver = diff > 0;
+        const isUnderCompleted = diff < 0 && isCompleted;
+        const isActualDeviation = isOver || isUnderCompleted;
 
-        // Consolidate ALL rooms that use this material (e.g. Wasserrohr in Bad + Küche)
-        if (diff !== 0 || countsTowardsNet) {
+        // Nur Räume mit tatsächlicher Abweichung in die Kachel aufnehmen
+        if (isActualDeviation) {
           const key = m.posNr || m.positionId || m.shortText;
           if (!map.has(key)) {
             const p = posMap.get(m.posNr) || (m.positionId ? posIdMap.get(m.positionId) : undefined);
@@ -217,7 +219,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
             });
           }
 
-          const devInfo = diff > 0 ? resolveRoomDeviationReason(room, m) : undefined;
+          const devInfo = isOver ? resolveRoomDeviationReason(room, m) : undefined;
 
           map.get(key)!.rooms.push({
             roomId: room.id,
@@ -228,7 +230,7 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
             plannedQty: planned,
             actualQty: actual,
             diff,
-            counts: countsTowardsNet,
+            counts: true,
             reason: devInfo?.reason,
             monteurName: devInfo?.monteurName,
             timestamp: devInfo?.timestamp
@@ -270,10 +272,9 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
     const result: GroupedDeviation[] = [];
 
     map.forEach((entry, key) => {
-      // Netto-Abweichung = Summe der bestätigten Abweichungen aller Räume
-      // (offene Räume mit Minderverbrauch sind nur Restbedarf, keine Ersparnis)
-      const netDelta = entry.rooms.reduce((sum, r) => sum + (r.counts === false ? 0 : r.diff), 0);
-      const hasCounting = entry.rooms.some(r => r.counts !== false);
+      // Netto-Abweichung = Summe der bestätigten Abweichungen aller betroffenen Räume
+      const netDelta = entry.rooms.reduce((sum, r) => sum + r.diff, 0);
+      const hasCounting = entry.rooms.length > 0;
       const totalPlannedAcrossRooms = entry.rooms.reduce((sum, r) => sum + r.plannedQty, 0);
       const totalActualAcrossRooms = entry.rooms.reduce((sum, r) => sum + r.actualQty, 0);
 
@@ -341,9 +342,10 @@ export const ReordersView: React.FC<ReordersViewProps> = ({
 
       const shortage = Math.max(0, projectNeeded - projectAvailable);
 
-      // Nur Positionen mit bestätigter Abweichung ODER aktivem Alert anzeigen
+      // Nur Positionen mit tatsächlicher Abweichung (netDelta !== 0) ODER aktivem Alert anzeigen
       const hasActiveAlert = matchingAlerts.some(a => a.status === 'open' || a.status === 'reordered');
       if (!hasCounting && !hasActiveAlert) return;
+      if (netDelta === 0 && !hasActiveAlert) return;
 
       result.push({
         id: `group_${entry.posNr}_${key}`,
@@ -756,7 +758,7 @@ Projektleitung Burk Haustechnik`;
                         {group.materialName}
                       </h4>
                       <span className="text-xs text-slate-400">
-                        In {group.rooms.length} {group.rooms.length === 1 ? 'Raum' : 'Räumen'} verbaut
+                        In {group.rooms.length} {group.rooms.length === 1 ? 'betroffenem Raum' : 'betroffenen Räumen'}
                       </span>
                     </div>
 
@@ -801,9 +803,9 @@ Projektleitung Burk Haustechnik`;
                               <span className="text-slate-500">Plan: {r.plannedQty}</span>
                               <span className="text-slate-800 font-bold">Ist: {r.actualQty}</span>
                               <span className={`font-black ${
-                                r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : (r.counts === false ? 'text-amber-700 bg-amber-50 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded')
+                                r.diff > 0 ? 'text-red-600 bg-red-100 px-1 rounded' : 'text-emerald-700 bg-emerald-100 px-1 rounded'
                               }`}>
-                                {r.counts === false ? `offen ${Math.abs(r.diff)}` : (r.diff > 0 ? `+${r.diff}` : `${r.diff}`)} {group.qu}
+                                {r.diff > 0 ? `+${r.diff}` : `${r.diff}`} {group.qu}
                               </span>
                             </div>
                           </div>

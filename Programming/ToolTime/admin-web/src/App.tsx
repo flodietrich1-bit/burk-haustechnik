@@ -218,24 +218,56 @@ export function App() {
 
   const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
   
-  // Reorders and deviation count (distinct positions with overconsumption or active alert)
+  // Reorders and deviation count (distinct positions with genuine deviation or active alert)
   const reordersCount = useMemo(() => {
-    const deviationPositions = new Set<string>();
+    const posDeltaMap = new Map<string, number>();
+
     rooms.forEach(room => {
+      const isExplicitlyUnlocked = room.isCompleted === false || room.status === 'in_progress';
+      const isCompleted = !isExplicitlyUnlocked && (room.status === 'completed' || room.isCompleted === true || ((room as any).pct === 100));
+
       (room.materials || []).forEach(m => {
-        const actual = getMaterialActualQty(m, room, bookings);
+        let actual = getMaterialActualQty(m, room, bookings);
         const planned = Number(m.plannedQty) || 0;
-        if (actual > planned) {
-          deviationPositions.add(m.posNr || m.positionId || m.shortText);
+
+        const roomAlert = alerts.find(a => 
+          ((a.roomId && (a.roomId === room.id || a.roomId === room.code)) || (a.roomName && room.name && a.roomName.toLowerCase() === room.name.toLowerCase())) &&
+          ((a.materialPos && a.materialPos === m.posNr) || (a.materialId && a.materialId === m.positionId) || (a.materialName && m.shortText && a.materialName.toLowerCase() === m.shortText.toLowerCase()))
+        );
+
+        if (roomAlert && (roomAlert.status === 'open' || roomAlert.status === 'reordered')) {
+          if (roomAlert.requestedTotal && Number(roomAlert.requestedTotal) > actual) {
+            actual = Number(roomAlert.requestedTotal);
+          } else if (roomAlert.exceededBy && actual <= planned) {
+            actual = planned + Number(roomAlert.exceededBy);
+          }
+        }
+
+        const diff = actual - planned;
+        const isOver = diff > 0;
+        const isUnderCompleted = diff < 0 && isCompleted;
+
+        if (isOver || isUnderCompleted) {
+          const key = m.posNr || m.positionId || m.shortText;
+          posDeltaMap.set(key, (posDeltaMap.get(key) || 0) + diff);
         }
       });
     });
-    alerts.forEach(a => {
-      if (a.status === 'open' || a.status === 'reordered') {
-        deviationPositions.add(a.materialPos || a.materialId || a.materialName);
+
+    const activePositions = new Set<string>();
+    posDeltaMap.forEach((netDelta, key) => {
+      if (netDelta !== 0) {
+        activePositions.add(key);
       }
     });
-    return deviationPositions.size;
+
+    alerts.forEach(a => {
+      if (a.status === 'open' || a.status === 'reordered') {
+        activePositions.add(a.materialPos || a.materialId || a.materialName);
+      }
+    });
+
+    return activePositions.size;
   }, [rooms, bookings, alerts]);
 
   // GAEB vs DWG deviations count (positions where verplante Menge in Räumen != GAEB LV-Menge)
