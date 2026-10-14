@@ -386,14 +386,14 @@ export default function BookingScreen({
         {/* Action Buttons direkt unter dem Titel - nur anbieten wenn Raum nicht fertig/gesperrt ist */}
         {!isLocked && (
           <View style={styles.topActionsRow}>
-            {/* Button 1: + Material/Zeit benötigt */}
+            {/* Button 1: + Material benötigt */}
             <TouchableOpacity
               style={styles.actionBtnNachtrag}
               onPress={() => setShowNachtragModal(true)}
               activeOpacity={0.7}
             >
               <Text style={styles.actionBtnNachtragText}>
-                {t('btnNeedMaterialTime', currentLang)}
+                {t('btnNeedMaterial', currentLang)}
               </Text>
             </TouchableOpacity>
 

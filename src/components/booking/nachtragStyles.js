@@ -44,37 +44,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.inkSoft,
   },
-  tabBarContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F4F7',
-    padding: 4,
-    marginHorizontal: 20,
-    marginTop: 14,
-    borderRadius: 12,
-  },
-  segmentTab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 9,
-  },
-  segmentTabActive: {
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-  },
-  segmentText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.muted,
-  },
-  segmentTextActive: {
-    color: COLORS.ink,
-    fontWeight: '800',
-  },
+
   modalBody: {
     flex: 1,
     backgroundColor: '#FAFCFE',

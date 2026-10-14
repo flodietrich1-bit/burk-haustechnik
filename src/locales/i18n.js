@@ -71,7 +71,8 @@ export const TRANSLATIONS = {
   // Unclear / Außerplanmäßig items
   unclearBtn: { de: 'außerplanmäßig verbaut', ro: 'instalat neplanificat', pl: 'zamontowane pozaplanowo', hr: 'ugrađeno izvan plana' },
   unclearBtnShort: { de: 'außerplanmäßig verbaut', ro: 'instalat neplanificat', pl: 'zamontowane pozaplanowo', hr: 'ugrađeno izvan plana' },
-  btnNeedMaterialTime: { de: '+ Material/Zeit benötigt', ro: '+ Necesar material/timp', pl: '+ Potrzebny materiał/czas', hr: '+ Potreban materijal/vrijeme' },
+  btnNeedMaterial: { de: '+ Material benötigt', ro: '+ Necesar material', pl: '+ Potrzebny materiał', hr: '+ Potreban materijal' },
+  btnNeedMaterialTime: { de: '+ Material benötigt', ro: '+ Necesar material', pl: '+ Potrzebny materiał', hr: '+ Potreban materijal' },
   btnUnplannedInstalled: { de: 'außerplanmäßig verbaut', ro: 'instalat neplanificat', pl: 'zamontowane pozaplanowo', hr: 'ugrađeno izvan plana' },
   completeBtnShort: { de: 'Monteur fertig', ro: 'Montator gata', pl: 'Monter gotowy', hr: 'Monter završio' },
   unclearTitle: { de: 'Außerplanmäßig verbaut', ro: 'Instalat neplanificat', pl: 'Montaż pozaplanowy', hr: 'Ugrađeno izvan plana' },
@@ -157,7 +158,7 @@ export const TRANSLATIONS = {
   // Mehrbedarf / Anfrage auf Material & Zeit
   nachtrag: { de: 'Mehrbedarf', ro: 'Necesar suplimentar', pl: 'Dodatkowe zapotrzebowanie', hr: 'Dodatna potreba' },
   nachtragTitle: { de: 'Mehrbedarf', ro: 'Necesar suplimentar', pl: 'Dodatkowe zapotrzebowanie', hr: 'Dodatna potreba' },
-  nachtragSub: { de: 'Anfrage auf zusätzliches Material oder Zeit', ro: 'Cerere pentru material sau timp suplimentar', pl: 'Wniosek o dodatkowy materiał lub czas', hr: 'Zahtjev za dodatni materijal ili vrijeme' },
+  nachtragSub: { de: 'Anfrage auf zusätzliches Material', ro: 'Cerere pentru material suplimentar', pl: 'Wniosek o dodatkowy materiał', hr: 'Zahtjev za dodatni materijal' },
   mehrbedarfSaved: { de: 'Mehrbedarf wurde zur Synchronisation hinterlegt.', ro: 'Necesarul suplimentar a fost salvat pentru sincronizare.', pl: 'Dodatkowe zapotrzebowanie zostało zapisane do synchronizacji.', hr: 'Dodatna potreba je spremljena za sinkronizaciju.' },
   typeMat: { de: 'Material', ro: 'Material', pl: 'Materiał', hr: 'Materijal' },
   typeStd: { de: 'Arbeitszeit', ro: 'Timp de lucru (ore)', pl: 'Czas pracy (godz.)', hr: 'Radno vrijeme (sati)' },

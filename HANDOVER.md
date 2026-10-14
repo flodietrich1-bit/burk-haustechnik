@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.20` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, "Mehrbedarf" modal (ohne Unterschrift, Monteur bereits authentifiziert), unplanned/außerplanmäßig material modal mit Erfassername (ohne Unterschrift), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.21` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -38,7 +38,7 @@ src/services/storageService.js AsyncStorage layer: rooms/materials/project cache
 src/services/syncService.js Online check, photo upload, syncBookings() push+pull
 src/screens/                PinLock, ProjectSelect, SyncLoading, RoomList, Booking, PhotoCapture, Done (+ SetupProfile, unused)
 src/components/             Header, PinPad, ProgressBar, ProgressRing, SignaturePad
-src/components/booking/     BookingScreen sub-components (MaterialBookingCard, NachtragModal, UnplannedInstallModal, OverConsumptionModal, CompleteRoomModal), their *Styles.js, bookingHelpers.js
+src/components/booking/     BookingScreen sub-components (MaterialBookingCard, NachtragModal, UnplannedInstallModal, CompleteRoomModal), their *Styles.js, bookingHelpers.js
 assets/                     icons/splash
 dist/, .expo/               Generated, gitignored
 AGENTS.md / CLAUDE.md       Agent rules (CLAUDE.md just contains `@AGENTS.md`)
@@ -142,6 +142,13 @@ Suspected / unverified: see "suspected" markers above.
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-10-14 v2.21: App-Vereinfachung für Monteure (Arbeit nicht blockieren):
+  - `NachtragModal.jsx`: Segmented-Control-Tabs (`📦 Material` und `⏱ Arbeitszeit`) komplett entfernt. Nachträge erfassen ab sofort ausschließlich Material ("mehr Zeit benötigt" entfernt, da Zeitrisiko beim Unternehmer/Nachkalkulation liegt und nicht ins Aufmaß gehört).
+  - Begründungszwang aufgehoben: Notiz/Begründung in `NachtragModal.jsx` und `UnplannedInstallModal.jsx` ist ab sofort rein optional (kein Pflichtstern, keine Fehlermarkierung, keine Blockade beim Absenden).
+  - Mehrverbrauch nahtlos: Monteure können verbautes Material frei über Soll hochzählen; altes, ungenutztes `OverConsumptionModal.jsx` vollständig aus dem Repo gelöscht.
+  - Bereinigung der Styles (`nachtragStyles.js`): Unbenutzte Tab-Styles entfernt.
+  - Button im Kopfbereich von `BookingScreen.jsx` auf `+ Material benötigt` (`btnNeedMaterial`) aktualisiert.
+  - Lokalisierung (`i18n.js`): Neue und aktualisierte Übersetzungen für alle 4 Sprachen (DE, RO, PL, HR).
 - 2026-10-09 v2.20: Nahtlose Mehrverbrauchserfassung ohne störende Dialoge / Folgeseite:
   - `BookingScreen.jsx`: `OverConsumptionModal` und Blockaden beim Überschreiten der Planmenge entfernt. Der Monteur kann Material ohne Zwischenschritt weiter buchen.
   - Automatische Abweichungserfassung: Beim Überschreiten der Planmenge wird automatisch ein `over_consumption_alert` ausgelöst und via Firestore synchronisiert, sodass die Position direkt im Admin-Cockpit unter "Abweichungen" und im Nachbestell-Modul aufgeführt wird.
@@ -225,5 +232,5 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-09 — v2.20 Update: Nahtloser Mehrverbrauch ohne Modal/Unterbrechung, automatische Abweichungs-Synchronisation für Admin, dynamische Prozentwerte > 100 %, Balken-Farbwechsel (Grün -> Gelb bis 110 % -> Rot ab 110 %) und neutrale Kachel-Optik.
+2026-10-14 — v2.21 Update: App-Vereinfachung für Monteure (Arbeit nicht blockieren): Begründungszwang bei Mehrverbrauch & Zusatzmaterial entfernt (optional), Nachtrag rein auf Material fokussiert ("mehr Zeit benötigt" und Umschalt-Tabs entfernt), altes OverConsumptionModal gelöscht.
 
