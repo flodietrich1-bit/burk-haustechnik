@@ -1,0 +1,94 @@
+.p12-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-height: 100vh;
+  background: #f7f5fc;
+  color: #1f1a4d;
+}
+
+.p12-login-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 32px clamp(32px, 5vw, 88px) 24px;
+}
+
+.p12-login-logo {
+  display: block;
+  width: min(220px, 100%);
+  height: auto;
+  flex: none;
+}
+
+.p12-login-content {
+  display: flex;
+  width: 100%;
+  max-width: 420px;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.p12-login-content > div:first-child { margin-bottom: 24px; }
+.p12-login-content h1 { margin: 10px 0 0; font-size: clamp(28px, 3vw, 40px); line-height: 1.12; }
+.p12-login-content > div:first-child > p:last-child { margin-top: 12px; line-height: 1.55; }
+
+.p12-login-form {
+  display: grid;
+  gap: 18px;
+  padding: 28px;
+  border: 1px solid #eee9f6;
+  border-radius: 26px;
+  background: white;
+  box-shadow: 0 20px 45px -32px #1f1a4d66;
+}
+
+.p12-login-form label { display: block; }
+.p12-login-form label > span:first-child { display: block; margin-bottom: 8px; }
+.p12-login-form label > span:last-child {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid #e7e1f0;
+  border-radius: 13px;
+}
+.p12-login-form label > span:last-child:focus-within { border-color: #7437d9; box-shadow: 0 0 0 3px #7437d91c; }
+.p12-login-form label svg { flex: none; }
+.p12-login-form input { width: 100%; min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; }
+.p12-login-form button { min-height: 48px; border: 0; border-radius: 13px; background: #7437d9; color: white; cursor: pointer; }
+.p12-login-form button:hover { background: #6026bc; }
+
+.p12-login-info {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  overflow: hidden;
+  padding: 48px clamp(32px, 5vw, 88px);
+  border-radius: 28px 0 0 28px;
+  background: #1f1a4d;
+  color: white;
+}
+.p12-login-info > div:last-child { width: 100%; max-width: 550px; margin: auto; }
+.p12-login-info h2 { margin: 0; font-size: clamp(36px, 4vw, 58px); line-height: 1.12; }
+.p12-login-info > div:last-child > p:nth-of-type(2) { margin-top: 22px; line-height: 1.7; }
+.p12-login-info > div:last-child > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 32px; }
+.p12-login-info > div:last-child > div > div { min-width: 0; padding: 18px; border: 1px solid #ffffff24; border-radius: 18px; background: #ffffff12; }
+.p12-login-info h3 { margin: 0; }
+.p12-login-info h3 + p { margin: 8px 0 0; line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .p12-login { grid-template-columns: minmax(0, 1fr); }
+  .p12-login-panel { min-height: auto; padding: 26px 24px; }
+  .p12-login-content { padding: 40px 0 28px; }
+  .p12-login-info { border-radius: 28px 28px 0 0; padding: 42px 24px; }
+}
+
+@media (max-width: 600px) {
+  .p12-login-form { padding: 22px; }
+  .p12-login-info > div:last-child > div { grid-template-columns: minmax(0, 1fr); }
+}

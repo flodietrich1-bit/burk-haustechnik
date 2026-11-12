@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { X, Lock, KeyRound, CheckCircle2, AlertCircle, Save } from 'lucide-react';
 import type { User } from '../types';
-import { updateUserPassword } from '../services/firestoreService';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { auth } from '../firebase';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -27,13 +28,6 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     e.preventDefault();
     setError('');
 
-    const expectedCurrent = currentUser.password || (currentUser.role === 'admin' ? 'Admin2026!' : 'Bauleiter2026!');
-
-    if (oldPassword !== expectedCurrent) {
-      setError('Das alte Passwort ist nicht korrekt.');
-      return;
-    }
-
     if (newPassword.length < 6) {
       setError('Das neue Passwort muss mindestens 6 Zeichen lang sein.');
       return;
@@ -51,7 +45,10 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
     setLoading(true);
     try {
-      await updateUserPassword(currentUser.id, newPassword);
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser?.email) throw new Error('Bitte erneut anmelden.');
+      await reauthenticateWithCredential(firebaseUser, EmailAuthProvider.credential(firebaseUser.email, oldPassword));
+      await updatePassword(firebaseUser, newPassword);
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);

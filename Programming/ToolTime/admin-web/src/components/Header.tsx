@@ -2,10 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat, X
 } from 'lucide-react';
+import type { TenantBranding } from '../types/branding';
+import { readableTextColor } from '../types/branding';
 import type { Project, Alert, User } from '../types';
 import { updateAlertStatus } from '../services/firestoreService';
 
 interface HeaderProps {
+  branding: TenantBranding | null;
   projects: Project[];
   activeProject: Project | null;
   currentUser: User | null;
@@ -18,6 +21,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   projects,
+  branding,
   activeProject,
   currentUser,
   alerts = [],
@@ -53,23 +57,12 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="bg-[#1C2A3B] text-white border-b border-slate-700 sticky top-0 z-40 shadow-md">
+    <header className="bg-white text-slate-800 border-b border-slate-200 sticky top-0 z-40 shadow-sm">
       <div className="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         
-        {/* Brand: Offizielles BURK Haustechnik Logo */}
-        <div className="flex items-center space-x-3 shrink-0">
-          <div className="h-10 px-2.5 py-1 bg-white rounded-xl flex items-center justify-center shadow-sm shrink-0 border border-slate-700/50">
-            <img 
-              src="/burk-haustechnik-logo.svg" 
-              alt="BURK Haustechnik" 
-              className="h-7 w-auto object-contain"
-            />
-          </div>
-          <div className="flex items-center space-x-1.5">
-            <span className="text-[11px] bg-[#3B82C4] text-white px-2 py-0.5 rounded-full font-bold shadow-xs tracking-wide">
-              ToolTime
-            </span>
-          </div>
+        <div className="flex min-w-0 items-center gap-3 shrink-0">
+          {branding?.logoUrl ? <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1"><img src={branding.logoUrl} alt={`${branding.name} Logo`} className="max-h-full max-w-full object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/></div> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold" style={{ backgroundColor: branding?.primaryColor || '#7437D9', color: readableTextColor(branding?.primaryColor || '#7437D9') }}>{(branding?.name || 'F').charAt(0)}</div>}
+          <span className="max-w-44 truncate text-base font-semibold sm:max-w-64" style={{ color: branding?.secondaryColor }}>{branding?.name || 'Firma'}</span>
         </div>
 
         {/* Center / Action Group: Projektname (links) + Button Neues Projekt (rechts) */}

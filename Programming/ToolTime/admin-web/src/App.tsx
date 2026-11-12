@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type CSSProperties } from 'react';
 import { FolderPlus, Plus } from 'lucide-react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -12,10 +12,9 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { ReordersView } from './components/ReordersView';
 import { AufmassView } from './components/AufmassView';
 import { ProjectSettingsView } from './components/ProjectSettingsView';
-import { UserManagementView } from './components/UserManagementView';
+import { TenantMembersView } from './components/TenantMembersView';
 import { GaebUploader } from './components/GaebUploader';
 import { NewProjectModal } from './components/NewProjectModal';
-import { LoginView } from './components/LoginView';
 import { ChangePasswordModal } from './components/ChangePasswordModal';
 import { DeleteProjectConfirmModal } from './components/DeleteProjectConfirmModal';
 import { exportMaterialReportToExcel } from './services/excelExporter';
@@ -29,21 +28,22 @@ import {
   listenToAddendums,
   listenToAlerts,
   listenToUsers,
-  getCurrentAuthUser,
-  setCurrentAuthUser,
   getLocalUsers,
   getLocalProjects,
   getMaterialActualQty,
   deleteProject
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
+import type { TenantBranding } from './types/branding';
 
-export function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => getCurrentAuthUser());
+interface AppProps { authenticatedUser: User; tenantId: string; branding: TenantBranding | null; onLogout: () => void; }
+
+export function App({ authenticatedUser: currentUser, tenantId, branding, onLogout }: AppProps) {
+  const activeProjectStorageKey = `tooltime_${tenantId}_active_project_id`;
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [projects, setProjects] = useState<Project[]>(() => getLocalProjects());
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
-    const saved = localStorage.getItem('burk_tooltime_active_project_id');
+    const saved = localStorage.getItem(activeProjectStorageKey);
     if (saved) return saved;
     const initial = getLocalProjects();
     return initial.length > 0 ? initial[0].id : DEFAULT_PROJECT_ID;
@@ -134,7 +134,7 @@ export function App() {
   // 2. Listen to active project data whenever selectedProjectId changes
   useEffect(() => {
     if (!selectedProjectId) {
-      localStorage.removeItem('burk_tooltime_active_project_id');
+      localStorage.removeItem(activeProjectStorageKey);
       setActiveProject(null);
       setPositions([]);
       setRooms([]);
@@ -144,7 +144,7 @@ export function App() {
       return;
     }
 
-    localStorage.setItem('burk_tooltime_active_project_id', selectedProjectId);
+    localStorage.setItem(activeProjectStorageKey, selectedProjectId);
 
     const unsubProject = listenToProject(selectedProjectId, setActiveProject);
     const unsubPositions = listenToPositions(selectedProjectId, setPositions);
@@ -161,7 +161,7 @@ export function App() {
       unsubAddendums();
       unsubAlerts();
     };
-  }, [selectedProjectId]);
+  }, [selectedProjectId, activeProjectStorageKey]);
 
   const handleSelectProject = (id: string) => {
     setSelectedProjectId(id);
@@ -295,22 +295,11 @@ export function App() {
     return count;
   }, [positions, rooms]);
 
-  if (!currentUser) {
-    return (
-      <LoginView
-        users={users}
-        onLogin={(user) => {
-          setCurrentUser(user);
-          setCurrentAuthUser(user);
-        }}
-      />
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col antialiased">
+    <div className="tenant-cockpit min-h-screen bg-white flex flex-col antialiased" style={{ '--tenant-primary': branding?.primaryColor || '#7437D9', '--tenant-secondary': branding?.secondaryColor || '#1F1A4D' } as CSSProperties}>
       {/* Top Navigation: Streamlined with Project Switcher, New Project & Alerts */}
       <Header
+        branding={branding}
         projects={accessibleProjects}
         activeProject={activeProject}
         currentUser={currentUser}
@@ -319,8 +308,7 @@ export function App() {
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onLogout={() => {
-          setCurrentUser(null);
-          setCurrentAuthUser(null);
+          onLogout();
         }}
       />
 
@@ -328,6 +316,7 @@ export function App() {
       <div className="flex-1 flex overflow-hidden max-w-[1920px] w-full mx-auto">
         {/* Sidebar with PROJEKT and ACCOUNT categories */}
         <Sidebar
+          branding={branding}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           openAddendumsCount={openAddendumsCount}
@@ -477,10 +466,7 @@ export function App() {
 
             {/* TAB: User & Role Admin (Admin only) */}
             {activeTab === 'users' && currentUser.role === 'admin' && (
-              <UserManagementView
-                users={users}
-                projects={projects}
-              />
+              <TenantMembersView tenantId={tenantId} projects={projects} primaryColor={branding?.primaryColor || '#7437D9'} />
             )}
 
           </div>

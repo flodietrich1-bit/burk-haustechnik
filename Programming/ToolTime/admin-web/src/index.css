@@ -21,6 +21,18 @@ body {
   min-height: 100vh;
 }
 
+.admin-color-picker {
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #ded1f3;
+  background: transparent;
+  overflow: hidden;
+}
+.admin-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.admin-color-picker::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.admin-color-picker::-moz-color-swatch { border: 0; border-radius: 50%; }
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
@@ -36,3 +48,14 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
+
+/* Firmencockpit: helle Oberfläche, Firmenfarben nur für Akzente. */
+.tenant-cockpit { --tenant-primary: #7437D9; --tenant-secondary: #1F1A4D; }
+.tenant-cockpit .tenant-nav-active { background: var(--tenant-primary); color: white; }
+.tenant-cockpit aside [class*="text-[#3B82C4]"] { color: var(--tenant-primary); }
+.tenant-cockpit aside [class*="text-slate-400"] { color: #64748b; }
+.tenant-cockpit main h1, .tenant-cockpit main h2 { color: var(--tenant-secondary); }
+.tenant-cockpit main button[class*="bg-[#3B82C4]"], .tenant-cockpit header button[class*="bg-[#3B82C4]"] { background: var(--tenant-primary); color: white; }
+.tenant-cockpit header { color: #1e293b; }
+.tenant-cockpit header > div > div button[class*="bg-slate-800"] { background: #f8fafc; border-color: #e2e8f0; color: #1e293b; }
+.tenant-cockpit header > div > div button[class*="bg-slate-800"] span[class*="text-white"] { color: #1e293b; }

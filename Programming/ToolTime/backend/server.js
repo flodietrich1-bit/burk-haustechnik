@@ -16,18 +16,27 @@ import {
   uploadAndTranslateDwg
 } from './apsService.js';
 import { generateAufmassPdf } from './aufmassPdfService.js';
+import { tenantRouter } from './routes/tenantRoutes.js';
+import { publicInviteRouter } from './routes/publicInviteRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // CORS setup to allow admin-web (localhost:5173 / localhost:8080)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:8080').split(',').map(origin => origin.trim());
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  origin(origin, callback) {
+    const localDevOrigin = process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin || '');
+    if (!origin || allowedOrigins.includes(origin) || localDevOrigin) return callback(null, true);
+    callback(new Error('Origin not allowed'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 }));
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+app.use('/api/tenants', tenantRouter);
+app.use('/api/public/invites', publicInviteRouter);
 
 // Multer in-memory storage for high-speed streaming
 const upload = multer({

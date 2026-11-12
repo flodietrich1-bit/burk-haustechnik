@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
-import { getAuth, type Auth } from "firebase/auth";
+import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
+import { connectStorageEmulator, getStorage, type FirebaseStorage } from "firebase/storage";
+import { browserLocalPersistence, connectAuthEmulator, getAuth, initializeAuth, type Auth } from "firebase/auth";
 
 export const firebaseConfig = {
   apiKey: (typeof import.meta !== 'undefined' && import.meta.env?.VITE_FIREBASE_API_KEY) || "AIzaSyAXf_veu3fsfYhyaRJI8531_ObU4zMY040",
@@ -30,15 +30,24 @@ try {
 }
 export const storage = storageInstance as FirebaseStorage;
 
+const useEmulators = import.meta.env?.VITE_USE_FIREBASE_EMULATORS === 'true';
 let authInstance: Auth | null = null;
 // Only initialize Auth when an API key is present to avoid auth/invalid-api-key top-level exception
 if (firebaseConfig.apiKey) {
   try {
-    authInstance = getAuth(appInstance);
+    authInstance = useEmulators ? initializeAuth(appInstance, { persistence: browserLocalPersistence }) : getAuth(appInstance);
   } catch (e) {
     console.warn("Firebase Auth initialization skipped:", e);
   }
 }
 export const auth = authInstance as Auth;
+
+if (useEmulators && !(globalThis as { __tooltimeEmulatorsConnected?: boolean }).__tooltimeEmulatorsConnected) {
+  const emulatorHost = window.location.hostname;
+  connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
+  connectFirestoreEmulator(db, emulatorHost, 8085);
+  if (storage) connectStorageEmulator(storage, emulatorHost, 9199);
+  (globalThis as { __tooltimeEmulatorsConnected?: boolean }).__tooltimeEmulatorsConnected = true;
+}
 
 export default appInstance;

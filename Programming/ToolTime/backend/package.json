@@ -7,7 +7,13 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node test_converter.js"
+    "dev:local": "FIREBASE_PROJECT_ID=demo-tooltime FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 FIREBASE_STORAGE_EMULATOR_HOST=127.0.0.1:9199 INVITE_HMAC_SECRET=local-development-secret-change-me-123 ALLOWED_ORIGINS=http://127.0.0.1:5173,http://localhost:5173 node --watch server.js",
+    "emulators": "XDG_CONFIG_HOME=/tmp/tooltime-firebase-config firebase emulators:start --only auth,firestore,storage --config ../firebase.json --project demo-tooltime",
+    "seed:local": "FIREBASE_PROJECT_ID=demo-tooltime FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 node scripts/seedEmulator.js",
+    "test": "node test_converter.js",
+    "test:rules": "node --test tests/firestoreRules.test.js",
+    "test:local-api": "node tests/localApiSmoke.js",
+    "bootstrap": "node scripts/bootstrap.js"
   },
   "keywords": [],
   "author": "",
@@ -16,9 +22,17 @@
     "cors": "^2.8.6",
     "dxf-parser": "^1.1.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.4",
     "fast-xml-parser": "^5.11.1",
     "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
     "multer": "^2.4.0",
-    "pdfkit": "^0.20.2"
+    "nodemailer": "^10.5.0",
+    "pdfkit": "^0.20.2",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase-tools": "^15.35.0"
   }
 }

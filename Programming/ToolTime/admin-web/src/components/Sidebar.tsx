@@ -16,6 +16,8 @@ import {
   Scale
 } from 'lucide-react';
 
+import type { TenantBranding } from '../types/branding';
+import { readableTextColor } from '../types/branding';
 import type { User } from '../types';
 import { ADMIN_PANEL_VERSION } from '../version';
 
@@ -32,6 +34,7 @@ export type TabType =
   | 'users';
 
 interface SidebarProps {
+  branding: TenantBranding | null;
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
   openAddendumsCount: number;
@@ -47,6 +50,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
+  branding,
   setActiveTab,
   openAddendumsCount,
   totalPositionsCount,
@@ -123,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 min-h-[calc(100vh-4rem)] border-r border-slate-800 p-4 shrink-0 flex flex-col justify-between select-none">
+    <aside className="w-64 bg-white text-slate-700 min-h-[calc(100vh-4rem)] border-r border-slate-200 p-4 shrink-0 flex flex-col justify-between select-none">
       <div className="space-y-6">
         
         {/* BLOCK 1: PROJEKT */}
@@ -140,14 +144,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                style={isActive ? { color: readableTextColor(branding?.primaryColor || '#7437D9') } : undefined}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   isActive
-                    ? 'bg-[#3B82C4] text-white shadow-md shadow-blue-500/20'
-                    : 'hover:bg-slate-800/90 text-slate-300 hover:text-white'
+                    ? 'tenant-nav-active shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-700'
                 }`}
               >
                 <div className="flex items-center space-x-2.5">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? '' : 'text-slate-500'}`} />
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
@@ -211,14 +216,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
+                  style={isActive ? { color: readableTextColor(branding?.primaryColor || '#7437D9') } : undefined}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     isActive
-                      ? 'bg-[#3B82C4] text-white shadow-md shadow-blue-500/20'
-                      : 'hover:bg-slate-800/90 text-slate-300 hover:text-white'
+                      ? 'tenant-nav-active shadow-sm'
+                      : 'hover:bg-slate-50 text-slate-700'
                   }`}
                 >
                   <div className="flex items-center space-x-2.5">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    <Icon className={`w-4 h-4 ${isActive ? '' : 'text-slate-500'}`} />
                     <span>{item.label}</span>
                   </div>
                 </button>
@@ -230,14 +236,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Footer Info Box */}
-      <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-800 space-y-2">
+      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
         <div className="flex items-center justify-between">
           <div className="bg-white/95 px-2 py-0.5 rounded-lg flex items-center shadow-xs">
-            <img 
-              src="/burk-haustechnik-logo.svg" 
-              alt="BURK Haustechnik" 
-              className="h-4 w-auto object-contain"
-            />
+            {branding?.logoUrl ? <img src={branding.logoUrl} alt={`${branding.name} Logo`} className="h-7 max-w-32 object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/> : <span className="text-xs font-semibold" style={{ color: branding?.secondaryColor }}>{branding?.name || 'Firma'}</span>}
           </div>
           <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/40">
             Live
@@ -245,7 +247,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <div className="flex items-center justify-between pt-0.5">
           <span className="text-[10px] text-slate-400 font-medium">Cockpit Version</span>
-          <span className="bg-[#3B82C4]/25 text-[#60A5FA] border border-[#3B82C4]/50 px-2 py-0.5 rounded font-mono text-xs font-bold tracking-wide">
+          <span className="rounded border px-2 py-0.5 font-mono text-xs font-bold tracking-wide" style={{ color: branding?.secondaryColor || '#1F1A4D', borderColor: branding?.primaryColor || '#7437D9' }}>
             {ADMIN_PANEL_VERSION}
           </span>
         </div>

@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "burk-haustechnik",
+    "local": "demo-tooltime"
+  }
+}

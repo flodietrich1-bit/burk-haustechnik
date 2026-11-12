@@ -7,16 +7,41 @@ import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocum
 
 export const DEFAULT_PROJECT_ID = '';
 
+let activeTenantId = typeof localStorage !== 'undefined' ? (localStorage.getItem('tooltime_active_tenant_id') || '') : '';
+export function setActiveTenantId(tenantId: string): void {
+  activeTenantId = tenantId;
+  refreshTenantCacheKeys();
+  if (typeof localStorage !== 'undefined') localStorage.setItem('tooltime_active_tenant_id', tenantId);
+}
+export function getActiveTenantId(): string {
+  if (!activeTenantId) throw new Error('No active ToolTime tenant selected');
+  return activeTenantId;
+}
+
 // Initial projects: start completely empty for clean onboarding
 export const INITIAL_PROJECTS: Project[] = [];
 
 // Local storage key for persistent projects in offline / local fallback mode
-const LOCAL_STORAGE_PROJECTS_KEY = 'burk_tooltime_projects_v2';
-const LOCAL_STORAGE_POSITIONS_PREFIX = 'burk_tooltime_positions_';
-const LOCAL_STORAGE_ROOMS_PREFIX = 'burk_tooltime_rooms_';
-const LOCAL_STORAGE_ALERTS_PREFIX = 'burk_tooltime_alerts_';
-const LOCAL_STORAGE_PLANS_PREFIX = 'burk_tooltime_plans_';
-const LOCAL_STORAGE_ADDENDUMS_PREFIX = 'burk_tooltime_addendums_';
+let LOCAL_STORAGE_PROJECTS_KEY = '';
+let LOCAL_STORAGE_POSITIONS_PREFIX = '';
+let LOCAL_STORAGE_ROOMS_PREFIX = '';
+let LOCAL_STORAGE_ALERTS_PREFIX = '';
+let LOCAL_STORAGE_PLANS_PREFIX = '';
+let LOCAL_STORAGE_ADDENDUMS_PREFIX = '';
+let LOCAL_STORAGE_DELETED_PROJECTS_KEY = '';
+let LOCAL_STORAGE_USERS_KEY = '';
+function refreshTenantCacheKeys() {
+  const scope = activeTenantId || 'unscoped';
+  LOCAL_STORAGE_PROJECTS_KEY = `tooltime_${scope}_projects_v3`;
+  LOCAL_STORAGE_POSITIONS_PREFIX = `tooltime_${scope}_positions_`;
+  LOCAL_STORAGE_ROOMS_PREFIX = `tooltime_${scope}_rooms_`;
+  LOCAL_STORAGE_ALERTS_PREFIX = `tooltime_${scope}_alerts_`;
+  LOCAL_STORAGE_PLANS_PREFIX = `tooltime_${scope}_plans_`;
+  LOCAL_STORAGE_ADDENDUMS_PREFIX = `tooltime_${scope}_addendums_`;
+  LOCAL_STORAGE_DELETED_PROJECTS_KEY = `tooltime_${scope}_deleted_project_ids`;
+  LOCAL_STORAGE_USERS_KEY = `tooltime_${scope}_users`;
+}
+refreshTenantCacheKeys();
 
 export function getLocalAddendums(projectId: string): Addendum[] {
   try {
@@ -38,8 +63,6 @@ export function saveLocalAddendums(projectId: string, list: Addendum[]): void {
     console.warn('LocalStorage error saving addendums:', e);
   }
 }
-
-const LOCAL_STORAGE_DELETED_PROJECTS_KEY = 'burk_tooltime_deleted_project_ids';
 
 export function getDeletedProjectIds(): Set<string> {
   try {
@@ -220,7 +243,7 @@ export function listenToProjects(callback: (projects: Project[]) => void) {
   // Immediately deliver current cached state synchronously
   callback(getLocalProjects());
 
-  const colRef = collection(db, 'projects');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
     const deletedIds = getDeletedProjectIds();
     if (!snap.empty) {
@@ -259,7 +282,7 @@ export function listenToProject(projectId: string, callback: (project: Project |
   const local = getLocalProjects().find(p => p.id === projectId) || null;
   callback(local);
 
-  const ref = doc(db, 'projects', projectId);
+  const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId);
   const unsubFirestore = onSnapshot(ref, (snap) => {
     if (snap.exists()) {
       const p = { id: snap.id, ...snap.data() } as Project;
@@ -301,7 +324,7 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
     callback([]);
   }
 
-  const colRef = collection(db, 'projects', projectId, 'positions');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Position);
@@ -344,7 +367,7 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
     callback([]);
   }
 
-  const colRef = collection(db, 'projects', projectId, 'rooms');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Room);
@@ -387,7 +410,7 @@ export function listenToPlans(projectId: string, callback: (plans: PlanDocument[
     callback([]);
   }
 
-  const colRef = collection(db, 'projects', projectId, 'plans');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'plans');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as PlanDocument);
@@ -411,16 +434,10 @@ export function listenToBookings(projectId: string, callback: (bookings: Booking
     return () => {};
   }
 
-  let globalBookings: Booking[] = [];
   let projectBookings: Booking[] = [];
 
   const emitMerged = () => {
     const map = new Map<string, Booking>();
-    globalBookings.forEach(b => {
-      if (b.projectId === projectId || !b.projectId) {
-        map.set(b.id, b);
-      }
-    });
     projectBookings.forEach(b => {
       const existing = map.get(b.id);
       map.set(b.id, existing ? { ...existing, ...b } : b);
@@ -428,21 +445,7 @@ export function listenToBookings(projectId: string, callback: (bookings: Booking
     callback(Array.from(map.values()));
   };
 
-  const globalRef = collection(db, 'bookings');
-  const unsubGlobal = onSnapshot(globalRef, (snap) => {
-    if (!snap.empty) {
-      globalBookings = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }) as Booking)
-        .filter(b => !b.projectId || b.projectId === projectId);
-    } else {
-      globalBookings = [];
-    }
-    emitMerged();
-  }, (err) => {
-    console.warn('Firestore global bookings fallback:', err.message);
-  });
-
-  const projectRef = collection(db, 'projects', projectId, 'bookings');
+  const projectRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'bookings');
   const unsubProject = onSnapshot(projectRef, (snap) => {
     if (!snap.empty) {
       projectBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Booking);
@@ -455,7 +458,6 @@ export function listenToBookings(projectId: string, callback: (bookings: Booking
   });
 
   return () => {
-    unsubGlobal();
     unsubProject();
   };
 }
@@ -481,7 +483,6 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
     window.addEventListener('burk_tooltime_addendums_updated', localUpdateHandler);
   }
 
-  let globalList: Addendum[] = [];
   let projectList: Addendum[] = [];
 
   const emitMerged = () => {
@@ -494,12 +495,7 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
       }
     });
 
-    // 2. Merge with Firestore collections
-    globalList.forEach(a => {
-      if (a.projectId === projectId || !a.projectId) {
-        map.set(a.id, a);
-      }
-    });
+    // 2. Merge with the tenant-scoped Firestore collection
     projectList.forEach(a => {
       const existing = map.get(a.id);
       map.set(a.id, existing ? { ...existing, ...a } : a);
@@ -515,21 +511,7 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
     callback(normalized);
   };
 
-  const globalRef = collection(db, 'addendums');
-  const unsubGlobal = onSnapshot(globalRef, (snap) => {
-    if (!snap.empty) {
-      globalList = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }) as Addendum)
-        .filter(a => !a.projectId || a.projectId === projectId);
-    } else {
-      globalList = [];
-    }
-    emitMerged();
-  }, (err) => {
-    console.warn('Firestore global addendums fallback:', err.message);
-  });
-
-  const projectRef = collection(db, 'projects', projectId, 'addendums');
+  const projectRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums');
   const unsubProject = onSnapshot(projectRef, (snap) => {
     if (!snap.empty) {
       projectList = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Addendum);
@@ -545,7 +527,6 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
     if (typeof window !== 'undefined') {
       window.removeEventListener('burk_tooltime_addendums_updated', localUpdateHandler);
     }
-    unsubGlobal();
     unsubProject();
   };
 }
@@ -578,7 +559,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   notifyPlansSubscribers(projectId, []);
 
   try {
-    const projectRef = doc(db, 'projects', projectId);
+    const projectRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId);
 
     // 1. Mark as tombstone (status: deleted, isDeleted: true) so all clients filter it out permanently
     try {
@@ -607,7 +588,7 @@ export async function deleteProject(projectId: string): Promise<void> {
 
     for (const sub of subcollections) {
       try {
-        const subSnap = await getDocs(collection(db, 'projects', projectId, sub));
+        const subSnap = await getDocs(collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, sub));
         if (!subSnap.empty) {
           const chunkSize = 200;
           for (let i = 0; i < subSnap.docs.length; i += chunkSize) {
@@ -620,22 +601,6 @@ export async function deleteProject(projectId: string): Promise<void> {
       } catch (subErr) {
         console.warn(`Error wiping subcollection ${sub} for project ${projectId}:`, subErr);
       }
-    }
-
-    // 3. Remove projectId from assignedProjectIds of all users
-    try {
-      const usersSnap = await getDocs(collection(db, 'users'));
-      if (!usersSnap.empty) {
-        for (const uDoc of usersSnap.docs) {
-          const uData = uDoc.data();
-          if (Array.isArray(uData.assignedProjectIds) && uData.assignedProjectIds.includes(projectId)) {
-            const updated = uData.assignedProjectIds.filter((id: string) => id !== projectId);
-            await updateDoc(uDoc.ref, { assignedProjectIds: updated });
-          }
-        }
-      }
-    } catch (userErr) {
-      console.warn('Error clearing project from users:', userErr);
     }
 
     // Also update local users cache
@@ -675,7 +640,7 @@ export async function clearAllProjects(): Promise<void> {
     localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + p.id);
     localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + p.id);
     try {
-      await deleteDoc(doc(db, 'projects', p.id));
+      await deleteDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', p.id));
     } catch {
       // ignore
     }
@@ -693,7 +658,7 @@ export async function uploadPlanFile(
 ): Promise<{ downloadUrl: string; storagePath: string; dwgUrl: string; pdfUrl: string }> {
   const isPdf = file.name.toLowerCase().endsWith('.pdf');
   const ext = isPdf ? '.pdf' : '.dwg';
-  const storagePath = `projects/${projectId}/plans/${planId}${ext}`;
+  const storagePath = `tenants/${getActiveTenantId()}/projects/${projectId}/plans/${planId}${ext}`;
   
   if (!storage || isStorageReachable === false) {
     if (onProgress) onProgress(100);
@@ -791,9 +756,9 @@ export async function savePlan(projectId: string, plan: PlanDocument): Promise<v
   notifyPlansSubscribers(projectId, updated);
 
   try {
-    const pRef = doc(db, 'projects', projectId, 'plans', plan.id);
+    const pRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'plans', plan.id);
     await setDoc(pRef, plan, { merge: true });
-    await updateDoc(doc(db, 'projects', projectId), { plansCount: updated.length });
+    await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { plansCount: updated.length });
   } catch (err: any) {
     console.warn('Firestore savePlan error:', err.message);
   }
@@ -806,7 +771,7 @@ export async function updatePlanFloor(projectId: string, planId: string, newFloo
   notifyPlansSubscribers(projectId, updated);
 
   try {
-    const pRef = doc(db, 'projects', projectId, 'plans', planId);
+    const pRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'plans', planId);
     await updateDoc(pRef, { floor: newFloor, level: newFloor });
   } catch (err: any) {
     console.warn('Firestore updatePlanFloor error:', err.message);
@@ -820,9 +785,9 @@ export async function deletePlan(projectId: string, planId: string): Promise<voi
   notifyPlansSubscribers(projectId, updated);
 
   try {
-    const pRef = doc(db, 'projects', projectId, 'plans', planId);
+    const pRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'plans', planId);
     await deleteDoc(pRef);
-    await updateDoc(doc(db, 'projects', projectId), { plansCount: updated.length });
+    await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { plansCount: updated.length });
   } catch (err: any) {
     console.warn('Firestore deletePlan error:', err.message);
   }
@@ -862,7 +827,7 @@ export async function createProject(
 
   // Attempt Firestore sync
   try {
-    const projectRef = doc(db, 'projects', project.id);
+    const projectRef = doc(db, 'tenants', getActiveTenantId(), 'projects', project.id);
     await setDoc(projectRef, cleanForFirestore(updatedProject), { merge: true });
 
     // High-speed Chunked Batch-Write to both /positions AND /items (max 500 ops per batch)
@@ -872,8 +837,8 @@ export async function createProject(
       const batch = writeBatch(db);
       for (const pos of chunk) {
         if (!pos.id) continue;
-        const pRef = doc(db, 'projects', project.id, 'positions', pos.id);
-        const iRef = doc(db, 'projects', project.id, 'items', pos.id);
+        const pRef = doc(db, 'tenants', getActiveTenantId(), 'projects', project.id, 'positions', pos.id);
+        const iRef = doc(db, 'tenants', getActiveTenantId(), 'projects', project.id, 'items', pos.id);
         batch.set(pRef, cleanForFirestore(pos), { merge: true });
         batch.set(iRef, cleanForFirestore({
           id: pos.id,
@@ -897,11 +862,11 @@ export async function createProject(
     if (rooms.length > 0 || plans.length > 0) {
       const roomPlanBatch = writeBatch(db);
       for (const r of rooms) {
-        const rRef = doc(db, 'projects', project.id, 'rooms', r.id);
+        const rRef = doc(db, 'tenants', getActiveTenantId(), 'projects', project.id, 'rooms', r.id);
         roomPlanBatch.set(rRef, cleanForFirestore(r), { merge: true });
       }
       for (const plan of plans) {
-        const planRef = doc(db, 'projects', project.id, 'plans', plan.id);
+        const planRef = doc(db, 'tenants', getActiveTenantId(), 'projects', project.id, 'plans', plan.id);
         roomPlanBatch.set(planRef, cleanForFirestore(plan), { merge: true });
       }
       await roomPlanBatch.commit();
@@ -937,8 +902,8 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
       const batch = writeBatch(db);
       for (const pos of chunk) {
         if (!pos.id) continue;
-        const ref = doc(db, 'projects', projectId, 'positions', pos.id);
-        const iRef = doc(db, 'projects', projectId, 'items', pos.id);
+        const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions', pos.id);
+        const iRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'items', pos.id);
         batch.set(ref, pos, { merge: true });
         batch.set(iRef, {
           id: pos.id,
@@ -957,7 +922,7 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
       }
       await batch.commit();
     }
-    await updateDoc(doc(db, 'projects', projectId), { totalPositions: mergedList.length });
+    await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { totalPositions: mergedList.length });
   } catch (err: any) {
     console.warn('Firestore savePositionsBatch error:', err.message);
   }
@@ -1008,7 +973,7 @@ export async function addPositionDeliveredQty(projectId: string, positionIdOrPos
   try {
     const target = updated.find(p => p.id === matchedId);
     if (target) {
-      const ref = doc(db, 'projects', projectId, 'positions', target.id);
+      const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions', target.id);
       await setDoc(ref, target, { merge: true });
     }
   } catch (err: any) {
@@ -1124,7 +1089,7 @@ export async function saveRoom(projectId: string, room: Room) {
   localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
 
   try {
-    const ref = doc(db, 'projects', projectId, 'rooms', room.id);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms', room.id);
     await setDoc(ref, room, { merge: true });
   } catch (err: any) {
     console.warn('Firestore saveRoom error:', err.message);
@@ -1139,7 +1104,7 @@ export async function deleteRoom(projectId: string, roomId: string) {
   }
 
   try {
-    const ref = doc(db, 'projects', projectId, 'rooms', roomId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms', roomId);
     await deleteDoc(ref);
   } catch (err: any) {
     console.warn('Firestore deleteRoom error:', err.message);
@@ -1191,8 +1156,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
 
   // 2. Persist to Firestore
   try {
-    await setDoc(doc(db, 'projects', projectId, 'addendums', addId), payload, { merge: true });
-    await setDoc(doc(db, 'addendums', addId), payload, { merge: true });
+    await setDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addId), payload, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAddendum error:', err.message);
   }
@@ -1222,16 +1186,9 @@ export async function updateAddendumStatus(
     }
   }
 
-  try {
-    const ref = doc(db, 'addendums', addendumId);
-    await setDoc(ref, payload, { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore updateAddendumStatus global error:', err.message);
-  }
-
   if (projectId) {
     try {
-      const projRef = doc(db, 'projects', projectId, 'addendums', addendumId);
+      const projRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addendumId);
       await setDoc(projRef, payload, { merge: true });
     } catch (err: any) {
       console.warn('Firestore updateAddendumStatus project error:', err.message);
@@ -1267,9 +1224,8 @@ export async function batchUpdateAddendumsRequested(
       updatedAt: now
     });
     if (projectId) {
-      batch.set(doc(db, 'projects', projectId, 'addendums', id), payload, { merge: true });
+      batch.set(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', id), payload, { merge: true });
     }
-    batch.set(doc(db, 'addendums', id), payload, { merge: true });
   }
 
   try {
@@ -1310,7 +1266,7 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
     callback([]);
   }
 
-  const colRef = collection(db, 'projects', projectId, 'alerts');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'alerts');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Alert);
@@ -1351,7 +1307,7 @@ export async function updateAlertStatus(
   notifyAlertsSubscribers(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'alerts', alertId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'alerts', alertId);
     await updateDoc(ref, {
       status,
       actionNote: actionNote || null,
@@ -1370,7 +1326,7 @@ export async function deleteAlert(projectId: string, alertId: string) {
   notifyAlertsSubscribers(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'alerts', alertId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'alerts', alertId);
     await deleteDoc(ref);
   } catch (err: any) {
     console.warn('Firestore deleteAlert error:', err.message);
@@ -1385,7 +1341,7 @@ export async function createAlert(projectId: string, alert: Alert) {
   notifyAlertsSubscribers(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'alerts', alert.id);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'alerts', alert.id);
     await setDoc(ref, alert, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAlert error:', err.message);
@@ -1423,7 +1379,7 @@ export async function completeRoom(
   notifyRoomsSubscribers(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'rooms', roomId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms', roomId);
     await updateDoc(ref, {
       status: isCompleted ? 'completed' : 'in_progress',
       isCompleted: isCompleted,
@@ -1597,7 +1553,7 @@ export async function updateRoomMaterialActual(
   try {
     const targetRoom = updated.find(r => r.id === roomId);
     if (targetRoom) {
-      const ref = doc(db, 'projects', projectId, 'rooms', roomId);
+      const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms', roomId);
       await updateDoc(ref, { materials: targetRoom.materials });
     }
   } catch (err: any) {
@@ -1709,8 +1665,6 @@ export const MOCK_USERS: User[] = [
   }
 ];
 
-const LOCAL_STORAGE_USERS_KEY = 'burk_tooltime_users';
-
 /**
  * Normalizes and deduplicates user lists by canonical person identity (normalized name).
  * Combines richer information (email, phone, pin, role, project assignments) and ensures
@@ -1763,24 +1717,27 @@ export function getLocalUsers(): User[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return normalizeAndDeduplicateUsers([...MOCK_USERS, ...parsed]);
+        return normalizeAndDeduplicateUsers(parsed);
       }
     }
   } catch (e) {
     console.warn('Error reading users from localStorage:', e);
   }
-  return normalizeAndDeduplicateUsers(MOCK_USERS);
+  return [];
 }
 
 export function listenToUsers(callback: (users: User[]) => void) {
   // Synchronous immediate delivery
   callback(getLocalUsers());
 
-  const colRef = collection(db, 'users');
+  const colRef = collection(db, 'tenants', getActiveTenantId(), 'members');
   return onSnapshot(colRef, (snap) => {
     if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as User);
-      const merged = normalizeAndDeduplicateUsers([...MOCK_USERS, ...list]);
+      const list = snap.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, ...data, name: data.displayName || data.name || '', email: data.email || undefined } as User;
+      });
+      const merged = normalizeAndDeduplicateUsers(list);
       localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(merged));
       callback(merged);
     } else {
@@ -1793,30 +1750,20 @@ export function listenToUsers(callback: (users: User[]) => void) {
 
 export async function saveUser(user: User) {
   const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
+  const currentList: User[] = saved ? JSON.parse(saved) : [];
   const updated = [user, ...currentList.filter(u => u.id !== user.id)];
   localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
 
-  try {
-    const ref = doc(db, 'users', user.id);
-    await setDoc(ref, user, { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore saveUser error:', err.message);
-  }
+  throw new Error('Benutzeränderungen erfolgen ausschließlich über die tenantbezogene Admin-API.');
 }
 
 export async function updateUserPin(userId: string, pin: string) {
   const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
+  const currentList: User[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(u => u.id === userId ? { ...u, pin } : u);
   localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
 
-  try {
-    const ref = doc(db, 'users', userId);
-    await setDoc(ref, { pin }, { merge: true });
-  } catch (err: any) {
-    console.warn('Firestore updateUserPin error:', err.message);
-  }
+  throw new Error('Cloud-PINs werden im neuen Authentifizierungsmodell nicht mehr unterstützt.');
 }
 
 export async function updateProjectDetails(projectId: string, partial: Partial<Project>) {
@@ -1835,7 +1782,7 @@ export async function updateProjectDetails(projectId: string, partial: Partial<P
   }
 
   try {
-    const ref = doc(db, 'projects', projectId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId);
     await setDoc(ref, cleanForFirestore({
       ...partial,
       updatedAt: new Date().toISOString()
@@ -1873,23 +1820,8 @@ export function setCurrentAuthUser(user: User | null): void {
 }
 
 export async function updateUserPassword(userId: string, newPassword: string): Promise<void> {
-  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-  const currentList: User[] = saved ? JSON.parse(saved) : MOCK_USERS;
-  const updated = currentList.map(u => u.id === userId ? { ...u, password: newPassword } : u);
-  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
-
-  // If the logged in user changed their own password, update session
-  const authUser = getCurrentAuthUser();
-  if (authUser && authUser.id === userId) {
-    setCurrentAuthUser({ ...authUser, password: newPassword });
-  }
-
-  try {
-    const ref = doc(db, 'users', userId);
-    await updateDoc(ref, { password: newPassword });
-  } catch (err: any) {
-    console.warn('Firestore updateUserPassword error:', err.message);
-  }
+  void userId; void newPassword;
+  throw new Error('Passwortänderungen müssen über Firebase Authentication erfolgen.');
 }
 
 

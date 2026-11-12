@@ -1,5 +1,6 @@
 import { collection, doc, onSnapshot, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getActiveTenantId } from './firestoreService';
 import type { 
   Project, 
   Position, 
@@ -52,7 +53,7 @@ export function listenToAufmasse(projectId: string, callback: (aufmasse: Aufmass
   callback(getLocalAufmasse(projectId));
 
   try {
-    const colRef = collection(db, 'projects', projectId, 'aufmasse');
+    const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse');
     const q = query(colRef, orderBy('createdAt', 'desc'));
 
     const unsub = onSnapshot(q, (snap) => {
@@ -82,7 +83,7 @@ export async function saveAufmassDocument(projectId: string, aufmass: AufmassDoc
   saveLocalAufmasse(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'aufmasse', cleaned.id);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse', cleaned.id);
     await setDoc(ref, cleaned);
   } catch (err: any) {
     console.error('Firestore saveAufmassDocument error:', err);
@@ -99,7 +100,7 @@ export async function deleteAufmassDocument(projectId: string, aufmassId: string
   saveLocalAufmasse(projectId, updated);
 
   try {
-    const ref = doc(db, 'projects', projectId, 'aufmasse', aufmassId);
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse', aufmassId);
     await deleteDoc(ref);
   } catch (err: any) {
     console.error('Firestore deleteAufmassDocument error:', err);
