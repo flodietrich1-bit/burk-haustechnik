@@ -73,6 +73,23 @@ test('selected project manager and commercial manager can read their project', a
   await assertFails(getDoc(doc(env.authenticatedContext('other-bauleiter').firestore(), 'tenants/burk/projects/project-2')));
 });
 
+test('material request and commercial approval are server-owned transitions', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'tenants/burk/projects/project-1/addendums/requested'), { status: 'requested', title: 'Rohr', requestedToEmail: 'kaufmann@example.org' });
+    await setDoc(doc(context.firestore(), 'tenants/burk/projects/project-1/addendums/pending'), { status: 'pending', title: 'Rohr' });
+    await setDoc(doc(context.firestore(), 'tenants/burk/projects/project-1/addendums/approved'), { status: 'approved', title: 'Filter', commercialApprovedBy: 'Einkauf' });
+  });
+  const admin = env.authenticatedContext('admin-1').firestore();
+  const bauleiter = env.authenticatedContext('bauleiter-1').firestore();
+  await assertFails(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/requested'), { status: 'approved' }));
+  await assertFails(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/pending'), { status: 'requested' }));
+  await assertFails(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/pending'), { commercialApprovedBy: 'Fake' }));
+  await assertFails(setDoc(doc(admin, 'tenants/burk/projects/project-1/materialOrders/forged'), { sent: true }));
+  await assertFails(updateDoc(doc(bauleiter, 'tenants/burk/projects/project-1/addendums/pending'), { status: 'requested' }));
+  await assertSucceeds(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/pending'), { status: 'approved', approvalType: 'in_stock' }));
+  await assertSucceeds(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/approved'), { lvPositionId: 'new-position' }));
+});
+
 test('suspended tenant blocks ordinary members', async () => {
   await env.withSecurityRulesDisabled(async context => updateDoc(doc(context.firestore(), 'tenants/burk'), { status: 'suspended' }));
   await assertFails(getDoc(doc(env.authenticatedContext('admin-1').firestore(), 'tenants/burk/projects/project-1')));

@@ -2,7 +2,7 @@ import {
   collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, writeBatch, getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { auth, db, storage } from '../firebase';
 import { api } from './apiClient';
 import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocument, PlanLevel, RoomMaterialRequirement } from '../types';
 
@@ -930,7 +930,7 @@ export async function convertAddendumToLvPosition(
     group: finalGroup,
     shortText: finalShortText,
     qty: finalQty,
-    deliveredQty: finalQty, // Available immediately on site
+    deliveredQty: 0,
     qu: finalQu,
     unitPrice: finalUnitPrice,
     isAddendum: true,
@@ -974,15 +974,20 @@ export async function convertAddendumToLvPosition(
     await saveRoom(projectId, updatedRoom);
   }
 
-  // 4. Update Addendum Status to approved with LV metadata
-  await updateAddendumStatus(addendum.id, 'approved', projectId, {
-    approvalType: 'in_stock',
+  // 4. Record the LV link without overwriting an earlier commercial decision.
+  const lvMetadata = {
     lvPositionId: posId,
     lvPosNr: finalPosNr,
     isLvPosition: true,
     targetRoomId: targetRoom ? targetRoom.id : data.roomId,
     targetRoomName: targetRoom ? targetRoom.name : undefined
-  });
+  };
+  if (addendum.status === 'pending') {
+    await updateAddendumStatus(addendum.id, 'approved', projectId, { ...lvMetadata, approvalType: 'in_stock' });
+  } else {
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addendum.id);
+    await updateDoc(ref, cleanForFirestore(lvMetadata));
+  }
 
   return newPos;
 }
@@ -1023,6 +1028,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
   const now = new Date().toISOString();
   const rawPayload = {
     id: addId,
+    createdByUid: auth.currentUser?.uid || '',
     projectId,
     roomId: addendumData.roomId || 'allgemein',
     roomName: addendumData.roomName || 'Baustelle',
@@ -1050,23 +1056,18 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
 
   const payload: Addendum = cleanForFirestore(rawPayload as Addendum);
 
-  // 1. Immediately persist to localStorage for instant UI feedback
-  if (projectId) {
-    const currentLocal = getLocalAddendums(projectId);
-    const updatedLocal = [payload, ...currentLocal.filter(a => a.id !== addId)];
-    saveLocalAddendums(projectId, updatedLocal);
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId, addendum: payload } }));
-    }
-  }
-
-  // 2. Persist to Firestore
+  // Persist first so a rejected write cannot leave a phantom addendum in the UI.
   try {
     await setDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addId), payload, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAddendum error:', err.message);
     throw err;
+  }
+
+  if (projectId) {
+    const currentLocal = getLocalAddendums(projectId);
+    saveLocalAddendums(projectId, [payload, ...currentLocal.filter(a => a.id !== addId)]);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId, addendum: payload } }));
   }
 
   return payload;

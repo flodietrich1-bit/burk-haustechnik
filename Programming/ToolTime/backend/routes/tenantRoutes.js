@@ -8,6 +8,8 @@ import { prepareInvitationDelivery } from '../services/invitationDeliveryService
 import { sendEmail } from '../services/emailService.js';
 import { ensurePublicSlug, publicSlugForName } from '../services/publicTenantService.js';
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+
 export const tenantRouter = Router();
 tenantRouter.use(authenticateFirebaseUser);
 
@@ -97,6 +99,15 @@ tenantRouter.get('/:tenantId/projects', requireTenantRole('admin', 'bauleiter', 
   res.json(projects);
 });
 
+tenantRouter.get('/:tenantId/material-events', requireTenantRole('admin'), async (req, res) => {
+  const projects = await adminDb.collection(`tenants/${req.params.tenantId}/projects`).get();
+  const events = await Promise.all(projects.docs.map(async project => {
+    const bookings = await project.ref.collection('bookings').where('type', 'in', ['material_requested', 'commercial_decision']).limit(100).get();
+    return bookings.docs.map(booking => ({ id: booking.id, ...booking.data(), projectId: project.id, projectName: project.get('name') || project.id }));
+  }));
+  res.json(events.flat().sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || ''))).slice(0, 200));
+});
+
 tenantRouter.patch('/:tenantId', requireTenantRole('admin'), async (req, res) => {
   const tenantRef = adminDb.doc(`tenants/${req.params.tenantId}`);
   const current = await tenantRef.get();
@@ -146,9 +157,11 @@ tenantRouter.delete('/:tenantId', requireSuperadmin, async (req, res) => {
 
 tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenantRole('admin', 'bauleiter'), async (req, res) => {
   const { tenantId, projectId } = req.params;
-  const { recipient = 'primary', subject, text, orderId } = req.body || {};
+  const { recipient = 'primary', subject, text, orderId, addendumIds, quantities = {} } = req.body || {};
   if (!['primary', 'deputy'].includes(recipient) || typeof subject !== 'string' || !subject.trim() || subject.length > 250
-    || typeof text !== 'string' || !text.trim() || text.length > 20000 || !/^[a-f0-9-]{36}$/i.test(String(orderId || ''))) {
+    || typeof text !== 'string' || !text.trim() || text.length > 20000 || !/^[a-f0-9-]{36}$/i.test(String(orderId || ''))
+    || !Array.isArray(addendumIds) || addendumIds.length < 1 || addendumIds.length > 50
+    || new Set(addendumIds).size !== addendumIds.length || addendumIds.some(id => typeof id !== 'string' || !/^[\w-]{1,100}$/.test(id))) {
     return res.status(400).json({ code: 'MATERIAL_ORDER_INVALID' });
   }
   const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
@@ -166,17 +179,98 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
     : (await memberRef.where('email', '==', recipientEmail.toLowerCase()).limit(1).get()).docs[0]?.data();
   if (!member || member.status !== 'active' || !['admin', 'kaufmaennisch'].includes(member.role)
     || member.email?.toLowerCase() !== recipientEmail.toLowerCase()) return res.status(409).json({ code: 'COMMERCIAL_MANAGER_MISSING' });
+  const orderRef = projectRef.collection('materialOrders').doc(orderId);
+  const existing = await orderRef.get();
+  if (existing.exists) return res.json({ sent: true, alreadySent: true, recipientEmail, messageId: existing.get('messageId') });
+  const refs = addendumIds.map(id => projectRef.collection('addendums').doc(id));
+  const snapshots = await adminDb.getAll(...refs);
+  if (snapshots.some(snap => !snap.exists || !['pending', 'needs_discussion'].includes(snap.get('status')))) return res.status(409).json({ code: 'ADDENDUM_NOT_PENDING' });
+  const entries = snapshots.map(snap => ({ id: snap.id, ...snap.data(), orderQuantity: Number.parseFloat(String(quantities[snap.id] ?? snap.get('quantity')).replace(',', '.')) }));
+  if (entries.some(entry => !Number.isFinite(entry.orderQuantity) || entry.orderQuantity <= 0)) return res.status(400).json({ code: 'MATERIAL_ORDER_QUANTITY_INVALID' });
+  const tenant = await adminDb.doc(`tenants/${tenantId}`).get();
+  const primary = tenant.get('branding.primaryColor') || '#3B82C4';
+  const safePrimary = /^#[0-9a-f]{6}$/i.test(primary) ? primary : '#3B82C4';
+  const luminance = [1, 3, 5].map(offset => Number.parseInt(safePrimary.slice(offset, offset + 2), 16) / 255).map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4).reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index], 0);
+  const buttonTextColor = luminance > 0.42 ? '#172334' : '#ffffff';
+  const portalOrigin = process.env.PUBLIC_APP_URL || 'https://p12-aufmass.de';
+  const portalUrl = `${portalOrigin.replace(/\/$/, '')}/t/${encodeURIComponent(tenantId)}?project=${encodeURIComponent(projectId)}&tab=addendums&item=${encodeURIComponent(entries[0].id)}`;
+  const rows = entries.map(entry => `<tr><td>${escapeHtml(entry.itemOz || '–')}</td><td>${escapeHtml(entry.title)}</td><td>${escapeHtml(entry.orderQuantity)} ${escapeHtml(entry.qu || 'Stk')}</td><td>${escapeHtml(entry.description || entry.note || '–')}</td><td>${escapeHtml(entry.requestedBy || 'Bauleitung')}</td></tr>`).join('');
+  const html = `<div style="font-family:Arial,sans-serif;max-width:760px;margin:auto;color:#172334"><h1 style="color:${safePrimary}">Neue Materialanfrage</h1><p>Hallo ${escapeHtml(String(recipientName || 'kaufmännische Leitung').split(' ')[0])},</p><p>für das Projekt <strong>${escapeHtml(project.get('name'))}</strong> liegt eine Materialanfrage vor.</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="8"><thead><tr><th>Position</th><th>Material</th><th>Menge</th><th>Begründung</th><th>Erfasst von</th></tr></thead><tbody>${rows}</tbody></table><p style="white-space:pre-wrap">${escapeHtml(text.trim())}</p><p><a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:${safePrimary};color:${buttonTextColor};padding:14px 20px;border-radius:8px;text-decoration:none">Jetzt im Portal prüfen &amp; freigeben</a></p></div>`;
+  let delivery;
   try {
-    const delivery = await sendEmail({
-      to: recipientEmail, subject: subject.trim(), text: text.trim(),
+    delivery = await sendEmail({
+      to: recipientEmail, subject: subject.trim(), text: `${text.trim()}\n\nIm Portal prüfen: ${portalUrl}`, html,
       idempotencyKey: `material-order-${orderId}`,
     });
-    if (!delivery.sent) return res.status(503).json({ code: 'EMAIL_NOT_CONFIGURED' });
-    res.json({ sent: true, recipientName: recipientName || recipientEmail, recipientEmail, messageId: delivery.messageId });
   } catch (error) {
     console.error('Material order email failed:', error.message);
-    res.status(502).json({ code: 'EMAIL_SEND_FAILED' });
+    return res.status(502).json({ code: 'EMAIL_SEND_FAILED' });
   }
+  if (!delivery.sent) return res.status(503).json({ code: 'EMAIL_NOT_CONFIGURED' });
+  try {
+    const now = new Date().toISOString();
+    const batch = adminDb.batch();
+    batch.set(orderRef, { addendumIds, recipientEmail, recipientName: recipientName || recipientEmail, messageId: delivery.messageId, requestedBy: req.auth.uid, requestedAt: now });
+    entries.forEach(entry => {
+      batch.update(projectRef.collection('addendums').doc(entry.id), { status: 'requested', requestedAt: now, requestedTo: recipientName || recipientEmail, requestedToEmail: recipientEmail, reorderedQty: entry.orderQuantity, commercialNote: '', updatedAt: now });
+      batch.set(projectRef.collection('bookings').doc(`material_requested_${orderId}_${entry.id}`), { id: `material_requested_${orderId}_${entry.id}`, projectId, roomId: entry.roomId || 'allgemein', roomName: entry.roomName || '', positionName: entry.title, quantity: entry.orderQuantity, qu: entry.qu || 'Stk', type: 'material_requested', note: `${req.tenantMember?.displayName || req.auth.email || 'Bauleitung'} hat ${entry.orderQuantity} ${entry.qu || 'Stk'} ${entry.title} bei ${recipientName || recipientEmail} angefragt.`, createdBy: req.tenantMember?.displayName || req.auth.email || 'Bauleitung', timestamp: now, createdAt: now });
+    });
+    await batch.commit();
+    res.json({ sent: true, recipientName: recipientName || recipientEmail, recipientEmail, messageId: delivery.messageId });
+  } catch (error) {
+    console.error('Material order persistence failed:', error.message);
+    res.status(503).json({ code: 'MATERIAL_ORDER_SAVE_FAILED' });
+  }
+});
+
+tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commercial-decision', requireTenantRole('admin', 'kaufmaennisch'), async (req, res) => {
+  const { tenantId, projectId, addendumId } = req.params;
+  const { decision, note } = req.body || {};
+  if (!['approved', 'needs_discussion'].includes(decision) || (decision === 'needs_discussion' && !String(note || '').trim()) || String(note || '').length > 2000) return res.status(400).json({ code: 'DECISION_INVALID' });
+  const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
+  const project = await projectRef.get();
+  if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
+  const email = String(req.auth.email || '').toLowerCase();
+  const canDecide = req.auth.platformRole === 'superadmin' || req.tenantMember?.role === 'admin'
+    || (req.tenantMember?.role === 'kaufmaennisch' && req.tenantMember?.assignedProjectIds?.includes(projectId))
+    || (req.tenantMember?.role === 'kaufmaennisch' && [project.get('commercialManagerId'), project.get('deputyCommercialManagerId')].includes(req.auth.uid))
+    || (req.tenantMember?.role === 'kaufmaennisch' && [project.get('commercialManagerEmail'), project.get('deputyCommercialManagerEmail')].some(value => value && String(value).toLowerCase() === email));
+  if (!canDecide) return res.status(403).json({ code: 'COMMERCIAL_DECISION_DENIED' });
+  const ref = projectRef.collection('addendums').doc(addendumId);
+  const now = new Date().toISOString();
+  try {
+    await adminDb.runTransaction(async transaction => {
+      const item = await transaction.get(ref);
+      if (!item.exists || !['requested', 'needs_discussion'].includes(item.get('status'))) throw new Error('ADDENDUM_NOT_REQUESTED');
+      const actor = req.tenantMember?.displayName || req.auth.email || 'Kaufmännische Leitung';
+      transaction.update(ref, { status: decision, approvalType: decision === 'approved' ? 'reordered' : item.get('approvalType') || null, commercialApprovedBy: decision === 'approved' ? actor : null, commercialApprovedAt: decision === 'approved' ? now : null, commercialNote: String(note || '').trim(), updatedAt: now });
+      const eventId = `commercial_${decision}_${addendumId}_${Date.now()}`;
+      transaction.set(projectRef.collection('bookings').doc(eventId), { id: eventId, projectId, roomId: item.get('roomId') || 'allgemein', roomName: item.get('roomName') || '', positionName: item.get('title') || '', quantity: Number(item.get('reorderedQty') || item.get('quantity')) || 0, qu: item.get('qu') || 'Stk', type: 'commercial_decision', note: decision === 'approved' ? `Kaufmännische Leitung (${actor}) hat die Nachbestellung für ${item.get('title')} bestätigt.` : `Rücksprache zu ${item.get('title')} erforderlich: ${String(note).trim()}`, createdBy: actor, timestamp: now, createdAt: now });
+    });
+    res.json({ success: true, status: decision });
+  } catch (error) {
+    if (error.message === 'ADDENDUM_NOT_REQUESTED') return res.status(409).json({ code: error.message });
+    throw error;
+  }
+});
+
+tenantRouter.post('/:tenantId/projects/:projectId/addendums/unplanned', requireTenantRole('monteur'), async (req, res) => {
+  const { tenantId, projectId } = req.params;
+  const { title, quantity, qu = 'Stk', roomId, note = '' } = req.body || {};
+  if (typeof title !== 'string' || !title.trim() || title.length > 200 || !Number.isFinite(Number(quantity)) || Number(quantity) <= 0
+    || typeof qu !== 'string' || !qu.trim() || qu.length > 30 || typeof roomId !== 'string' || !roomId.trim()
+    || typeof note !== 'string' || note.length > 2000) return res.status(400).json({ code: 'ADDENDUM_INPUT_INVALID' });
+  const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
+  const project = await projectRef.get();
+  if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
+  if (!req.tenantMember?.assignedProjectIds?.includes(projectId) && !(project.get('assignedMonteurIds') || []).includes(req.auth.uid)) return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
+  const room = await projectRef.collection('rooms').doc(roomId).get();
+  if (!room.exists) return res.status(400).json({ code: 'ROOM_NOT_FOUND' });
+  const ref = projectRef.collection('addendums').doc();
+  const now = new Date().toISOString();
+  const data = { id: ref.id, projectId, roomId, roomName: room.get('name') || roomId, type: 'unklar', title: title.trim(), quantity: Number(quantity), qu: qu.trim(), note: note.trim(), description: note.trim(), requestedBy: req.tenantMember.displayName || req.auth.name || req.auth.email || 'Monteur', createdByUid: req.auth.uid, createdByRole: 'monteur', deviationSource: 'monteur', isNewMaterial: true, status: 'pending', createdAt: now, updatedAt: now };
+  await ref.create(data);
+  res.status(201).json(data);
 });
 
 tenantRouter.get('/:tenantId/members', requireTenantRole('admin'), async (req, res) => {
@@ -204,7 +298,21 @@ tenantRouter.patch('/:tenantId/members/:uid', requireTenantRole('admin'), async 
     if (!['active', 'inactive'].includes(req.body.status)) return res.status(400).json({ code: 'MEMBER_STATUS_INVALID' });
     update.status = req.body.status;
   }
-  if (Array.isArray(req.body?.assignedProjectIds)) update.assignedProjectIds = req.body.assignedProjectIds.map(String);
+  if (req.body?.assignedProjectIds !== undefined) {
+    const ids = req.body.assignedProjectIds;
+    if (!Array.isArray(ids) || ids.length > 500 || ids.some(id => typeof id !== 'string' || !/^[\w-]{1,120}$/.test(id))) return res.status(400).json({ code: 'PROJECT_ASSIGNMENT_INVALID' });
+    const projects = ids.length ? await adminDb.getAll(...[...new Set(ids)].map(id => adminDb.doc(`tenants/${req.params.tenantId}/projects/${id}`))) : [];
+    if (projects.some(project => !project.exists)) return res.status(400).json({ code: 'PROJECT_ASSIGNMENT_INVALID' });
+    update.assignedProjectIds = [...new Set(ids)];
+  }
+  if (req.body?.phone !== undefined) {
+    if (typeof req.body.phone !== 'string' || req.body.phone.length > 40 || (req.body.phone.trim() && !/^[+\d\s()./-]{5,40}$/.test(req.body.phone.trim()))) return res.status(400).json({ code: 'MEMBER_PHONE_INVALID' });
+    update.phone = req.body.phone.trim();
+  }
+  if (req.body?.defaultLanguage !== undefined) {
+    if (!['de', 'ro', 'pl', 'hr'].includes(req.body.defaultLanguage)) return res.status(400).json({ code: 'MEMBER_LANGUAGE_INVALID' });
+    update.defaultLanguage = req.body.defaultLanguage;
+  }
   if (current.get('role') === 'admin' && current.get('status') === 'active' && ((update.role && update.role !== 'admin') || update.status === 'inactive')) {
     const admins = await memberRef.parent.where('role', '==', 'admin').get();
     if (admins.docs.filter(doc => doc.get('status') === 'active').length <= 1) return res.status(409).json({ code: 'LAST_ADMIN_REQUIRED' });

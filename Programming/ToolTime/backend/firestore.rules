@@ -73,12 +73,19 @@ service cloud.firestore {
         match /addendums/{id} {
           allow read: if projectAssigned(tenantId, projectId);
           allow create: if projectAssigned(tenantId, projectId) && request.resource.data.createdByUid == request.auth.uid;
-          allow update: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch']);
+          allow update: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter'])
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['requestedAt', 'requestedTo', 'requestedToEmail', 'reorderedQty', 'commercialApprovedBy', 'commercialApprovedAt', 'commercialNote'])
+            && request.resource.data.status != 'requested' && request.resource.data.status != 'needs_discussion'
+            && !(resource.data.status in ['requested', 'needs_discussion']);
           allow delete: if hasTenantRole(tenantId, ['admin']);
+        }
+        match /materialOrders/{orderId} {
+          allow read: if projectAssigned(tenantId, projectId);
+          allow write: if false;
         }
         match /{otherCollection}/{id} {
           allow read: if projectAssigned(tenantId, projectId);
-          allow write: if hasTenantRole(tenantId, ['admin', 'bauleiter']);
+          allow write: if !(otherCollection in ['addendums', 'bookings', 'materialOrders']) && hasTenantRole(tenantId, ['admin', 'bauleiter']);
         }
       }
     }

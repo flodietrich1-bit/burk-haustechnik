@@ -95,13 +95,14 @@ const { id: testTenantId } = await createdResponse.json();
 assert.match(testTenantId, /^firma-[a-f0-9]{16}$/);
 const orderProjectId = 'material-order-smoke';
 await adminDb.doc(`tenants/${testTenantId}/projects/${orderProjectId}`).set({ name: 'Testprojekt', status: 'draft' });
+await adminDb.doc(`tenants/${testTenantId}/projects/${orderProjectId}/addendums/order-test`).set({ title: 'Testmaterial', quantity: 1, qu: 'Stk', status: 'pending' });
 const missingRecipientOrder = await fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/projects/${orderProjectId}/material-orders`, {
-  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID() }),
+  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID(), addendumIds: ['order-test'] }),
 });
 assert.equal(missingRecipientOrder.status, 409, 'An order must not be sent without a configured commercial recipient');
 await adminDb.doc(`tenants/${testTenantId}/projects/${orderProjectId}`).update({ commercialManagerEmail: 'old-demo@example.org' });
 const staleRecipientOrder = await fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/projects/${orderProjectId}/material-orders`, {
-  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID() }),
+  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID(), addendumIds: ['order-test'] }),
 });
 assert.equal(staleRecipientOrder.status, 409, 'An obsolete project address must not receive orders');
 const inviteBauleiter = () => fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/invites`, {

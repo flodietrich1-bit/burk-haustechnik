@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type CSSProperties } from 'react';
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { FolderPlus, Plus } from 'lucide-react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -35,6 +35,7 @@ import {
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 import { brandBackgroundColor, brandTextAccentColor, readableTextColor, type TenantBranding } from './types/branding';
+import { api } from './services/apiClient';
 
 interface AppProps { authenticatedUser: User; tenantId: string; branding: TenantBranding | null; onLogout: () => void; }
 
@@ -53,11 +54,22 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   const [positions, setPositions] = useState<Position[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [tenantMaterialEvents, setTenantMaterialEvents] = useState<Booking[]>([]);
   const [addendums, setAddendums] = useState<Addendum[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [users, setUsers] = useState<User[]>(() => getLocalUsers());
 
   const [activeTab, setActiveTab] = useState<TabType>('positions');
+  const deepLink = useMemo(() => new URLSearchParams(window.location.search), []);
+  const deepLinkApplied = useRef(false);
+  useEffect(() => {
+    if (deepLinkApplied.current) return;
+    const requestedProject = deepLink.get('project');
+    if (requestedProject && !projects.some(project => project.id === requestedProject)) return;
+    if (requestedProject) setSelectedProjectId(requestedProject);
+    if (deepLink.get('tab') === 'addendums') setActiveTab('addendums');
+    deepLinkApplied.current = true;
+  }, [deepLink, projects]);
   const [searchTerm] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState<boolean>(false);
@@ -80,6 +92,15 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
       unsubUsers();
     };
   }, [tenantId, currentUser.id, currentUser.role]);
+
+  useEffect(() => {
+    if (currentUser.role !== 'admin') return;
+    let active = true;
+    const refresh = () => { void api<Booking[]>(`/tenants/${tenantId}/material-events`).then(events => { if (active) setTenantMaterialEvents(events); }).catch(() => {}); };
+    refresh();
+    const interval = window.setInterval(refresh, 30000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [tenantId, currentUser.role]);
 
   // The tenant API returns only projects the signed-in member may access.
   const accessibleProjects = projects;
@@ -375,6 +396,8 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                 {activeTab === 'bookings' && (
                   <LiveFeed
                     bookings={bookings}
+                    globalMaterialEvents={tenantMaterialEvents}
+                    projectId={selectedProjectId}
                     rooms={rooms}
                     positions={positions}
                   />
@@ -389,6 +412,8 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                     rooms={rooms}
                     positions={positions}
                     bookings={bookings}
+                    currentUser={currentUser}
+                    focusedItemId={deepLink.get('item')}
                   />
                 )}
 

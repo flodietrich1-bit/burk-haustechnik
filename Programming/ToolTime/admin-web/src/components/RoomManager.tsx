@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Room, Position, Booking, RoomMaterialRequirement, PlanDocument, PlanLevel } from '../types';
 import { 
   Plus, 
@@ -51,6 +51,14 @@ interface RoomManagerProps {
 
 export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName, rooms, positions, bookings = [] }) => {
   const [plans, setPlans] = useState<PlanDocument[]>([]);
+  const [plansExpanded, setPlansExpanded] = useState(false);
+  const plansPanelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!plansExpanded) return;
+    const closeOutside = (event: MouseEvent) => { if (!plansPanelRef.current?.contains(event.target as Node)) setPlansExpanded(false); };
+    document.addEventListener('mousedown', closeOutside);
+    return () => document.removeEventListener('mousedown', closeOutside);
+  }, [plansExpanded]);
   const [selectedLevelFilter, setSelectedLevelFilter] = useState<string>('all');
   const [isAddPlanOpen, setIsAddPlanOpen] = useState<boolean>(false);
   const [newPlanFile, setNewPlanFile] = useState<File | null>(null);
@@ -384,14 +392,15 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div ref={plansPanelRef} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Raum- & Baustellen-Konfigurator</h2>
+          <h2 className="text-lg font-bold text-slate-900">Räume &amp; Etagen</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Örtlichkeiten der Verbauung: Räume aus DWG-Plan oder manuell angelegt mit hinterlegten LV-Materialien
+            Örtlichkeiten der Verbauung: Räume aus Montageplänen oder manuell angelegt
           </p>
         </div>
-        <div className="flex items-center space-x-2.5 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
           <button
             onClick={() => setIsAddPlanOpen(true)}
             className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-900 text-white px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
@@ -406,12 +415,15 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
             <Plus className="w-4 h-4" />
             <span>Raum manuell anlegen</span>
           </button>
+          <button type="button" onClick={() => setPlansExpanded(value => !value)} aria-expanded={plansExpanded} className="flex items-center gap-2 rounded-xl border border-slate-200 px-3.5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+            Angelegte Ausführungs- &amp; Montagepläne ({plans.length}) {plansExpanded ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
+          </button>
         </div>
       </div>
 
       {/* Zugehörige Ausführungs- & Montagepläne Card */}
-      {plans.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
+      {plansExpanded && plans.length > 0 && (
+        <div className="border-t border-slate-100 pt-4 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
             <div className="flex items-center space-x-2">
               <Layers className="w-4 h-4 text-[#3B82C4]" />
@@ -529,6 +541,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
           </div>
         </div>
       )}
+      </div>
 
       {/* Project Room Progress & Status Pie Chart Card (0% Rot -> 100% Grün) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-6 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">

@@ -6,11 +6,13 @@ import {
 
 interface LiveFeedProps {
   bookings: Booking[];
+  globalMaterialEvents?: Booking[];
+  projectId?: string;
   rooms: Room[];
   positions?: Position[];
 }
 
-export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions = [] }) => {
+export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, globalMaterialEvents = [], projectId, rooms, positions = [] }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'alert' | 'regular' | 'completion'>('all');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -23,12 +25,14 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
 
   // Sort bookings newest first
   const sortedBookings = useMemo(() => {
-    return [...bookings].sort((a, b) => {
+    const merged = new Map<string, Booking>();
+    [...bookings, ...globalMaterialEvents].forEach(booking => merged.set(`${booking.projectId}/${booking.id}`, booking));
+    return [...merged.values()].sort((a, b) => {
       const timeA = new Date(a.timestamp || a.createdAt || (a as any).syncedAt || 0).getTime() || 0;
       const timeB = new Date(b.timestamp || b.createdAt || (b as any).syncedAt || 0).getTime() || 0;
       return timeB - timeA;
     });
-  }, [bookings]);
+  }, [bookings, globalMaterialEvents]);
 
   // Filtered bookings
   const filteredBookings = useMemo(() => {
@@ -73,10 +77,10 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
             </div>
             <div>
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-                Live-Monteursbuchungen & Bautagebuch
+                Live-Buchungsfeed &amp; Bautagebuch
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Echtzeit-Protokoll: Welcher Monteur hat wann, in welchem Raum und welche Mengen verbaut?
+                Buchungen und Materialanfragen im Projekt in zeitlicher Reihenfolge.
               </p>
             </div>
           </div>
@@ -164,17 +168,15 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
         {filteredBookings.length === 0 ? (
           <div className="bg-white p-12 text-center rounded-2xl border-2 border-dashed border-slate-200 text-slate-400 text-xs space-y-2">
             <Package className="w-8 h-8 text-slate-300 mx-auto" />
-            <p className="font-semibold text-slate-600">Keine Monteursbuchungen für diese Kriterien gefunden.</p>
+            <p className="font-semibold text-slate-600">Keine Einträge für diese Kriterien gefunden.</p>
             <p className="text-slate-400">Buchungen von der Baustelle erscheinen hier automatisch live.</p>
           </div>
         ) : (
           filteredBookings.map((booking) => {
-            const room = roomMap.get(booking.roomId) || 
-                         roomCodeMap.get(booking.roomId) || 
-                         rooms.find(r => booking.roomName && r.name.toLowerCase() === booking.roomName.toLowerCase());
+            const room = booking.projectId === projectId ? roomMap.get(booking.roomId) || roomCodeMap.get(booking.roomId) || rooms.find(r => booking.roomName && r.name.toLowerCase() === booking.roomName.toLowerCase()) : undefined;
 
-            const pos = posMap.get(booking.positionNr || (booking as any).itemOz) || 
-                        posIdMap.get(booking.positionId || (booking as any).itemId);
+            const pos = booking.projectId === projectId ? posMap.get(booking.positionNr || (booking as any).itemOz) ||
+                        posIdMap.get(booking.positionId || (booking as any).itemId) : undefined;
 
             const posNr = booking.positionNr || (booking as any).itemOz || pos?.posNr || '–';
             const matName = booking.positionName || (booking as any).itemText || pos?.shortText || 'Material verbaut';
@@ -182,6 +184,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
 
             const isAlert = booking.type === 'over_consumption_alert' || (booking as any).isAlert || (booking as any).requestedTotal !== undefined;
             const isCompletion = booking.type === 'room_completion' || (booking as any).itemId === 'room_completion';
+            const isWorkflow = booking.type === 'material_requested' || booking.type === 'commercial_decision';
 
             const rawDate = booking.timestamp || booking.createdAt || (booking as any).syncedAt;
             const dateStr = rawDate 
@@ -236,6 +239,8 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
                             Raumabschluss 100%
                           </span>
                         )}
+                        {isWorkflow && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-800">{booking.type === 'material_requested' ? 'Material angefragt' : 'Kaufmännische Entscheidung'}</span>}
+                        {isWorkflow && booking.projectName && <span className="text-xs font-semibold text-slate-600">{booking.projectName}</span>}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-0.5">
@@ -271,7 +276,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
                           ? 'bg-emerald-600 text-white' 
                           : 'bg-emerald-100 text-emerald-800'
                     }`}>
-                      +{booking.quantity} {booking.qu || pos?.qu || 'Stk'}
+                      {isWorkflow ? `${booking.quantity} ${booking.qu || pos?.qu || 'Stk'}` : `+${booking.quantity} ${booking.qu || pos?.qu || 'Stk'}`}
                     </span>
                   </div>
                 </div>
@@ -281,7 +286,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
                   <div className="space-y-0.5">
                     <div className="flex items-center space-x-2 text-xs">
                       <span className="font-mono font-bold text-[#3B82C4] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                        Pos. {posNr}
+                        {isWorkflow ? 'Material' : `Pos. ${posNr}`}
                       </span>
                       <span className="font-bold text-slate-900 text-sm">
                         {matName}
@@ -305,7 +310,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, rooms, positions =
                   }`}>
                     <div className="flex items-center space-x-1.5 font-bold text-[10px] uppercase tracking-wider text-slate-500">
                       {isAlert && <AlertTriangle className="w-3 h-3 text-amber-600" />}
-                      <span>{isAlert ? 'Grund für Mehrverbrauch / Abweichung:' : 'Notiz vom Monteur:'}</span>
+                      <span>{isWorkflow ? 'Beschaffungsvorgang:' : isAlert ? 'Grund für Mehrverbrauch / Abweichung:' : 'Notiz vom Monteur:'}</span>
                     </div>
                     <p className="italic leading-relaxed font-medium">„{reasonOrNote}“</p>
                   </div>

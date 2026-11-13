@@ -210,6 +210,7 @@ export interface Alert {
 export interface Booking {
   id: string;
   projectId: string;
+  projectName?: string;
   roomId: string;
   positionId?: string;
   itemId?: string;
@@ -234,6 +235,7 @@ export interface Booking {
 
 export interface Addendum {
   id: string;
+  createdByUid?: string;
   projectId: string;
   roomId: string;
   roomName?: string;
@@ -243,7 +245,7 @@ export interface Addendum {
   quantity: number | string;
   qu?: string;
   requestedBy: string;
-  status: 'pending' | 'approved' | 'rejected' | 'synced' | 'requested';
+  status: 'pending' | 'approved' | 'rejected' | 'synced' | 'requested' | 'needs_discussion';
   note?: string;
   signature?: string | null;
   signatureUrl?: string;
@@ -261,6 +263,11 @@ export interface Addendum {
   reorderedQty?: number;
   requestedAt?: string;
   requestedTo?: string;
+  requestedToEmail?: string;
+  commercialApprovedBy?: string;
+  commercialApprovedAt?: string;
+  commercialNote?: string;
+  isNewMaterial?: boolean;
   createdByRole?: 'bauleiter' | 'monteur' | 'admin' | string;
   deviationSource?: 'gaeb_vs_dwg' | 'monteur' | 'manual' | string;
   unitPrice?: number;

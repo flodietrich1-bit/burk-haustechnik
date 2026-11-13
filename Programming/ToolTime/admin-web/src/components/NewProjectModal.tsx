@@ -873,7 +873,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                             {monteur.name}
                           </span>
                           <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <span>PIN: {monteur.pin || '1234'}</span>
+                            <span>PIN wird in der Monteur-App verwaltet</span>
                             {monteur.email ? (
                               <span className="text-slate-600 font-medium flex items-center space-x-0.5">
                                 <Mail className="w-2.5 h-2.5 text-slate-400 mr-0.5" />

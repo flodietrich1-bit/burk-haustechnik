@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import type { Addendum, Room, Position, Project } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { Addendum, Room, Position, Project, User as AppUser } from '../types';
 import { 
   AlertCircle, 
   CheckCircle, 
@@ -10,12 +10,10 @@ import {
   HelpCircle, 
   Plus, 
   Calendar,
-  Check,
   X,
   CheckCircle2,
   Minus,
   Send,
-  PackageCheck,
   AlertTriangle,
   Mail,
   FileText
@@ -23,9 +21,7 @@ import {
 import { 
   updateAddendumStatus, 
   createAddendum, 
-  addPositionDeliveredQty, 
   getMaterialActualQty,
-  batchUpdateAddendumsRequested,
   convertAddendumToLvPosition
 } from '../services/firestoreService';
 import type { Booking } from '../types';
@@ -39,6 +35,8 @@ interface AddendumsViewProps {
   rooms?: Room[];
   positions?: Position[];
   bookings?: Booking[];
+  currentUser: AppUser;
+  focusedItemId?: string | null;
 }
 
 /**
@@ -86,15 +84,20 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   project,
   rooms = [], 
   positions = [],
-  bookings = []
+  bookings = [], currentUser, focusedItemId
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'requested' | 'approved' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'requested' | 'approved' | 'rejected' | 'needs_discussion'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createBusy, setCreateBusy] = useState(false);
 
   // New Addendum Form State
-  const [newType, setNewType] = useState<'stunden' | 'material' | 'unklar'>('material');
+  const [newType, setNewType] = useState<'material' | 'unklar'>('material');
   const [newTitle, setNewTitle] = useState('');
+  const [newPositionId, setNewPositionId] = useState('');
+  const [positionSearch, setPositionSearch] = useState('');
+  const [newManufacturer, setNewManufacturer] = useState('');
   const [newQty, setNewQty] = useState('');
   const [newUnit, setNewUnit] = useState('Stk');
   const [newRoomId, setNewRoomId] = useState('');
@@ -136,6 +139,17 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [lvUnitPrice, setLvUnitPrice] = useState<string>('0');
   const [lvRoomId, setLvRoomId] = useState<string>('');
   const [isProcessingConvert, setIsProcessingConvert] = useState<boolean>(false);
+  const [commercialNote, setCommercialNote] = useState<Record<string, string>>({});
+  const [commercialBusy, setCommercialBusy] = useState<string | null>(null);
+  const [commercialError, setCommercialError] = useState('');
+  const [commercialErrorItemId, setCommercialErrorItemId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!focusedItemId) return;
+    setCategoryFilter('all'); setStatusFilter('all');
+    const timer = window.setTimeout(() => document.getElementById(`addendum-${focusedItemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+    return () => window.clearTimeout(timer);
+  }, [focusedItemId, addendums.length]);
 
   // Auto-generate next Nachtrags-Positionsnummer (e.g. N-01, N-02)
   const nextNachtragNr = useMemo(() => {
@@ -197,6 +211,9 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   // Fast lookups for positions
   const posMap = useMemo(() => new Map(positions.map(p => [p.posNr, p])), [positions]);
   const posIdMap = useMemo(() => new Map(positions.map(p => [p.id, p])), [positions]);
+  const positionSuggestions = useMemo(() => positions.filter(position => !positionSearch.trim() || [position.posNr, position.shortText, position.group].some(value => value?.toLowerCase().includes(positionSearch.toLowerCase()))).slice(0, 30), [positions, positionSearch]);
+  const canCommercialDecide = currentUser.role === 'admin' || (currentUser.role === 'kaufmaennisch' && (currentUser.assignedProjectIds?.includes(projectId) || [project?.commercialManagerId, project?.deputyCommercialManagerId, project?.commercialManagerEmail, project?.deputyCommercialManagerEmail].some(value => value && String(value).toLowerCase() === String(value.includes('@') ? currentUser.email : currentUser.id).toLowerCase())));
+  const canManageAddendums = currentUser.role === 'admin' || currentUser.role === 'bauleiter';
 
   // Helper to compute project stock info for any item:
   // "noch verfügbar" vs "laut Projektplanung benötigt"
@@ -297,19 +314,6 @@ Bauleitung`;
 
   // 1. Direct In-Stock Approval: "Material verfügbar - Freigeben"
   const handleApproveInStock = async (item: Addendum) => {
-    const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
-    const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
-    const targetKey = item.materialId || item.itemOz || item.title;
-
-    // Verfügbare Menge erhöht sich entsprechend
-    await addPositionDeliveredQty(projectId, targetKey, rawQty, unit);
-    await updateAddendumStatus(item.id, 'approved', projectId, {
-      approvalType: 'in_stock'
-    });
-  };
-
-  // 2. Acknowledge Notice: "Hinweis schließen" (für ungeplant verbautes Material)
-  const handleAcknowledgeUnclear = async (item: Addendum) => {
     await updateAddendumStatus(item.id, 'approved', projectId, {
       approvalType: 'in_stock'
     });
@@ -357,17 +361,8 @@ Bauleitung`;
     setIsProcessingReorder(true);
     setReorderError('');
     try {
-      const unit = reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
-      const targetKey = reorderItem.materialId || reorderItem.itemOz || reorderItem.title;
-
       await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/material-orders`, {
-        method: 'POST', body: JSON.stringify({ recipient: reorderRecipient, subject: mailSubject, text: mailBody, orderId: reorderOrderId }),
-      });
-      await addPositionDeliveredQty(projectId, targetKey, reorderQty, unit);
-      await updateAddendumStatus(reorderItem.id, 'requested', projectId, {
-        requestedAt: new Date().toISOString(),
-        requestedTo: managerFirstName,
-        reorderedQty: reorderQty,
+        method: 'POST', body: JSON.stringify({ recipient: reorderRecipient, subject: mailSubject, text: mailBody, orderId: reorderOrderId, addendumIds: [reorderItem.id], quantities: { [reorderItem.id]: reorderQty } }),
       });
 
       setReorderItem(null);
@@ -482,11 +477,10 @@ Bauleitung`;
     setIsProcessingBatch(true);
     setBatchError('');
     try {
-      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/material-orders`, {
-        method: 'POST', body: JSON.stringify({ recipient: batchRecipientChoice, subject: batchSubject, text: batchBody, orderId: batchOrderId }),
-      });
       const ids = unrequestedMaterialItems.map(i => i.id);
-      await batchUpdateAddendumsRequested(projectId, ids, batchRecipientChoice === 'deputy' ? project?.deputyCommercialManager || 'Kaufmännische Vertretung' : project?.commercialManager || 'Kaufmännische Leitung');
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/material-orders`, {
+        method: 'POST', body: JSON.stringify({ recipient: batchRecipientChoice, subject: batchSubject, text: batchBody, orderId: batchOrderId, addendumIds: ids }),
+      });
 
       setIsBatchModalOpen(false);
     } catch (err: any) {
@@ -498,20 +492,13 @@ Bauleitung`;
   };
 
   // Mark requested item as ordered / approved
-  const handleMarkAsOrdered = async (item: Addendum) => {
+  const handleCommercialDecision = async (item: Addendum, decision: 'approved' | 'needs_discussion') => {
     try {
-      const rawQty = typeof item.quantity === 'number' ? item.quantity : parseFloat(String(item.quantity).replace(',', '.')) || 1;
-      const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
-      const targetKey = item.materialId || item.itemOz || item.title;
-
-      await addPositionDeliveredQty(projectId, targetKey, rawQty, unit);
-      await updateAddendumStatus(item.id, 'approved', projectId, {
-        approvalType: 'reordered',
-        reorderedQty: rawQty,
-      });
+      setCommercialBusy(item.id); setCommercialError(''); setCommercialErrorItemId(null);
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/addendums/${item.id}/commercial-decision`, { method: 'POST', body: JSON.stringify({ decision, note: commercialNote[item.id] || '' }) });
     } catch (err: any) {
-      console.warn('Error marking addendum as ordered:', err.message);
-    }
+      setCommercialError(err.message || 'Entscheidung konnte nicht gespeichert werden.'); setCommercialErrorItemId(item.id);
+    } finally { setCommercialBusy(null); }
   };
 
   // 3. Confirm Rejection: "Ablehnen" mit Begründung
@@ -540,18 +527,26 @@ Bauleitung`;
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    const selectedPosition = positions.find(position => position.id === newPositionId);
+    if (newType === 'material' && !selectedPosition) { setCreateError('Bitte wähle eine bestehende LV-Position aus.'); return; }
+    if (newType === 'unklar' && !newTitle.trim()) { setCreateError('Bitte gib eine Materialbezeichnung ein.'); return; }
+    if (!Number.isFinite(Number(newQty.replace(',', '.'))) || Number(newQty.replace(',', '.')) <= 0) { setCreateError('Bitte gib eine gültige Menge ein.'); return; }
 
     const selectedRoom = rooms.find(r => r.id === newRoomId);
     const creatorLabel = newRequestedBy.trim() ? `Bauleiter (${newRequestedBy.trim()})` : 'Bauleiter';
-    await createAddendum(projectId, {
+    setCreateBusy(true); setCreateError('');
+    try { await createAddendum(projectId, {
       type: newType,
-      title: newTitle.trim(),
-      quantity: newQty.trim() || (newType === 'stunden' ? '1 h' : '1'),
-      qu: newType === 'stunden' ? 'h' : newUnit,
+      title: newType === 'material' ? selectedPosition!.shortText : newTitle.trim(),
+      quantity: Number(newQty.replace(',', '.')),
+      qu: newType === 'material' ? selectedPosition!.qu : newUnit,
+      materialId: selectedPosition?.id || '',
+      itemOz: selectedPosition?.posNr || '',
+      unitPrice: selectedPosition?.unitPrice || 0,
+      isNewMaterial: newType === 'unklar',
       roomId: newRoomId || 'allgemein',
       roomName: selectedRoom ? selectedRoom.name : 'Baustelle allgemein',
-      note: newNote.trim(),
+      note: [newType === 'unklar' && newManufacturer.trim() ? `Hersteller: ${newManufacturer.trim()}` : '', newNote.trim()].filter(Boolean).join('\n'),
       requestedBy: creatorLabel,
       createdByRole: 'bauleiter',
       deviationSource: 'manual',
@@ -560,9 +555,12 @@ Bauleitung`;
 
     setIsCreateModalOpen(false);
     setNewTitle('');
+    setNewPositionId(''); setPositionSearch(''); setNewManufacturer('');
     setNewQty('');
     setNewNote('');
     setNewRequestedBy('');
+    } catch (error) { setCreateError(error instanceof Error ? error.message : 'Mehrbedarf konnte nicht gespeichert werden.'); }
+    finally { setCreateBusy(false); }
   };
 
   // Bauleiter direct category switcher
@@ -607,7 +605,7 @@ Bauleitung`;
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-          {unrequestedMaterialItems.length > 0 && (
+          {canManageAddendums && unrequestedMaterialItems.length > 0 && (
             <button
               onClick={handleOpenBatchRequestModal}
               className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
@@ -618,13 +616,13 @@ Bauleitung`;
             </button>
           )}
 
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
+          {canManageAddendums && <button
+            onClick={() => { setCreateError(''); setIsCreateModalOpen(true); }}
             className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Mehrbedarf erfassen</span>
-          </button>
+            <span>Mehrbedarf erfassen</span>
+          </button>}
         </div>
       </div>
 
@@ -701,7 +699,7 @@ Bauleitung`;
           </div>
 
           {/* Action button inside card */}
-          {unrequestedMaterialItems.length > 0 ? (
+          {canManageAddendums && unrequestedMaterialItems.length > 0 ? (
             <div className="mt-3 pt-3 border-t border-slate-100" onClick={e => e.stopPropagation()}>
               <button
                 type="button"
@@ -783,6 +781,7 @@ Bauleitung`;
             { id: 'all' as const, label: 'Alle Status' },
             { id: 'pending' as const, label: `To-Do / Offen (${openTimeCount + openMaterialCount + openUnclearCount})` },
             { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
+            { id: 'needs_discussion' as const, label: 'Rücksprache' },
             { id: 'approved' as const, label: 'Freigegeben' },
             { id: 'rejected' as const, label: 'Abgelehnt' },
           ].map(s => (
@@ -818,9 +817,12 @@ Bauleitung`;
             const cat = getItemCategory(item);
             const isPending = item.status === 'pending';
             const isRequested = item.status === 'requested';
+            const needsDiscussion = item.status === 'needs_discussion';
             const isApproved = item.status === 'approved';
             const isRejected = item.status === 'rejected';
             const stockInfo = (cat === 'material' || cat === 'unclear') ? getItemStockInfo(item) : null;
+            const hasExistingPosition = item.deviationSource === 'gaeb_vs_dwg' || !!(item.materialId && posIdMap.has(item.materialId)) || !!(item.itemOz && posMap.has(item.itemOz)) || positions.some(position => position.shortText.trim().toLowerCase() === item.title.trim().toLowerCase());
+            const canCreateLv = cat !== 'time' && !item.isLvPosition && !item.lvPosNr && !hasExistingPosition;
 
             // Styling based on category
             const theme = cat === 'time' ? {
@@ -847,8 +849,8 @@ Bauleitung`;
 
             return (
               <div 
-                key={item.id}
-                className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4"
+                key={item.id} id={`addendum-${item.id}`}
+                className={`bg-white rounded-2xl border shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${focusedItemId === item.id ? 'border-blue-400 ring-2 ring-blue-200' : 'border-slate-200'}`}
               >
                 <div className="space-y-3">
                   {/* Top Bar: Category Badge + Status Badge */}
@@ -860,7 +862,7 @@ Bauleitung`;
                       </span>
 
                       {/* Bauleiter category toggle for pending material items */}
-                      {cat !== 'time' && isPending && (
+                      {canManageAddendums && cat !== 'time' && isPending && (
                         <button
                           type="button"
                           onClick={() => handleSwitchCategory(item, cat === 'material' ? 'unclear' : 'material')}
@@ -875,6 +877,7 @@ Bauleitung`;
                     <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
                       isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                       isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
+                      needsDiscussion ? 'bg-orange-100 text-orange-800 border border-orange-200' :
                       isRequested ? 'bg-blue-100 text-blue-800 border border-blue-200' :
                       'bg-amber-100 text-amber-800 border border-amber-200'
                     }`}>
@@ -882,7 +885,7 @@ Bauleitung`;
                         ? (item.approvalType === 'reordered' 
                             ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
                             : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
-                        : isRejected ? 'Abgelehnt' 
+                        : isRejected ? 'Abgelehnt' : needsDiscussion ? 'Rücksprache erforderlich'
                         : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
                         : 'Ausstehend'}
                     </span>
@@ -894,9 +897,6 @@ Bauleitung`;
                       <h4 className="font-bold text-slate-900 text-base leading-snug">
                         {item.title}
                       </h4>
-                      {item.description && item.description !== item.title && (
-                        <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>
-                      )}
                     </div>
 
                     <div className="text-right shrink-0">
@@ -908,10 +908,10 @@ Bauleitung`;
 
                   {/* Room & Submitter Meta Info */}
                   <div className="flex flex-wrap items-center gap-2.5 text-xs text-slate-500 pt-1">
-                    <div className="flex items-center space-x-1 text-[#3B82C4] font-medium bg-blue-50/60 px-2 py-0.5 rounded-md">
+                    {item.roomId && item.roomId !== 'allgemein' && item.roomName !== 'Baustelle' && <div className="flex items-center space-x-1 text-[#3B82C4] font-medium bg-blue-50/60 px-2 py-0.5 rounded-md">
                       <MapPin className="w-3.5 h-3.5" />
                       <span>{item.roomName || item.roomId || 'Baustelle'}</span>
-                    </div>
+                    </div>}
 
                     {/* Submitter: Bauleiter (Portal) vs. Monteurname */}
                     {(() => {
@@ -929,11 +929,6 @@ Bauleitung`;
                       );
                     })()}
 
-                    {item.deviationSource === 'gaeb_vs_dwg' && (
-                      <div className="flex items-center space-x-1 font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/80 px-2 py-0.5 rounded-md text-[11px]">
-                        <span>Abweichung GAEB vs. DWG</span>
-                      </div>
-                    )}
 
                     <div className="flex items-center space-x-1 text-slate-400">
                       <Calendar className="w-3.5 h-3.5" />
@@ -990,7 +985,8 @@ Bauleitung`;
                   )}
 
                   {/* Projektweiter Materialbestand & Bedarfsampel (Entscheidungshilfe für Bauleitung) */}
-                  {stockInfo && (
+                  {stockInfo && !stockInfo.hasPositionMatch && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Neues Material: Ein LV-Bestand ist noch nicht erfasst.</div>}
+                  {stockInfo?.hasPositionMatch && (
                     <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2">
                       <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
                         <span className="flex items-center space-x-1">
@@ -1075,176 +1071,33 @@ Bauleitung`;
                   </div>
                 )}
 
-                {/* Bottom Actions for Bauleiter / Admin */}
-                {isRequested ? (
-                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
-                      className="text-slate-400 hover:text-slate-700 text-[11px] underline cursor-pointer"
-                      title="Status zurück auf 'Ausstehend' setzen"
-                    >
-                      Status zurücksetzen
-                    </button>
-
-                    <div className="flex items-center space-x-2">
-                      {!item.isLvPosition && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenConvertModal(item)}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01] cursor-pointer"
-                          title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-amber-800" />
-                          <span>Als LV-Position ins Aufmaß</span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenReorderModal(item)}
-                        className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[#3B82C4] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer"
-                        title={`E-Mail an kfm. Leitung (${managerFirstName}) erneut öffnen`}
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                        <span>Erneut anfragen</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleMarkAsOrdered(item)}
-                        className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01] cursor-pointer"
-                        title="Material wurde geliefert / bestellt: Als freigegeben markieren"
-                      >
-                        <PackageCheck className="w-3.5 h-3.5" />
-                        <span>Als bestellt / freigegeben buchen</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : isPending ? (
-                  <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
-                    {cat === 'unclear' ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenConvertModal(item)}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01]"
-                          title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-amber-800" />
-                          <span>Als LV-Position ins Aufmaß übernehmen</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAcknowledgeUnclear(item)}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition-colors"
-                          title="Hinweis zur Kenntnis nehmen und schließen (Material war bereits vorhanden)"
-                        >
-                          <Check className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Hinweis schließen</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReorderModal(item)}
-                          className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
-                          title="Material reicht nicht für Restprojekt – Modal zur Nachbestellung öffnen"
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                          <span>Material anfragen</span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRejectItem(item);
-                            setRejectReason('');
-                            setRejectError('');
-                          }}
-                          className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors"
-                          title="Diesen Mehrbedarf ablehnen (Begründung erforderlich)"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Ablehnen</span>
-                        </button>
-
-                        {cat === 'time' ? (
-                          <button
-                            type="button"
-                            onClick={() => handleApproveHours(item)}
-                            className="flex items-center space-x-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
-                            title="Regiestunden freigeben"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Regiestunden freigeben</span>
-                          </button>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenConvertModal(item)}
-                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-all shadow-xs hover:scale-[1.01]"
-                              title="Diesen Nachtrag als echte LV-Position anlegen und im Raum hinterlegen, damit Monteure ihn direkt aufmessen können"
-                            >
-                              <FileText className="w-3.5 h-3.5 text-amber-800" />
-                              <span>Als LV-Position ins Aufmaß übernehmen</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleApproveInStock(item)}
-                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#2FA36B] hover:bg-[#258757] transition-all shadow-xs hover:scale-[1.01]"
-                              title="Material ist im Lager vorhanden und wird zum Verbauen freigegeben (verfügbare Menge erhöht sich)"
-                            >
-                              <PackageCheck className="w-3.5 h-3.5" />
-                              <span>Material verfügbar – Freigeben</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleOpenReorderModal(item)}
-                              className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-[#3B82C4] hover:bg-[#2B6EB0] transition-all shadow-xs hover:scale-[1.01]"
-                              title={`Material per E-Mail bei ${managerFirstName} anfragen`}
-                            >
-                              <Mail className="w-3.5 h-3.5" />
-                              <span>Material anfragen</span>
-                            </button>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                    <span className="font-medium text-slate-600">
-                      {isApproved && item.approvalType === 'reordered' && '✓ Nachbestellung veranlasst & verbucht'}
-                      {isApproved && item.approvalType !== 'reordered' && (cat === 'unclear' ? '✓ Geprüft & Hinweis geschlossen' : '✓ Aus Lagerbestand freigegeben')}
-                      {isRejected && '✕ Durch Bauleitung abgelehnt'}
-                    </span>
-                    <div className="flex items-center space-x-3">
-                      {!item.isLvPosition && !item.lvPosNr && cat !== 'time' && !isRejected && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenConvertModal(item)}
-                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition-colors"
-                          title="Nachträglich als echte LV-Position im Raum hinterlegen"
-                        >
-                          <FileText className="w-3 h-3 text-amber-800" />
-                          <span>Als LV-Position ins Aufmaß</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => updateAddendumStatus(item.id, 'pending', projectId)}
-                        className="text-[#3B82C4] hover:underline text-[11px]"
-                      >
-                        Status zurücksetzen
-                      </button>
+                {/* Entscheidungen zum Materialbedarf */}
+                {(isRequested || needsDiscussion) && item.commercialNote && <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">Rücksprache: {item.commercialNote}</p>}
+                {needsDiscussion && canManageAddendums && <button type="button" onClick={() => handleOpenReorderModal(item)} className="self-start rounded-xl bg-[#3B82C4] px-4 py-2 text-xs font-bold text-white">Anfrage überarbeitet erneut senden</button>}
+                {(isRequested || needsDiscussion) && canCommercialDecide && (
+                  <div className="space-y-2 border-t border-slate-100 pt-3">
+                    <label className="block text-xs font-semibold text-slate-700">Notiz für die Bauleitung
+                      <textarea value={commercialNote[item.id] || ''} onChange={event => setCommercialNote(previous => ({ ...previous, [item.id]: event.target.value }))} rows={2} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" placeholder="Optional bei Freigabe, erforderlich für Rücksprache" />
+                    </label>
+                    {commercialError && commercialErrorItemId === item.id && <p role="alert" className="text-xs text-red-700">{commercialError}</p>}
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" disabled={!!commercialBusy} onClick={() => void handleCommercialDecision(item, 'approved')} className="rounded-xl bg-[#2FA36B] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Bestellt / Freigeben</button>
+                      <button type="button" disabled={!!commercialBusy || !commercialNote[item.id]?.trim()} onClick={() => void handleCommercialDecision(item, 'needs_discussion')} className="rounded-xl border border-orange-300 bg-orange-50 px-4 py-2 text-xs font-bold text-orange-900 disabled:opacity-50">Rücksprache erforderlich</button>
                     </div>
                   </div>
                 )}
+                {isPending && canManageAddendums && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                    {cat === 'time' ? <button type="button" onClick={() => void handleApproveHours(item)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">Regiestunden freigeben</button> : <>
+                      <button type="button" onClick={() => void handleApproveInStock(item)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">verfügbar - freigeben</button>
+                      <button type="button" onClick={() => handleOpenReorderModal(item)} className="rounded-xl bg-[#3B82C4] px-3.5 py-2 text-xs font-bold text-white">nicht verfügbar - anfragen</button>
+                      {canCreateLv && <button type="button" onClick={() => handleOpenConvertModal(item)} className="rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900">Als neue LV-Position anlegen</button>}
+                    </>}
+                    <button type="button" onClick={() => { setRejectItem(item); setRejectReason(''); setRejectError(''); }} className="rounded-xl border border-red-300 px-3.5 py-2 text-xs font-bold text-red-700">Ablehnen</button>
+                  </div>
+                )}
+                {isApproved && canCreateLv && <button type="button" onClick={() => handleOpenConvertModal(item)} className="self-start rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900">Als neue LV-Position anlegen</button>}
+
               </div>
             );
           })}
@@ -1254,11 +1107,11 @@ Bauleitung`;
       {/* Modal: Mehrbedarf manuell erfassen */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-7 sm:p-9 space-y-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="font-bold text-base text-slate-900 flex items-center space-x-2">
                 <Plus className="w-5 h-5 text-[#3B82C4]" />
-                <span>Mehrbedarf / Unklar manuell erfassen</span>
+                <span>Mehrbedarf erfassen</span>
               </h3>
               <button 
                 onClick={() => setIsCreateModalOpen(false)}
@@ -1268,87 +1121,25 @@ Bauleitung`;
               </button>
             </div>
 
-            <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
-              {/* Type Selection */}
+            <form onSubmit={handleCreateSubmit} className="space-y-5 text-sm">
               <div>
-                <label className="font-bold text-slate-700 block mb-1.5">Art des Mehraufwands *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'material' as const, label: '📦 Mehr Material', sub: 'Material angefragt' },
-                    { id: 'stunden' as const, label: '⏱ Stunden', sub: 'Mehr Zeit / Regie' },
-                    { id: 'unklar' as const, label: '❓ Anderes Material', sub: 'Anderes Material verbaut' },
-                  ].map(t => (
-                    <button
-                      type="button"
-                      key={t.id}
-                      onClick={() => setNewType(t.id)}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
-                        newType === t.id
-                          ? 'border-[#3B82C4] bg-blue-50 text-[#3B82C4] font-bold'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="text-xs">{t.label}</div>
-                      <div className="text-[10px] text-slate-400">{t.sub}</div>
-                    </button>
-                  ))}
+                <label className="mb-2 block font-bold text-slate-700">Art des Mehrbedarfs *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {([{ id: 'material' as const, label: 'Mengenmehrung', sub: 'Bestehende LV-Position' }, { id: 'unklar' as const, label: 'Neues Material', sub: 'Noch nicht im LV enthalten' }]).map(option => <button type="button" key={option.id} onClick={() => { setNewType(option.id); setNewPositionId(''); setPositionSearch(''); setNewTitle(''); }} className={`rounded-xl border p-4 text-left ${newType === option.id ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200'}`}><span className="block font-bold">{option.label}</span><span className="text-xs text-slate-500">{option.sub}</span></button>)}
                 </div>
               </div>
-
-              {/* Title / Description */}
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  {newType === 'stunden' ? 'Tätigkeit / Grund für Mehraufwand *' : 'Material- oder Bauteilbezeichnung *'}
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder={newType === 'stunden' ? 'z. B. Stemmarbeiten Schacht EG' : 'z. B. 3x Bogen 90° DN 100'}
-                  value={newTitle}
-                  onChange={e => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
-                />
-              </div>
-
-              {/* Quantity & Unit */}
+              {newType === 'material' ? <div>
+                <label className="mb-2 block font-bold text-slate-700">LV-Position suchen *</label>
+                <input type="search" value={positionSearch} onChange={event => { setPositionSearch(event.target.value); setNewPositionId(''); }} placeholder="Positionsnummer, Material oder Gewerk" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm" />
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-slate-200">{positionSuggestions.map(position => <button type="button" key={position.id} onClick={() => { setNewPositionId(position.id); setPositionSearch(`${position.posNr} · ${position.shortText}`); setNewUnit(position.qu); }} className={`block w-full border-b border-slate-100 px-4 py-2 text-left hover:bg-blue-50 ${newPositionId === position.id ? 'bg-blue-50 font-bold' : ''}`}><span className="font-mono">{position.posNr}</span> · {position.shortText} <span className="text-slate-500">({position.group || 'Ohne Gewerk'})</span></button>)}{positionSuggestions.length === 0 && <p className="p-3 text-slate-500">Keine passende LV-Position gefunden.</p>}</div>
+                {newPositionId && (() => { const position = positions.find(entry => entry.id === newPositionId); return position && <p className="mt-2 rounded-lg bg-slate-50 p-3">GAEB-Sollmenge: {position.qty} {position.qu} · Einzelpreis: {(position.unitPrice || 0).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}</p>; })()}
+              </div> : <div className="grid gap-3 sm:grid-cols-2">
+                <label className="font-bold text-slate-700">Material- oder Bauteilbezeichnung *<input required value={newTitle} onChange={event => setNewTitle(event.target.value)} placeholder="z. B. Filter DN 25" className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3" /></label>
+                <label className="font-bold text-slate-700">Hersteller (optional)<input value={newManufacturer} onChange={event => setNewManufacturer(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3" /></label>
+              </div>}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">
-                    {newType === 'stunden' ? 'Stundenanzahl *' : 'Menge *'}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={newType === 'stunden' ? 'z. B. 2.5' : 'z. B. 4'}
-                    value={newQty}
-                    onChange={e => setNewQty(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Einheit</label>
-                  {newType === 'stunden' ? (
-                    <input
-                      type="text"
-                      disabled
-                      value="Stunden (h)"
-                      className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-500"
-                    />
-                  ) : (
-                    <select
-                      value={newUnit}
-                      onChange={e => setNewUnit(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
-                    >
-                      <option value="Stk">Stück (Stk)</option>
-                      <option value="m">Meter (m)</option>
-                      <option value="m²">Quadratmeter (m²)</option>
-                      <option value="kg">Kilogramm (kg)</option>
-                      <option value="Psch">Pauschal (Psch)</option>
-                    </select>
-                  )}
-                </div>
+                <label className="font-bold text-slate-700">Zusätzliche Menge *<input type="number" min="0.01" step="any" required value={newQty} onChange={event => setNewQty(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3" /></label>
+                <label className="font-bold text-slate-700">Einheit{newType === 'material' ? <input readOnly value={positions.find(position => position.id === newPositionId)?.qu || 'LV-Position wählen'} className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3" /> : <select value={newUnit} onChange={event => setNewUnit(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3"><option value="Stk">Stück (Stk)</option><option value="m">Meter (m)</option><option value="m²">Quadratmeter (m²)</option><option value="kg">Kilogramm (kg)</option><option value="Psch">Pauschal</option></select>}</label>
               </div>
 
               {/* Room Assignment */}
@@ -1397,6 +1188,7 @@ Bauleitung`;
                 </div>
               </div>
 
+              {createError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{createError}</p>}
               {/* Action Buttons */}
               <div className="pt-2 flex justify-end space-x-2">
                 <button
@@ -1408,9 +1200,10 @@ Bauleitung`;
                 </button>
                 <button
                   type="submit"
+                  disabled={createBusy}
                   className="px-5 py-2 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-sm transition-all"
                 >
-                  Mehrbedarf anlegen
+                  {createBusy ? 'Wird gespeichert …' : 'Mehrbedarf anlegen'}
                 </button>
               </div>
             </form>
