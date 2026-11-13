@@ -142,9 +142,15 @@ export default function BookingScreen({
       )
     : [];
 
+  const unplannedMaterialIds = [
+    ...unclearItems.slice().reverse().map((item) => item.materialId),
+    ...(Array.isArray(room.materials) ? room.materials : [])
+      .filter((item) => item.isUnplanned)
+      .map((item) => item.positionId || item.id),
+  ].filter(Boolean);
   const displayMaterialIds = q
     ? filteredMaterials.map((m) => m.id)
-    : activeMaterialIds;
+    : [...new Set([...unplannedMaterialIds, ...activeMaterialIds])];
 
   // Stepper with Over-Quantity / Mehrverbrauch check capped at delivered quantity
   const handleStep = (matId, stepDelta) => {
@@ -302,6 +308,7 @@ export default function BookingScreen({
     setActiveMaterialIds((prev) =>
       prev.includes(unclearItem.materialId) ? prev : [unclearItem.materialId, ...prev]
     );
+    setSearchQuery('');
     if (onAddUnclearItem) {
       onAddUnclearItem(unclearItem);
     }

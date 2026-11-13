@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.41` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.42` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -53,7 +53,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 - `appPhase`: `loading` → `activation` (no saved session) or `project_select`/`app` (saved session). The legacy `pin` phase remains in code but is not used by the current activation flow. Within `app`, `currentScreen`: `rooms` → `book` → `photos` → (`book`) / `done` → `rooms`. There is no navigation library.
 - Startup (`initApp`): restores the locally saved tenant/monteur session, loads assigned projects, then opens project selection or the sole assigned project. A failed data load after activation falls back to project selection without deleting activation. It checks for an EAS update in production builds.
 - Login: `ActivationScreen` → `activateDeviceWithInvite` (backend invite redemption and Firebase custom-token sign-in) → project select or direct entry. `PinLockScreen`/`authenticateByPin` remain as legacy code.
-- Booking flow: selecting a room restores room drafts (`draftQuantities`, `photos`, `draftUnclear`). Quantity steppers in `BookingScreen` change `sessionQuantities`; leaving the room (`handleLeaveRoomDraft`) or saving photos persists drafts into the room object, recomputes `pct` (`computeRoomPercentage`) and triggers a silent sync if online. "Complete room" (`handleCompleteRoom`) enqueues one booking per material delta (plus photo-doc booking if no deltas, unclear-item bookings with `status: 'pending_assignment'`, and a `room_completion` booking), updates local `installedQty`, marks the room `isCompleted`/100 %, and syncs.
+- Booking flow: selecting a room restores room drafts (`draftQuantities`, `photos`, `draftUnclear`). The booking screen derives its topmost unplanned material cards from `draftUnclear`/room materials as well as the active list, so a catalog refresh cannot hide them. Quantity steppers in `BookingScreen` change `sessionQuantities`; leaving the room (`handleLeaveRoomDraft`) or saving photos persists drafts into the room object, recomputes `pct` (`computeRoomPercentage`) and triggers a silent sync if online. "Complete room" (`handleCompleteRoom`) enqueues one booking per material delta (plus photo-doc booking if no deltas, unclear-item bookings with `status: 'pending_assignment'`, and a `room_completion` booking), updates local `installedQty`, marks the room `isCompleted`/100 %, and syncs.
 - Extra flows: `handleAddNachtrag` (Mehrbedarf → `enqueueAddendum`), `handleAddUnclearItem` (unplanned installed material → adds to local catalog + room + addendum of type `ausserplanmaessig`), `handleOverConsumptionAlert` (enqueue booking with `type: 'over_consumption_alert'`).
 - Offline-first: all of the above write to AsyncStorage first. `getLocalUnsyncedDelta(projectId)` finds pending bookings/addendums (`status === 'pending'`) and rooms with unsynced changes. `syncBookings` pushes those, then pulls positions and rooms changed since `lastSyncedAt` (per project), then stores a new `lastSyncedAt`. A NetInfo listener triggers silent sync on reconnect. Reopening a formerly completed room with zero photos writes an explicit unlocked status and cleared completion metadata locally, then pushes that state through the room delta sync.
 - Photos: compressed to < 1000 KB at capture, copied to `documentDirectory/proofs/`, and uploaded during sync via base64 `uploadString` to Storage path `projects/<projectId>/proofs/...`; fallbacks: alternate bucket names, then a low-res base64 data URI stored directly in Firestore.
@@ -99,7 +99,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Only scripts: `start`, `android`, `ios`, `web` [config].
 - No tests, ESLint, Prettier, TypeScript or CI [verified by file listing].
-- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13 for v2.41. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
+- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13 for v2.42. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
 - Release/OTA publish procedure: `AGENTS.md` requires `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive` whenever `Monteur` is pushed. Expo Go development reloads use Metro rather than EAS Update.
 
 ## 11. Deployment
@@ -133,16 +133,17 @@ Confirmed from code:
 11. `expo-image-picker` uses `MediaTypeOptions` (check against SDK 57 docs; deprecated in newer SDKs — suspected).
 12. Possible mismatch between app writes and local Firestore rules: rules only match `projects/{id}`, `positions`, `rooms`, `bookings`, `addendums`, `users`; no explicit match for `projects/*/bookings`, `projects/*/addendums`, `projects/*/monteurs`, or root `monteurs`, which would be denied if those rules are deployed as-is (**suspected**; deployed rules unknown).
 
-Suspected / unverified: see "suspected" markers above. Full-screen room completion modal and the v2.41 room-list/header layout in Expo Go on a real device: Unknown / needs confirmation.
+Suspected / unverified: see "suspected" markers above. Full-screen room completion modal, room-list/header layout, and v2.42 unplanned-card ordering in Expo Go on a real device: Unknown / needs confirmation.
 
 ## 14. Current Work / Open Tasks
 
-- v2.41 caps the room-list progress ring and numeric label at 100, keeps it green when consumption exceeds plan, removes the in-progress badge at/above 100, and places a larger “100% fertig” badge on the right only for explicitly completed rooms. The header sync control uses a single circular-arrow icon that rotates during sync, without a red border or count badge. Device rendering and the real sync flow still need manual confirmation in Expo Go.
+- v2.42 keeps newly recorded unplanned material cards visible at the top of the room booking list, including after the material catalog causes the active list to reset. The search field is cleared when an unplanned item is saved. Device behavior and the real sync flow still need manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.42: Booking screen builds its visible list from newest unplanned entries and room material flags before standard active cards; adding an unplanned entry clears search. Fixes the card disappearing while remaining searchable after a catalog update.
 - 2026-11-13 v2.41: Room-list progress ring caps its arc, number and color at green 100 even for underlying over-consumption; completion badge moves to the right and says “100% fertig” only for completed rooms. Header sync button becomes a single rotating SVG icon without red accents.
 - 2026-11-13 v2.40: Room-completion modal expanded to full screen; cancel action moved to top X, only one fixed green confirmation button at bottom. Grey no-photo completion trigger made clearer; existing photo-required alert retained.
 - 2026-11-13 v2.39: Explicit room completion only; photo guard in the UI and App handler; zero-photo completed rooms can be reopened with sync of cleared completion metadata. Header shows project and tenant branding from Admin, with KW and monteur initials removed.
@@ -217,7 +218,7 @@ Suspected / unverified: see "suspected" markers above. Full-screen room completi
 | Sync (Firestore/Storage/Plans) | `src/services/syncService.js` |
 | Local storage / outbox / % calc / Plans cache | `src/services/storageService.js` |
 | Login / PIN / seeds | `src/services/authService.js`, `src/screens/PinLockScreen.jsx` |
-| Booking UI / completion recovery / full-screen modal | `src/screens/BookingScreen.jsx`, `src/components/booking/CompleteRoomModal.jsx`, `src/components/booking/completeRoomStyles.js`, `src/components/booking/bookingStyles.js` |
+| Booking UI / unplanned card ordering / completion recovery / full-screen modal | `src/screens/BookingScreen.jsx`, `src/components/booking/CompleteRoomModal.jsx`, `src/components/booking/completeRoomStyles.js`, `src/components/booking/bookingStyles.js` |
 | Tenant branding / header | `src/services/authService.js`, `src/components/Header.jsx` |
 | Room List & Floor Filter / capped ring | `src/screens/RoomListScreen.jsx`, `src/components/ProgressRing.jsx` |
 | Photos | `src/screens/PhotoCaptureScreen.jsx` |
@@ -238,6 +239,12 @@ Suspected / unverified: see "suspected" markers above. Full-screen room completi
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.42)**
+  - **Anlass:** Ein neu als außerplanmäßig verbaut erfasster Posten war im Raum nur über die Suche sichtbar, nicht als Kachel oben in der Liste.
+  - **Ursache:** `BookingScreen` setzte seine lokalen aktiven Material-IDs bei Änderung der Kataloglänge zurück. Der neue Posten war dann nicht mehr in dieser Liste, obwohl der Katalogeintrag vorhanden war.
+  - **Änderungen:** Sichtbare Kacheln beziehen die neuesten außerplanmäßigen IDs zuerst aus `unclearItems` und den Raum-Materialien; IDs werden dedupliziert. Beim Speichern wird eine aktive Suche gelöscht. App-Anzeigeversion v2.42.
+  - **Verifikation:** `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden. Live-Verhalten auf dem Gerät und Firestore: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.41)**
   - **Anlass:** Screenshot zeigte ein irritierendes 100%-Fertig-Badge direkt am Raumtitel; bei Mehrverbrauch konnte der Ring 101 anzeigen. Sync-Icon hatte roten Rand und eine schwer erkennbare Glyphe.
