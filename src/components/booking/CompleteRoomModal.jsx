@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Modal, SafeAreaView, StatusBar } from 'react-native';
 import { t, formatUnit } from '../../locales/i18n';
 import { getRoomDisplayName } from './bookingHelpers';
 import { styles } from './completeRoomStyles';
@@ -15,15 +15,18 @@ export default function CompleteRoomModal({
   if (!room) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
-      <View style={styles.modalBackdrop}>
-        <View style={styles.completeModalCard}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={styles.completeModalScreen}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.completeModalContent}>
           <View style={styles.completeModalHeader}>
             <Text style={styles.completeModalTitle}>
               ✓ {t('completeModalTitle', currentLang)}
             </Text>
             <TouchableOpacity
               onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel={t('cancel', currentLang)}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.closeBtnText}>✕</Text>
@@ -39,7 +42,7 @@ export default function CompleteRoomModal({
           </Text>
 
           {/* Delta Summary List */}
-          <ScrollView style={styles.deltaScrollList}>
+          <ScrollView style={styles.deltaScrollList} contentContainerStyle={styles.deltaScrollContent}>
             {deltaSummary.map((item) => {
               const displayQu = formatUnit(item.qu, currentLang);
               const isUnplanned = Boolean(item.isUnplanned || item.status === 'unplanned');
@@ -111,14 +114,6 @@ export default function CompleteRoomModal({
 
           <View style={styles.completeActionRow}>
             <TouchableOpacity
-              style={styles.overCancelBtn}
-              onPress={onClose}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.overCancelText}>{t('cancel', currentLang)}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={styles.completeConfirmBtn}
               onPress={onConfirm}
               activeOpacity={0.8}
@@ -129,7 +124,7 @@ export default function CompleteRoomModal({
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 }

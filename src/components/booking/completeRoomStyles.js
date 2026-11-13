@@ -2,24 +2,14 @@ import { StyleSheet } from 'react-native';
 import { COLORS } from '../../constants/theme';
 
 export const styles = StyleSheet.create({
-  modalBackdrop: {
+  completeModalScreen: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 18,
-  },
-  completeModalCard: {
-    width: '100%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    maxHeight: '85%',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
+  },
+  completeModalContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   completeModalHeader: {
     flexDirection: 'row',
@@ -28,12 +18,12 @@ export const styles = StyleSheet.create({
     marginBottom: 4,
   },
   completeModalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '900',
     color: '#234E52',
   },
   closeBtnText: {
-    fontSize: 18,
+    fontSize: 24,
     color: COLORS.muted,
     fontWeight: '700',
     padding: 4,
@@ -50,13 +40,15 @@ export const styles = StyleSheet.create({
     marginBottom: 12,
   },
   deltaScrollList: {
-    maxHeight: 250,
+    flex: 1,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
     backgroundColor: '#F8FAFC',
+    marginBottom: 12,
+  },
+  deltaScrollContent: {
     padding: 10,
-    marginBottom: 16,
   },
   deltaRow: {
     flexDirection: 'row',
@@ -114,33 +106,21 @@ export const styles = StyleSheet.create({
     color: COLORS.muted,
   },
   completeActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  overCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E0',
-    backgroundColor: '#F7FAFC',
-    alignItems: 'center',
-  },
-  overCancelText: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: COLORS.muted,
+    paddingBottom: 12,
   },
   completeConfirmBtn: {
-    flex: 1.6,
-    paddingVertical: 12,
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#319795',
+    backgroundColor: COLORS.green,
     alignItems: 'center',
   },
   completeConfirmText: {
-    fontSize: 13.5,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
+    textAlign: 'center',
   },
 });

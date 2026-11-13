@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.39` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.40` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -99,7 +99,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Only scripts: `start`, `android`, `ios`, `web` [config].
 - No tests, ESLint, Prettier, TypeScript or CI [verified by file listing].
-- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13. `npm start -- --port 8082` started Metro; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
+- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13 for v2.40. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
 - Release/OTA publish procedure: `AGENTS.md` requires `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive` whenever `Monteur` is pushed. Expo Go development reloads use Metro rather than EAS Update.
 
 ## 11. Deployment
@@ -133,16 +133,17 @@ Confirmed from code:
 11. `expo-image-picker` uses `MediaTypeOptions` (check against SDK 57 docs; deprecated in newer SDKs — suspected).
 12. Possible mismatch between app writes and local Firestore rules: rules only match `projects/{id}`, `positions`, `rooms`, `bookings`, `addendums`, `users`; no explicit match for `projects/*/bookings`, `projects/*/addendums`, `projects/*/monteurs`, or root `monteurs`, which would be denied if those rules are deployed as-is (**suspected**; deployed rules unknown).
 
-Suspected / unverified: see "suspected" markers above.
+Suspected / unverified: see "suspected" markers above. Full-screen room completion modal layout in Expo Go on a real device: Unknown / needs confirmation.
 
 ## 14. Current Work / Open Tasks
 
-- v2.39 removes completion locking based solely on 100% progress, requires a saved photo and explicit confirmation, adds a recovery action for already completed zero-photo rooms, and loads tenant branding for a neutral header with a prominent project name. Device rendering, actual photo capture, and Firestore round trip still need manual confirmation in Expo Go.
+- v2.40 presents room completion as a full-screen modal with the X at the top, a scrollable product list using the remaining height, and one green confirmation button at the bottom. The no-photo trigger remains pressable for its photo-required alert and is visibly grey. Device rendering, actual photo capture, and Firestore round trip still need manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.40: Room-completion modal expanded to full screen; cancel action moved to top X, only one fixed green confirmation button at bottom. Grey no-photo completion trigger made clearer; existing photo-required alert retained.
 - 2026-11-13 v2.39: Explicit room completion only; photo guard in the UI and App handler; zero-photo completed rooms can be reopened with sync of cleared completion metadata. Header shows project and tenant branding from Admin, with KW and monteur initials removed.
 - 2026-11-13 v2.38: `getRoomFloor` is exported from `storageService.js` and resolves explicit `floor`/`level`, a floor prefix in room code, or `Sonstiges`; fixes `undefined is not a function` in `RoomListScreen` (and the same latent issue in `BookingScreen`). `Header` replaces the full monteur name with a compact user icon and initials next to the logo and trims vertical padding.
 - 2026-11-13 v2.37: Expo Go reload now has the missing `refreshData` helper; startup errors after an activation retain the local session and route to project selection rather than demanding a new one-time invite. `expo-doctor` 20/20 and iOS export passed; Expo Go device reload and live Firebase session restoration remain unverified.
@@ -215,7 +216,7 @@ Suspected / unverified: see "suspected" markers above.
 | Sync (Firestore/Storage/Plans) | `src/services/syncService.js` |
 | Local storage / outbox / % calc / Plans cache | `src/services/storageService.js` |
 | Login / PIN / seeds | `src/services/authService.js`, `src/screens/PinLockScreen.jsx` |
-| Booking UI / completion recovery | `src/screens/BookingScreen.jsx`, `src/components/booking/*` |
+| Booking UI / completion recovery / full-screen modal | `src/screens/BookingScreen.jsx`, `src/components/booking/CompleteRoomModal.jsx`, `src/components/booking/completeRoomStyles.js`, `src/components/booking/bookingStyles.js` |
 | Tenant branding / header | `src/services/authService.js`, `src/components/Header.jsx` |
 | Room List & Floor Filter | `src/screens/RoomListScreen.jsx` |
 | Photos | `src/screens/PhotoCaptureScreen.jsx` |
@@ -236,6 +237,11 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.40)**
+  - **Anlass:** Nutzer wünschte einen deutlich grauen Monteur-fertig-Button ohne Foto samt Hinweis beim Tippen und eine bildschirmfüllende Abschlussübersicht mit X oben, mehr Platz für Produkte und einem grünen Abschlussbutton unten.
+  - **Änderungen:** Vorhandene Foto-Prüfung im `BookingScreen` beibehalten; grauen Button aufgehellt. `CompleteRoomModal` nutzt nun ein Full-Screen-Modal mit Safe Area, einer flexiblen scrollbaren Produktliste, X als Abbruch und einem einzelnen grünen Abschlussbutton. App-Anzeigeversion v2.40.
+  - **Verifikation:** `npx expo-doctor` 20/20 und iOS-Export bestanden; Expo-Go-Layout auf echtem Gerät: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.39)**
   - **Anlass:** Screenshot zeigte gesperrten Raum bei 0 Fotos und noch offenen Materialien; Nutzer wünschte Admin-Logo/Farbwelt, neutralen Header und sichtbares Projekt statt KW/Initialen.

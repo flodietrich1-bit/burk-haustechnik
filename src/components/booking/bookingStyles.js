@@ -212,7 +212,7 @@ export const styles = StyleSheet.create({
     marginTop: 8,
   },
   monteurFertigBtnGrey: {
-    backgroundColor: '#718096',
+    backgroundColor: '#AAB4BF',
   },
   monteurFertigBtnGreen: {
     backgroundColor: '#16A34A',
