@@ -277,6 +277,7 @@ export interface Addendum {
   isLvPosition?: boolean;
   targetRoomId?: string;
   targetRoomName?: string;
+  isHidden?: boolean;
 }
 
 export interface PlanDeviationItem {

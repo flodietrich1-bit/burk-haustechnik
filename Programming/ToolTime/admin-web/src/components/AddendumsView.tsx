@@ -16,17 +16,23 @@ import {
   Send,
   AlertTriangle,
   Mail,
-  FileText
+  FileText,
+  Eye,
+  EyeOff,
+  ShoppingCart
 } from 'lucide-react';
 import { 
   updateAddendumStatus, 
   createAddendum, 
   getMaterialActualQty,
-  convertAddendumToLvPosition
+  convertAddendumToLvPosition,
+  addPositionDeliveredQty,
+  toggleAddendumHidden,
+  addBookingEntry,
+  getActiveTenantId
 } from '../services/firestoreService';
 import type { Booking } from '../types';
 import { api } from '../services/apiClient';
-import { getActiveTenantId } from '../services/firestoreService';
 
 interface AddendumsViewProps {
   addendums: Addendum[];
@@ -87,7 +93,20 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   bookings = [], currentUser, focusedItemId
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'requested' | 'approved' | 'rejected' | 'needs_discussion'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'pending' | 'requested' | 'approved' | 'rejected' | 'needs_discussion'>('all');
+  const [showHidden, setShowHidden] = useState<boolean>(false);
+  const [isReorderingStock, setIsReorderingStock] = useState<string | null>(null);
+  const [stockSuccessToast, setStockSuccessToast] = useState<string | null>(null);
+
+  // Auto-default to 'todo' if there are open items, otherwise 'all'
+  const initialFilterSet = React.useRef(false);
+  useEffect(() => {
+    if (initialFilterSet.current || addendums.length === 0) return;
+    const hasTodo = addendums.some(a => (a.status === 'pending' || a.status === 'requested' || a.status === 'needs_discussion') && !a.isHidden);
+    setStatusFilter(hasTodo ? 'todo' : 'all');
+    initialFilterSet.current = true;
+  }, [addendums]);
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createError, setCreateError] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
@@ -428,10 +447,11 @@ Bauleitung`;
   };
 
   // Metrics
-  const totalCount = addendums.length;
-  const timeItems = addendums.filter(a => getItemCategory(a) === 'time');
-  const materialItems = addendums.filter(a => getItemCategory(a) === 'material');
-  const unclearItems = addendums.filter(a => getItemCategory(a) === 'unclear');
+  const visibleAddendums = addendums.filter(a => showHidden || !a.isHidden);
+  const totalCount = visibleAddendums.length;
+  const timeItems = visibleAddendums.filter(a => getItemCategory(a) === 'time');
+  const materialItems = visibleAddendums.filter(a => getItemCategory(a) === 'material');
+  const unclearItems = visibleAddendums.filter(a => getItemCategory(a) === 'unclear');
 
   const unrequestedMaterialItems = materialItems.filter(a => a.status === 'pending');
   const requestedMaterialItems = materialItems.filter(a => a.status === 'requested');
@@ -439,6 +459,10 @@ Bauleitung`;
   const openTimeCount = timeItems.filter(a => a.status === 'pending').length;
   const openMaterialCount = unrequestedMaterialItems.length;
   const openUnclearCount = unclearItems.filter(a => a.status === 'pending').length;
+
+  const todoItems = visibleAddendums.filter(a => a.status === 'pending' || a.status === 'requested' || a.status === 'needs_discussion');
+  const todoCount = todoItems.length;
+  const hiddenCount = addendums.filter(a => a.isHidden).length;
 
   // 4. Batch Request Modal handlers
   const handleOpenBatchRequestModal = () => {
@@ -587,16 +611,108 @@ Bauleitung`;
     }
   };
 
+  // Toggle card hidden status (Auge anklicken)
+  const handleToggleHide = async (item: Addendum) => {
+    if (!projectId) return;
+    try {
+      await toggleAddendumHidden(projectId, item.id, !item.isHidden);
+    } catch (err: any) {
+      console.error('Fehler beim Ändern des Ausblenden-Status:', err);
+    }
+  };
+
+  // Direct stock reorder for Admin & Kaufmännische Leitung when material is insufficient
+  const handleDirectReorderStock = async (item: Addendum, stockInfo: any) => {
+    if (!projectId) return;
+    const defQty = Number(stockInfo?.deficit) || 0;
+    if (defQty <= 0) return;
+
+    const p = (item.materialId ? posIdMap.get(item.materialId) : undefined) ||
+      (item.itemOz ? posMap.get(item.itemOz) : undefined) ||
+      positions.find(pos => pos.shortText.trim().toLowerCase() === item.title.trim().toLowerCase());
+
+    const targetKey = p?.id || p?.posNr || item.materialId || item.itemOz || item.title;
+    if (!targetKey) {
+      alert('Keine passende LV-Position gefunden, um den Bestand nachzubuchen.');
+      return;
+    }
+
+    const promptVal = window.prompt(
+      `Fehlmenge für „${item.title}“ jetzt nachbestellen und als verfügbaren Projektbestand einbuchen:\n\nBitte Nachbestellmenge bestätigen oder anpassen (${stockInfo.qu}):`,
+      String(defQty)
+    );
+    if (!promptVal) return;
+
+    const finalQty = Number.parseFloat(promptVal.replace(',', '.'));
+    if (!Number.isFinite(finalQty) || finalQty <= 0) {
+      alert('Bitte eine gültige positive Zahl eingeben.');
+      return;
+    }
+
+    setIsReorderingStock(item.id);
+    try {
+      await addPositionDeliveredQty(projectId, targetKey, finalQty, stockInfo.qu);
+
+      const actorName = currentUser.name || (currentUser.role === 'admin' ? 'Administrator' : 'Kaufmännische Leitung');
+      await addBookingEntry(projectId, {
+        roomId: item.roomId || 'allgemein',
+        roomName: item.roomName || 'Projektbestand',
+        positionName: item.title,
+        quantity: finalQty,
+        qu: stockInfo.qu,
+        type: 'material_reorder',
+        note: `Nachbestellung über ${finalQty} ${stockInfo.qu} veranlasst (${actorName}). Verfügbarer Bestand aufgestockt.`,
+        createdBy: actorName,
+      });
+
+      setStockSuccessToast(`+${finalQty} ${stockInfo.qu} erfolgreich nachbestellt und als verfügbarer Bestand verbucht.`);
+      window.setTimeout(() => setStockSuccessToast(null), 5000);
+    } catch (err: any) {
+      console.error('Fehler bei der Nachbestellung:', err);
+      alert('Fehler beim Nachbestellen: ' + (err.message || err));
+    } finally {
+      setIsReorderingStock(null);
+    }
+  };
+
   // Filtered List
   const displayedList = addendums.filter(item => {
+    // 1. Filter out hidden items unless showHidden is active
+    if (!showHidden && item.isHidden) {
+      if (focusedItemId !== item.id) return false;
+    }
     const cat = getItemCategory(item);
     if (categoryFilter !== 'all' && cat !== categoryFilter) return false;
-    if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+
+    // Status Filter: 'todo' includes all actionable items (pending, requested, needs_discussion)
+    if (statusFilter === 'todo') {
+      const isTodo = item.status === 'pending' || item.status === 'requested' || item.status === 'needs_discussion';
+      if (!isTodo && focusedItemId !== item.id) return false;
+    } else if (statusFilter !== 'all' && item.status !== statusFilter) {
+      if (focusedItemId !== item.id) return false;
+    }
     return true;
   });
 
   return (
     <div className="space-y-6">
+      {/* Toast Notification */}
+      {stockSuccessToast && (
+        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center space-x-2.5">
+            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span className="text-xs font-bold">{stockSuccessToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStockSuccessToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-1 rounded-lg hover:bg-emerald-100 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -786,28 +902,56 @@ Bauleitung`;
           ))}
         </div>
 
-        {/* Status Filter */}
-        <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-xl">
-          {[
-            { id: 'all' as const, label: 'Alle Status' },
-            { id: 'pending' as const, label: `To-Do / Offen (${openTimeCount + openMaterialCount + openUnclearCount})` },
-            { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
-            { id: 'needs_discussion' as const, label: 'Rücksprache' },
-            { id: 'approved' as const, label: 'Freigegeben' },
-            { id: 'rejected' as const, label: 'Abgelehnt' },
-          ].map(s => (
-            <button
-              key={s.id}
-              onClick={() => setStatusFilter(s.id)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-                statusFilter === s.id
-                  ? 'bg-white text-slate-800 shadow-xs font-bold'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        {/* Status Filter & Hidden Cards Toggle */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status Filter */}
+          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+            {[
+              { id: 'all' as const, label: 'Alle Status' },
+              { id: 'todo' as const, label: `To-Do / Offen (${todoCount})` },
+              { id: 'pending' as const, label: `Ausstehend Bauleitung (${openTimeCount + openMaterialCount + openUnclearCount})` },
+              { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
+              { id: 'needs_discussion' as const, label: 'Rücksprache' },
+              { id: 'approved' as const, label: 'Freigegeben' },
+              { id: 'rejected' as const, label: 'Abgelehnt' },
+            ].map(s => (
+              <button
+                key={s.id}
+                onClick={() => setStatusFilter(s.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                  statusFilter === s.id
+                    ? 'bg-white text-slate-800 shadow-xs font-bold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Eye Icon Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setShowHidden(prev => !prev)}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+              showHidden
+                ? 'bg-purple-50 text-purple-800 border-purple-300 shadow-2xs'
+                : 'bg-white text-slate-600 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
+            }`}
+            title={showHidden ? 'Ausgeblendete Kacheln verbergen (Auge schließen)' : 'Ausgeblendete Kacheln anzeigen (Auge öffnen)'}
+          >
+            {showHidden ? (
+              <>
+                <Eye className="w-4 h-4 text-purple-600" />
+                <span>Versteckte anzeigen ({hiddenCount})</span>
+              </>
+            ) : (
+              <>
+                <EyeOff className="w-4 h-4 text-slate-400" />
+                {hiddenCount > 0 && <span className="text-slate-400">({hiddenCount})</span>}
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -861,10 +1005,13 @@ Bauleitung`;
             return (
               <div 
                 key={item.id} id={`addendum-${item.id}`}
-                className={`bg-white rounded-2xl border shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${focusedItemId === item.id ? 'border-blue-400 ring-2 ring-blue-200' : 'border-slate-200'}`}
+                className={`bg-white rounded-2xl border shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${
+                  focusedItemId === item.id ? 'border-blue-400 ring-2 ring-blue-200' :
+                  item.isHidden ? 'opacity-75 bg-slate-50/60 border-dashed border-slate-300' : 'border-slate-200'
+                }`}
               >
                 <div className="space-y-3">
-                  {/* Top Bar: Category Badge + Status Badge */}
+                  {/* Top Bar: Category Badge + Status Badge + Eye Hide Toggle */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${theme.badgeBg}`}>
@@ -885,21 +1032,39 @@ Bauleitung`;
                       )}
                     </div>
 
-                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
-                      isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                      isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
-                      needsDiscussion ? 'bg-orange-100 text-orange-800 border border-orange-200' :
-                      isRequested ? 'bg-blue-100 text-blue-800 border border-blue-200' :
-                      'bg-amber-100 text-amber-800 border border-amber-200'
-                    }`}>
-                      {isApproved 
-                        ? (item.approvalType === 'reordered' 
-                            ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
-                            : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
-                        : isRejected ? 'Abgelehnt' : needsDiscussion ? 'Rücksprache erforderlich'
-                        : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
-                        : 'Ausstehend'}
-                    </span>
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      {item.isHidden && (
+                        <span className="text-[10px] bg-slate-200/80 text-slate-600 font-bold px-2 py-0.5 rounded-md">
+                          Ausgeblendet
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleHide(item)}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          item.isHidden ? 'text-purple-600 hover:bg-purple-100 bg-purple-50' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                        }`}
+                        title={item.isHidden ? 'Kachel wieder einblenden' : 'Kachel als irrelevant verstecken'}
+                      >
+                        {item.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
+
+                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
+                        isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                        isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
+                        needsDiscussion ? 'bg-orange-100 text-orange-800 border border-orange-200' :
+                        isRequested ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                        'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {isApproved 
+                          ? (item.approvalType === 'reordered' 
+                              ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
+                              : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
+                          : isRejected ? 'Abgelehnt' : needsDiscussion ? 'Rücksprache erforderlich'
+                          : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
+                          : 'Ausstehend'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Title & Quantity Pill */}
@@ -1035,9 +1200,25 @@ Bauleitung`;
                       </div>
 
                       {!stockInfo.isSufficient && (
-                        <p className="text-[10.5px] text-red-700 font-medium bg-red-50/80 p-1.5 rounded-md text-center">
-                          Achtung: Der verbleibende Bestand reicht nicht für alle weiteren Räume aus! Bitte nachbestellen.
-                        </p>
+                        <div className="space-y-2 pt-1">
+                          <p className="text-[10.5px] text-red-700 font-medium bg-red-50/80 p-1.5 rounded-md text-center">
+                            Achtung: Der verbleibende Bestand reicht nicht für alle weiteren Räume aus! Bitte nachbestellen.
+                          </p>
+                          {(currentUser?.role === 'admin' || currentUser?.role === 'kaufmaennisch' || canCommercialDecide) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDirectReorderStock(item, stockInfo)}
+                              disabled={isReorderingStock === item.id}
+                              className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-60"
+                              title={`Fehlmenge von ${stockInfo.deficit} ${stockInfo.qu} jetzt nachbestellen und als verfügbaren Projektbestand einbuchen`}
+                            >
+                              <ShoppingCart className="w-4 h-4" />
+                              <span>
+                                {isReorderingStock === item.id ? 'Wird als Bestand eingebucht...' : `Fehlmenge jetzt nachbestellen (+${stockInfo.deficit} ${stockInfo.qu})`}
+                              </span>
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}

@@ -1590,4 +1590,52 @@ export async function updateUserPassword(userId: string, newPassword: string): P
   throw new Error('Passwortänderungen müssen über Firebase Authentication erfolgen.');
 }
 
+export async function toggleAddendumHidden(projectId: string, addendumId: string, isHidden: boolean): Promise<void> {
+  const payload = {
+    isHidden,
+    updatedAt: new Date().toISOString()
+  };
+  if (projectId) {
+    const current = getLocalAddendums(projectId);
+    const updated = current.map(a => a.id === addendumId ? { ...a, ...payload } : a);
+    saveLocalAddendums(projectId, updated);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('burk_tooltime_addendums_updated', { detail: { projectId } }));
+    }
+    try {
+      const projRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addendumId);
+      await setDoc(projRef, payload, { merge: true });
+    } catch (err: any) {
+      console.warn('Firestore toggleAddendumHidden error:', err.message);
+    }
+  }
+}
+
+export async function addBookingEntry(projectId: string, booking: Partial<Booking>): Promise<void> {
+  const id = booking.id || `book_reorder_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const now = new Date().toISOString();
+  const fullBooking: Booking = {
+    id,
+    projectId,
+    roomId: booking.roomId || 'allgemein',
+    roomName: booking.roomName || 'Projektbestand',
+    itemId: booking.itemId || '',
+    positionName: booking.positionName || '',
+    quantity: booking.quantity || 0,
+    qu: booking.qu || 'Stk',
+    type: booking.type || 'material_reorder',
+    note: booking.note || '',
+    createdBy: booking.createdBy || 'Admin',
+    timestamp: booking.timestamp || now,
+    status: 'synced',
+    ...(booking as any)
+  };
+  try {
+    const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'bookings', id);
+    await setDoc(ref, cleanForFirestore(fullBooking), { merge: true });
+  } catch (err: any) {
+    console.warn('Firestore addBookingEntry error:', err.message);
+  }
+}
+
 

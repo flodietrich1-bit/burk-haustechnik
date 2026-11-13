@@ -221,8 +221,8 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   // - Admin: Angefragte Nachträge zur Bestätigung bzw. offene Nachträge
   // - Bauleiter: Offene Nachträge von Monteuren (pending) + Klärungsbedarf (needs_discussion)
   const openAddendumsCount = useMemo(() => {
-    const requested = addendums.filter(a => a.status === 'requested' || a.status === 'needs_discussion').length;
-    const pending = addendums.filter(a => a.status === 'pending').length;
+    const requested = addendums.filter(a => !a.isHidden && (a.status === 'requested' || a.status === 'needs_discussion')).length;
+    const pending = addendums.filter(a => !a.isHidden && a.status === 'pending').length;
 
     if (currentUser?.role === 'kaufmaennisch') {
       return requested;
@@ -230,7 +230,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
     if (currentUser?.role === 'admin') {
       return requested > 0 ? requested : pending;
     }
-    return pending + addendums.filter(a => a.status === 'needs_discussion').length;
+    return pending + addendums.filter(a => !a.isHidden && a.status === 'needs_discussion').length;
   }, [addendums, currentUser?.role]);
   
   // Reorders and deviation count (distinct positions with genuine deviation or active alert)

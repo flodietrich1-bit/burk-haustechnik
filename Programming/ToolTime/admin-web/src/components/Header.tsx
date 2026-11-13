@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   const openAlerts = alerts.filter(a => a.status === 'open');
   const isCommercialOrAdmin = currentUser?.role === 'kaufmaennisch' || currentUser?.role === 'admin';
   const requestedAddendums = addendums.filter(
-    a => a.status === 'requested' || a.status === 'needs_discussion'
+    a => !a.isHidden && (a.status === 'requested' || a.status === 'needs_discussion')
   );
   const relevantRequests = isCommercialOrAdmin ? requestedAddendums : [];
   const totalNotifications = openAlerts.length + relevantRequests.length;
@@ -211,9 +211,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Bell className="w-4 h-4" />
               {totalNotifications > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[10px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center animate-pulse shadow-sm">
-                  {totalNotifications}
-                </span>
+                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-600 rounded-full ring-2 ring-slate-800 animate-pulse" />
               )}
             </button>
 
