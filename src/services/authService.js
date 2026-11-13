@@ -1,16 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { doc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from './firebase';
-import { DEFAULT_PROJECT_ID, DEFAULT_PROJECT } from '../constants/initialData';
-import { checkOnlineStatus } from './syncService';
+import NetInfo from '@react-native-community/netinfo';
+import { signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { redeemInviteApi, fetchAssignedProjectsApi } from './apiService';
 
 const USER_KEY = 'ttapp_active_monteur';
+const TENANT_KEY = 'ttapp_tenant_id';
 const LOCKOUT_KEYS = {
   ATTEMPTS: 'ttapp_pin_failed_attempts',
   LOCKED_UNTIL: 'ttapp_pin_locked_until',
 };
 
-// Seed monteurs (configured via Benutzer-Admin or offline fallback)
+// Seed monteurs (legacy fallback for offline mock projects)
 export const SEED_MONTEURS = [
   {
     id: 'user_mont_4',
@@ -68,7 +70,7 @@ export const SEED_MONTEURS = [
   },
 ];
 
-// Available construction projects
+// Available construction projects (legacy mock fallback)
 export const AVAILABLE_PROJECTS = [
   {
     id: 'proj_1789997083092',
@@ -96,20 +98,232 @@ export const AVAILABLE_PROJECTS = [
     calendarWeek: 27,
     totalDeliveredPercentage: 42,
   },
-  {
-    id: 'hallenbad-weingarten',
-    name: 'Hallenbad Weingarten Sanierung',
-    projectNumber: '1638 / 24316-044',
-    client: 'Stadt Weingarten',
-    location: 'Weingarten',
-    address: 'Brechenmacherstraße 11, 88250 Weingarten',
-    trade: 'Sanitärinstallation',
-    projectManager: 'Florian Buck',
-    assignedMonteurIds: ['user_mont_1'],
-    calendarWeek: 27,
-    totalDeliveredPercentage: 42,
-  },
 ];
+
+/**
+ * Check connectivity independently without circular dependency
+ */
+async function isOnline() {
+  try {
+    const net = await NetInfo.fetch();
+    return !!(net.isConnected && net.isInternetReachable !== false);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get active tenant ID
+ */
+export async function getTenantId() {
+  try {
+    return await AsyncStorage.getItem(TENANT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set active tenant ID
+ */
+export async function setTenantId(tenantId) {
+  try {
+    if (tenantId) {
+      await AsyncStorage.setItem(TENANT_KEY, tenantId);
+    } else {
+      await AsyncStorage.removeItem(TENANT_KEY);
+    }
+  } catch (e) {
+    console.warn('Error saving tenant ID:', e);
+  }
+}
+
+/**
+ * Check if the device has been activated with a valid tenant & monteur profile
+ */
+export async function isDeviceActivated() {
+  try {
+    const [tenantId, monteur] = await Promise.all([
+      getTenantId(),
+      getActiveMonteur(),
+    ]);
+    return !!(tenantId && monteur);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Activate device using invite code or QR token
+ * 1. Redeem invite at Express backend -> gets { customToken, tenantId, ... }
+ * 2. Authenticate Firebase Auth via signInWithCustomToken
+ * 3. Load member profile from Firestore (tenants/:tenantId/members/:uid)
+ * 4. Fetch assigned projects via backend API and cache them
+ */
+export async function activateDeviceWithInvite({ code, qrToken }) {
+  // 1. Redeem invite at backend
+  const redeemResult = await redeemInviteApi({ code, qrToken });
+  const { customToken, tenantId } = redeemResult;
+
+  if (!customToken || !tenantId) {
+    throw new Error('INVITE_INVALID_RESPONSE');
+  }
+
+  // 2. Sign in with Firebase Custom Token
+  const userCredential = await signInWithCustomToken(auth, customToken);
+  const user = userCredential.user;
+  const uid = user.uid;
+
+  // 3. Fetch member data from Firestore tenants/:tenantId/members/:uid
+  let memberData = null;
+  try {
+    const memberDoc = await getDoc(doc(db, 'tenants', tenantId, 'members', uid));
+    if (memberDoc.exists()) {
+      memberData = memberDoc.data();
+    }
+  } catch (err) {
+    console.warn('Could not read tenant member doc directly:', err?.message);
+  }
+
+  // 4. Build Monteur profile
+  const monteur = {
+    id: uid,
+    uid: uid,
+    name: memberData?.displayName || user.displayName || 'Monteur',
+    email: memberData?.email || user.email || '',
+    role: memberData?.role || 'monteur',
+    defaultLanguage: memberData?.defaultLanguage || 'de',
+    assignedProjectIds: Array.isArray(memberData?.assignedProjectIds) ? memberData.assignedProjectIds : [],
+    tenantId,
+  };
+
+  // 5. Persist tenant & monteur locally
+  await Promise.all([
+    setTenantId(tenantId),
+    AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur)),
+  ]);
+
+  // 6. Fetch and cache assigned projects via backend API
+  let projects = [];
+  try {
+    const idToken = await user.getIdToken();
+    projects = await fetchAssignedProjectsApi(tenantId, idToken);
+    const cacheKey = `@ttapp:projects:${tenantId}:${uid}`;
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(projects));
+  } catch (projErr) {
+    console.warn('Could not fetch initial projects from API:', projErr?.message);
+  }
+
+  return {
+    success: true,
+    tenantId,
+    monteur,
+    projects,
+  };
+}
+
+/**
+ * Load assigned projects for tenant & monteur (online via Backend API, fallback to cache)
+ */
+export async function loadAssignedProjects(tenantId, monteur) {
+  const tId = tenantId || (await getTenantId());
+  const activeUser = monteur || (await getActiveMonteur());
+
+  if (!tId || !activeUser?.id) return [];
+
+  const cacheKey = `@ttapp:projects:${tId}:${activeUser.id}`;
+
+  const online = await isOnline();
+  if (online && auth.currentUser) {
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const projects = await fetchAssignedProjectsApi(tId, idToken);
+      if (Array.isArray(projects)) {
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(projects));
+        return projects;
+      }
+    } catch (e) {
+      console.warn('API fetch projects error, using cached projects:', e?.message);
+    }
+  }
+
+  // Offline / Cache fallback
+  try {
+    const cachedRaw = await AsyncStorage.getItem(cacheKey);
+    if (cachedRaw) {
+      const parsed = JSON.parse(cachedRaw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+
+  // Fallback for legacy mode without tenant
+  if (!tId) {
+    const legacyRaw = await AsyncStorage.getItem('ttapp_all_projects');
+    if (legacyRaw) {
+      const parsed = JSON.parse(legacyRaw);
+      return parsed.filter((p) => isUserAssignedToProject(activeUser, p));
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Restore persistent session on app start without requiring re-activation
+ */
+export async function restoreSession() {
+  const [tenantId, monteur] = await Promise.all([
+    getTenantId(),
+    getActiveMonteur(),
+  ]);
+
+  if (!tenantId || !monteur) {
+    return {
+      isActivated: false,
+      tenantId: null,
+      monteur: null,
+      projects: [],
+    };
+  }
+
+  // Ensure Firebase Auth state is settled (wait up to 2.5s if initializing)
+  if (!auth.currentUser) {
+    await new Promise((resolve) => {
+      const timeout = setTimeout(() => resolve(), 2500);
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(user);
+      });
+    });
+  }
+
+  // Load projects
+  const projects = await loadAssignedProjects(tenantId, monteur);
+
+  return {
+    isActivated: true,
+    tenantId,
+    monteur,
+    projects,
+  };
+}
+
+/**
+ * Logout device / reset activation (with protection)
+ */
+export async function logoutDevice() {
+  try {
+    await signOut(auth).catch(() => {});
+    await Promise.all([
+      AsyncStorage.removeItem(USER_KEY),
+      AsyncStorage.removeItem(TENANT_KEY),
+      resetPinLockout(),
+    ]);
+  } catch (e) {
+    console.warn('Error during logout:', e);
+  }
+}
 
 /**
  * Check if the PIN entry is currently locked due to 3 failed attempts (30-minute block)
@@ -125,7 +339,6 @@ export async function getPinLockoutStatus() {
       return { isLocked: true, remainingMinutes, lockedUntil };
     }
 
-    // Auto-reset when lock period expired
     if (lockedUntil > 0 && lockedUntil <= now) {
       await resetPinLockout();
     }
@@ -133,7 +346,7 @@ export async function getPinLockoutStatus() {
     const rawAttempts = await AsyncStorage.getItem(LOCKOUT_KEYS.ATTEMPTS);
     const attempts = rawAttempts ? parseInt(rawAttempts, 10) : 0;
     return { isLocked: false, remainingMinutes: 0, failedAttempts: attempts };
-  } catch (e) {
+  } catch {
     return { isLocked: false, remainingMinutes: 0, failedAttempts: 0 };
   }
 }
@@ -147,7 +360,7 @@ export async function recordFailedPinAttempt() {
     const nextAttempts = (rawAttempts ? parseInt(rawAttempts, 10) : 0) + 1;
 
     if (nextAttempts >= 3) {
-      const lockDurationMs = 30 * 60 * 1000; // 30 minutes
+      const lockDurationMs = 30 * 60 * 1000;
       const lockedUntil = Date.now() + lockDurationMs;
       await AsyncStorage.setItem(LOCKOUT_KEYS.LOCKED_UNTIL, String(lockedUntil));
       await AsyncStorage.setItem(LOCKOUT_KEYS.ATTEMPTS, '3');
@@ -156,7 +369,7 @@ export async function recordFailedPinAttempt() {
       await AsyncStorage.setItem(LOCKOUT_KEYS.ATTEMPTS, String(nextAttempts));
       return { isLocked: false, remainingMinutes: 0, failedAttempts: nextAttempts };
     }
-  } catch (e) {
+  } catch {
     return { isLocked: false, remainingMinutes: 0, failedAttempts: 1 };
   }
 }
@@ -168,26 +381,25 @@ export async function resetPinLockout() {
   try {
     await AsyncStorage.removeItem(LOCKOUT_KEYS.ATTEMPTS);
     await AsyncStorage.removeItem(LOCKOUT_KEYS.LOCKED_UNTIL);
-  } catch (e) {}
+  } catch {}
 }
 
 /**
- * Checks whether a user/monteur is authorized to access a project according to Project Settings.
+ * Checks whether a user/monteur is authorized to access a project
  */
 export function isUserAssignedToProject(monteur, project) {
   if (!monteur || !project) return false;
 
-  // 1. Admins have access to all projects
-  if (monteur.role === 'admin') {
+  if (monteur.role === 'admin' || monteur.role === 'superadmin') {
     return true;
   }
 
-  const monteurId = String(monteur.id || '').trim().toLowerCase();
+  const monteurId = String(monteur.id || monteur.uid || '').trim().toLowerCase();
   const rawName = String(monteur.name || '').trim();
   const monteurName = rawName.toLowerCase();
   const monteurSlug = monteurName.replace(/\s+/g, '-');
 
-  // 2. Check project settings: assignedMonteurIds (managed in ProjectSettingsView in ToolTime admin-web)
+  // Check project settings: assignedMonteurIds
   if (Array.isArray(project.assignedMonteurIds) && project.assignedMonteurIds.length > 0) {
     const isAssigned = project.assignedMonteurIds.some((assignedId) => {
       if (!assignedId) return false;
@@ -201,7 +413,7 @@ export function isUserAssignedToProject(monteur, project) {
     if (isAssigned) return true;
   }
 
-  // 3. Check legacy / alternative project fields (monteurs, assignedUsers)
+  // Check legacy / alternative project fields
   if (Array.isArray(project.monteurs) && project.monteurs.length > 0) {
     const isAssigned = project.monteurs.some((m) => {
       if (!m) return false;
@@ -230,25 +442,7 @@ export function isUserAssignedToProject(monteur, project) {
     if (isAssigned) return true;
   }
 
-  // 4. Check project manager / commercial manager (for bauleiter / projektleiter)
-  if (
-    monteur.role === 'bauleiter' ||
-    monteur.role === 'projektleiter' ||
-    monteur.role === 'kaufmaennisch'
-  ) {
-    const isLeadOrDeputy =
-      (project.projectManagerId && String(project.projectManagerId).toLowerCase() === monteurId) ||
-      (project.deputyProjectManagerId && String(project.deputyProjectManagerId).toLowerCase() === monteurId) ||
-      (project.commercialManagerId && String(project.commercialManagerId).toLowerCase() === monteurId) ||
-      (project.deputyCommercialManagerId && String(project.deputyCommercialManagerId).toLowerCase() === monteurId) ||
-      (project.projectManager && String(project.projectManager).trim().toLowerCase() === monteurName) ||
-      (project.deputyProjectManager && String(project.deputyProjectManager).trim().toLowerCase() === monteurName) ||
-      (project.commercialManager && String(project.commercialManager).trim().toLowerCase() === monteurName) ||
-      (project.deputyCommercialManager && String(project.deputyCommercialManager).trim().toLowerCase() === monteurName);
-    if (isLeadOrDeputy) return true;
-  }
-
-  // 5. Check if user document itself explicitly has assignedProjectIds or projectIds
+  // Check user document assignedProjectIds
   const userProjectIds = monteur.assignedProjectIds || monteur.projectIds || [];
   if (Array.isArray(userProjectIds) && userProjectIds.length > 0) {
     const projId = String(project.id || '').trim().toLowerCase();
@@ -265,8 +459,7 @@ export function isUserAssignedToProject(monteur, project) {
 }
 
 /**
- * Authenticate strictly by PIN without exposing user names on the lock screen.
- * Resolves the Monteur name and their assigned projects.
+ * Authenticate by PIN (legacy fallback)
  */
 export async function authenticateByPin(enteredPin) {
   const cleanPin = String(enteredPin).trim();
@@ -274,7 +467,6 @@ export async function authenticateByPin(enteredPin) {
     return { success: false, reason: 'invalid_length' };
   }
 
-  // Check 30-minute lockout
   const lockout = await getPinLockoutStatus();
   if (lockout.isLocked) {
     return {
@@ -286,61 +478,15 @@ export async function authenticateByPin(enteredPin) {
 
   let monteur = null;
   let allProjects = [];
-  let firestoreProjectsFetched = false;
 
-  // 1. Try Firestore Online Lookup
-  try {
-    const isOnline = await checkOnlineStatus();
-    if (isOnline) {
-      // Check Firestore 'users' collection (where admin-web saves users)
-      let qUser = query(collection(db, 'users'), where('pin', '==', cleanPin));
-      let snapUser = await getDocs(qUser);
+  // Local / seed fallback
+  const cachedMonteursRaw = await AsyncStorage.getItem('ttapp_known_monteurs');
+  const knownList = cachedMonteursRaw ? JSON.parse(cachedMonteursRaw) : SEED_MONTEURS;
+  monteur = knownList.find((m) => String(m.pin) === cleanPin);
 
-      // If not found with string, try with numeric pin
-      if (snapUser.empty && !isNaN(Number(cleanPin))) {
-        qUser = query(collection(db, 'users'), where('pin', '==', Number(cleanPin)));
-        snapUser = await getDocs(qUser);
-      }
+  const cachedProjectsRaw = await AsyncStorage.getItem('ttapp_all_projects');
+  allProjects = cachedProjectsRaw ? JSON.parse(cachedProjectsRaw) : AVAILABLE_PROJECTS;
 
-      // If still not found, also check 'monteurs' collection
-      if (snapUser.empty) {
-        qUser = query(collection(db, 'monteurs'), where('pin', '==', cleanPin));
-        snapUser = await getDocs(qUser);
-      }
-
-      if (!snapUser.empty) {
-        monteur = { id: snapUser.docs[0].id, ...snapUser.docs[0].data() };
-      }
-
-      // Fetch projects from Firestore
-      const snapProj = await getDocs(collection(db, 'projects'));
-      firestoreProjectsFetched = true;
-      allProjects = snapProj.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((p) => p.status !== 'deleted' && !p.isDeleted);
-      await AsyncStorage.setItem('ttapp_all_projects', JSON.stringify(allProjects));
-    }
-  } catch (err) {
-    console.warn('Firestore PIN lookup error, using local/seed fallback:', err.message);
-  }
-
-  // 2. Offline / Local Cache Fallback
-  if (!monteur) {
-    const cachedMonteursRaw = await AsyncStorage.getItem('ttapp_known_monteurs');
-    const knownList = cachedMonteursRaw ? JSON.parse(cachedMonteursRaw) : SEED_MONTEURS;
-    monteur = knownList.find((m) => String(m.pin) === cleanPin);
-  }
-
-  if (!firestoreProjectsFetched && allProjects.length === 0) {
-    const cachedProjectsRaw = await AsyncStorage.getItem('ttapp_all_projects');
-    const cachedList = cachedProjectsRaw ? JSON.parse(cachedProjectsRaw) : [];
-    allProjects = cachedList.filter((p) => p.status !== 'deleted' && !p.isDeleted);
-    if (allProjects.length === 0) {
-      allProjects = AVAILABLE_PROJECTS;
-    }
-  }
-
-  // 3. If PIN does not match any registered Monteur
   if (!monteur) {
     const failResult = await recordFailedPinAttempt();
     return {
@@ -351,22 +497,8 @@ export async function authenticateByPin(enteredPin) {
     };
   }
 
-  // Cache authenticated monteur locally so future offline logins have their exact profile
-  try {
-    const cachedMonteursRaw = await AsyncStorage.getItem('ttapp_known_monteurs');
-    const list = cachedMonteursRaw ? JSON.parse(cachedMonteursRaw) : [];
-    const updated = [
-      monteur,
-      ...list.filter((m) => m.id !== monteur.id && String(m.pin) !== String(monteur.pin)),
-    ];
-    await AsyncStorage.setItem('ttapp_known_monteurs', JSON.stringify(updated));
-  } catch {}
-
-  // 4. Successful PIN match!
   await resetPinLockout();
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur));
-
-  // Determine assigned projects strictly according to project settings
   const assignedProjects = allProjects.filter((p) => isUserAssignedToProject(monteur, p));
 
   return {
@@ -386,10 +518,6 @@ export async function getActiveMonteur() {
   }
 }
 
-/**
- * Update the stored monteur's active projectId so that syncBookings()
- * always uses the correct project for Firestore operations.
- */
 export async function setActiveProjectId(projectId) {
   try {
     const raw = await AsyncStorage.getItem(USER_KEY);
@@ -405,7 +533,7 @@ export async function setActiveProjectId(projectId) {
 export async function clearActiveMonteur() {
   try {
     await AsyncStorage.removeItem(USER_KEY);
-  } catch (e) {}
+  } catch {}
 }
 
 export async function verifyPin(enteredPin) {
@@ -413,15 +541,20 @@ export async function verifyPin(enteredPin) {
   return result.success;
 }
 
-export async function syncMonteurToFirebase(monteur) {
+export async function syncMonteurToFirebase(monteur, tenantId) {
   if (!monteur || !monteur.id) return;
   try {
-    const monteurRef = doc(db, 'projects', monteur.projectId || DEFAULT_PROJECT_ID, 'monteurs', monteur.id);
-    await setDoc(monteurRef, {
-      ...monteur,
-      lastSync: new Date().toISOString(),
-    }, { merge: true });
+    const tId = tenantId || monteur.tenantId || (await getTenantId());
+    if (tId && monteur.projectId) {
+      const monteurRef = doc(db, 'tenants', tId, 'projects', monteur.projectId, 'monteurs', monteur.id);
+      await setDoc(monteurRef, {
+        id: monteur.id,
+        name: monteur.name,
+        role: monteur.role || 'monteur',
+        lastSeenAt: new Date().toISOString(),
+      }, { merge: true });
+    }
   } catch (err) {
-    console.warn('Could not sync monteur to Firebase (offline or permission):', err.message);
+    console.warn('Could not sync monteur to Firebase:', err.message);
   }
 }

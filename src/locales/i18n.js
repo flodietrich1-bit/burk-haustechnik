@@ -389,6 +389,25 @@ export const TRANSLATIONS = {
   noPlanAvailable: { de: 'Kein Plan für dieses Geschoss hinterlegt', ro: 'Niciun plan atașat pentru acest etaj', pl: 'Brak planu dla tego piętra', hr: 'Nema plana za ovu etažu' },
   floorPrefix: { de: 'Geschoss {floor}', ro: 'Etaj {floor}', pl: 'Piętro {floor}', hr: 'Etaža {floor}' },
   planCurrentRoomMarker: { de: 'Aktiver Raum', ro: 'Cameră activă', pl: 'Aktywne pomieszczenie', hr: 'Aktivna prostorija' },
+
+  // Device Activation & QR Onboarding
+  activationTitle: { de: 'Geräte-Aktivierung', ro: 'Activare dispozitiv', pl: 'Aktywacja urządzenia', hr: 'Aktivacija uređaja' },
+  activationSubtitle: { de: 'Scanne deinen Einladungs-QR-Code oder gib den 6-stelligen Code ein.', ro: 'Scanați codul QR de invitație sau introduceți codul din 6 cifre.', pl: 'Zeskanuj kod QR z zaproszenia lub wpisz 6-cyfrowy kod.', hr: 'Skenirajte QR kod pozivnice ili unesite 6-znamenkasti kod.' },
+  scanQrBtn: { de: '📷 Einladung scannen (QR-Code)', ro: '📷 Scanează invitația (cod QR)', pl: '📷 Zeskanuj zaproszenie (kod QR)', hr: '📷 Skeniraj pozivnicu (QR kod)' },
+  orEnterCode: { de: 'Oder Code manuell eingeben', ro: 'Sau introduceți codul manual', pl: 'Lub wpisz kod ręcznie', hr: 'Ili ručno unesite kod' },
+  codePlaceholder: { de: 'z. B. ABC-234', ro: 'de ex. ABC-234', pl: 'np. ABC-234', hr: 'npr. ABC-234' },
+  activateBtn: { de: 'Jetzt aktivieren', ro: 'Activează acum', pl: 'Aktywuj teraz', hr: 'Aktiviraj sada' },
+  activating: { de: 'Wird aktiviert...', ro: 'Se activează...', pl: 'Aktywowanie...', hr: 'Aktivacija u tijeku...' },
+  cameraPermissionTitle: { de: 'Kamera-Zugriff benötigt', ro: 'Este necesar accesul la cameră', pl: 'Wymagany dostęp do kamery', hr: 'Potreban je pristup kameri' },
+  cameraPermissionMsg: { de: 'Bitte erlaube den Kamera-Zugriff, um den Einladungs-QR-Code zu scannen.', ro: 'Vă rugăm să permiteți accesul la cameră pentru a scana codul QR.', pl: 'Zezwól na dostęp do kamery, aby zeskanować kod QR.', hr: 'Dopustite pristup kameri kako biste skenirali QR kod.' },
+  grantPermission: { de: 'Zugriff erlauben', ro: 'Permite accesul', pl: 'Zezwól na dostęp', hr: 'Dopusti pristup' },
+  scanClose: { de: 'Scanner schließen', ro: 'Închide scanerul', pl: 'Zamknij skaner', hr: 'Zatvori skener' },
+  scanHint: { de: 'Halte die Kamera über den QR-Code auf der Einladung', ro: 'Îndreptați camera spre codul QR de pe invitație', pl: 'Skieruj aparat na kod QR na zaproszeniu', hr: 'Usmjerite kameru prema QR kodu na pozivnici' },
+  inviteInvalid: { de: 'Der Einladungscode ist ungültig oder bereits abgelaufen.', ro: 'Codul de invitație este invalid sau a expirat.', pl: 'Kod zaproszenia jest nieprawidłowy lub wygasł.', hr: 'Kod pozivnice nije valjan ili je istekao.' },
+  inviteRateLimited: { de: 'Zu viele Versuche. Bitte warte kurz.', ro: 'Prea multe încercări. Vă rugăm să așteptați.', pl: 'Zbyt wiele prób. Poczekaj chwilę.', hr: 'Previše pokušaja. Molimo pričekajte.' },
+  logoutDeviceTitle: { de: 'Gerät abmelden', ro: 'Deconectare dispozitiv', pl: 'Wyloguj urządzenie', hr: 'Odjavi uređaj' },
+  logoutDeviceConfirm: { de: 'Möchtest du dieses Gerät wirklich trennen? Für eine erneute Aktivierung wird ein neuer Einladungscode benötigt.', ro: 'Sigur doriți să deconectați acest dispozitiv? Pentru o nouă activare va fi necesar un nou cod de invitație.', pl: 'Czy na pewno chcesz odłączyć to urządzenie? Do ponownej aktywacji wymagany będzie nowy kod zaproszenia.', hr: 'Želite li stvarno odvojiti ovaj uređaj? Za ponovno aktiviranje trebat će vam novi kod pozivnice.' },
+  logoutDeviceBtn: { de: 'Gerät trennen', ro: 'Deconectează', pl: 'Odłącz urządzenie', hr: 'Odvoji uređaj' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)

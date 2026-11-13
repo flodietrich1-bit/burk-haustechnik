@@ -11,7 +11,13 @@ import NetInfo from '@react-native-community/netinfo';
 import * as Updates from 'expo-updates';
 import { COLORS } from './src/constants/theme';
 import { getLanguage, setLanguage } from './src/services/storageService';
-import { getActiveMonteur, setActiveProjectId } from './src/services/authService';
+import {
+  getActiveMonteur,
+  setActiveProjectId,
+  restoreSession,
+  logoutDevice,
+  getTenantId,
+} from './src/services/authService';
 import {
   getRooms,
   saveRooms,
@@ -25,13 +31,14 @@ import {
   computeRoomPercentage,
   getCachedPlans,
 } from './src/services/storageService';
-import { syncBookings, checkOnlineStatus } from './src/services/syncService';
+import { syncBookings, checkOnlineStatus, subscribeToRoomLive } from './src/services/syncService';
 import { t } from './src/locales/i18n';
 
 // Components
 import Header from './src/components/Header';
 
 // Screens
+import ActivationScreen from './src/screens/ActivationScreen';
 import SetupProfileScreen from './src/screens/SetupProfileScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import ProjectSelectScreen from './src/screens/ProjectSelectScreen';
@@ -82,32 +89,28 @@ export default function App() {
   unclearItemsRef.current = unclearItems;
   const autoSaveTimerRef = useRef(null);
 
-  // 1. Initial App Loading
+  // 1. Initial App Loading & Persistent Session Restore
   useEffect(() => {
     async function initApp() {
       try {
-        const [savedLang, activeUser, cachedRooms, cachedMats, proj, delta, cachedPlans] = await Promise.all([
-          getLanguage(),
-          getActiveMonteur(),
-          getRooms(),
-          getMaterials(),
-          getProjectInfo(),
-          getLocalUnsyncedDelta(),
-          getCachedPlans(),
-        ]);
-
+        const savedLang = await getLanguage();
         setCurrentLang(savedLang);
-        setRooms(cachedRooms);
-        setMaterials(cachedMats);
-        if (Array.isArray(cachedPlans)) setPlans(cachedPlans);
-        setProject(proj);
-        setPendingCount(delta.totalPendingCount);
 
-        if (activeUser) {
-          setMonteur(activeUser);
+        const session = await restoreSession();
+        if (!session.isActivated) {
+          setAppPhase('activation');
+          return;
         }
-        // Neutral PIN screen on app start / reload
-        setAppPhase('pin');
+
+        const activeMonteur = session.monteur;
+        setMonteur(activeMonteur);
+        if (activeMonteur?.defaultLanguage) {
+          setCurrentLang(activeMonteur.defaultLanguage);
+          await setLanguage(activeMonteur.defaultLanguage);
+        }
+
+        const assigned = Array.isArray(session.projects) ? session.projects : [];
+        setAvailableProjects(assigned);
 
         // Check for latest EAS update in background and reload if available
         if (!__DEV__ && Updates.isEnabled) {
@@ -121,13 +124,29 @@ export default function App() {
             .catch(() => {});
         }
 
-        // If cached materials have 0 deliveredQty, auto-refresh from Firestore
-        if (cachedMats.length > 0 && cachedMats.some(m => !m.deliveredQty || Number(m.deliveredQty) === 0)) {
-          syncBookings({ silent: true, projectId: proj?.id }).then(() => refreshData(proj?.id)).catch(() => {});
+        if (assigned.length === 0) {
+          setProject(null);
+          setAppPhase('project_select');
+        } else if (assigned.length > 1) {
+          setAppPhase('project_select');
+        } else {
+          const targetProj = assigned[0];
+          setProject(targetProj);
+          if (targetProj?.id) {
+            await setActiveProjectId(targetProj.id);
+            await refreshData(targetProj.id);
+          }
+          setAppPhase('app');
+          setCurrentScreen('rooms');
+
+          // Trigger silent background sync
+          syncBookings({ silent: true, projectId: targetProj?.id })
+            .then(() => refreshData(targetProj?.id))
+            .catch(() => {});
         }
       } catch (err) {
         console.error('Error during app initialization:', err);
-        setAppPhase('pin');
+        setAppPhase('activation');
       }
     }
 
@@ -179,18 +198,106 @@ export default function App() {
     return () => clearInterval(syncInterval);
   }, [appPhase, isSyncing, project?.id]);
 
-  const refreshData = async (targetProjectId) => {
-    const pId = targetProjectId || project?.id;
-    const [r, m, delta, pl] = await Promise.all([
-      getRooms(pId),
-      getMaterials(pId),
-      getLocalUnsyncedDelta(pId),
-      getCachedPlans(pId),
-    ]);
-    setRooms(r);
-    setMaterials(m);
-    setPendingCount(delta.totalPendingCount);
-    if (Array.isArray(pl)) setPlans(pl);
+  // Live onSnapshot listener for the active room (< 5s updates from Web Portal)
+  useEffect(() => {
+    if (!selectedRoom?.id || !project?.id || appPhase !== 'app') return;
+    let unsubscribe = () => {};
+    getTenantId().then((tId) => {
+      if (!tId) return;
+      unsubscribe = subscribeToRoomLive(tId, project.id, selectedRoom.id, (remoteRoom) => {
+        if (remoteRoom) {
+          setSelectedRoom((prev) => (prev ? { ...prev, ...remoteRoom } : remoteRoom));
+        }
+      });
+    });
+    return () => unsubscribe();
+  }, [selectedRoom?.id, project?.id, appPhase]);
+
+  // Handle successful device activation from ActivationScreen
+  const handleActivationSuccess = async (activatedMonteur, assignedProjects = [], tenantId) => {
+    setMonteur(activatedMonteur);
+    if (activatedMonteur?.defaultLanguage) {
+      setCurrentLang(activatedMonteur.defaultLanguage);
+      await setLanguage(activatedMonteur.defaultLanguage);
+    }
+    const projectsList = Array.isArray(assignedProjects) ? assignedProjects : [];
+    setAvailableProjects(projectsList);
+
+    if (projectsList.length === 0) {
+      setProject(null);
+      setAppPhase('project_select');
+    } else if (projectsList.length > 1) {
+      setAppPhase('project_select');
+    } else {
+      const targetProj = projectsList[0];
+      setProject(targetProj);
+      if (targetProj?.id) {
+        await setActiveProjectId(targetProj.id);
+        await refreshData(targetProj.id);
+      }
+      setAppPhase('app');
+      setCurrentScreen('rooms');
+
+      // Initial seamless sync
+      setSyncProgress({
+        visible: true,
+        text: t('syncConnectingInit', activatedMonteur.defaultLanguage || currentLang),
+        progress: 0.1,
+      });
+
+      try {
+        await syncBookings({
+          silent: true,
+          projectId: targetProj.id,
+          onProgress: (text, progress) => {
+            setSyncProgress({ visible: true, text, progress });
+          },
+        });
+        await refreshData(targetProj.id);
+      } catch (err) {
+        console.warn('Initial post-activation sync notice:', err);
+      } finally {
+        setSyncProgress({ visible: false, text: '', progress: 0 });
+      }
+    }
+  };
+
+  const handleLogoutDevice = () => {
+    Alert.alert(
+      t('logoutDeviceTitle', currentLang),
+      t('logoutDeviceConfirm', currentLang),
+      [
+        { text: t('cancel', currentLang), style: 'cancel' },
+        {
+          text: t('logoutDeviceBtn', currentLang),
+          style: 'destructive',
+          onPress: async () => {
+            await logoutDevice();
+            setMonteur(null);
+            setProject(null);
+            setRooms([]);
+            setMaterials([]);
+            setAvailableProjects([]);
+            setSelectedRoom(null);
+            setAppPhase('activation');
+          },
+        },
+      ]
+    );
+  };
+
+  const handleHeaderLockPress = () => {
+    Alert.alert(
+      monteur?.name || 'Monteur',
+      t('monteur', currentLang),
+      [
+        ...(availableProjects.length > 1
+          ? [{ text: t('switchProject', currentLang) || 'Bauvorhaben wechseln', onPress: handleSwitchProject }]
+          : []),
+        { text: t('logoutDeviceTitle', currentLang), style: 'destructive', onPress: handleLogoutDevice },
+        { text: t('cancel', currentLang), style: 'cancel' },
+      ]
+    );
   };
 
   // 3. PIN Unlock, Sync & Multi-Project Routing
@@ -962,6 +1069,16 @@ export default function App() {
     );
   }
 
+  if (appPhase === 'activation') {
+    return (
+      <ActivationScreen
+        currentLang={currentLang}
+        onActivationSuccess={handleActivationSuccess}
+        onSelectLang={handleSelectLang}
+      />
+    );
+  }
+
   if (appPhase === 'pin') {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -988,7 +1105,7 @@ export default function App() {
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSelectProject={handleSelectProject}
-        onLogout={() => setAppPhase('pin')}
+        onLogout={handleLogoutDevice}
       />
     );
   }
@@ -1011,7 +1128,7 @@ export default function App() {
         isSyncing={isSyncing}
         monteurName={monteur?.name || 'Monteur'}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
-        onLockPress={() => setAppPhase('pin')}
+        onLockPress={handleHeaderLockPress}
       />
 
       {/* Screen Router */}

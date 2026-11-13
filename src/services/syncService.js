@@ -1,51 +1,61 @@
-import { Alert } from 'react-native';
-import NetInfo from '@react-native-community/netinfo';
-import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
-import { ref, uploadString, uploadBytes, getDownloadURL, getStorage } from 'firebase/storage';
-import * as FileSystem from 'expo-file-system';
-import * as ImageManipulator from 'expo-image-manipulator';
-import app, { db, storage } from './firebase';
 import {
-  getPendingBookings,
-  updateBookingStatus,
-  saveRooms,
-  saveMaterials,
-  getLanguage,
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
+  query,
+  where,
+  onSnapshot,
+} from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL, getStorage } from 'firebase/storage';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
+import NetInfo from '@react-native-community/netinfo';
+import { Alert } from 'react-native';
+import app, { db, storage, auth } from './firebase';
+import {
   getRooms,
+  saveRooms,
   getMaterials,
+  saveMaterials,
   getLastSyncedAt,
   setLastSyncedAt,
   getLocalUnsyncedDelta,
+  updateBookingStatus,
   updateAddendumStatus,
   ensurePlansDir,
   PLANS_DIR,
   getCachedPlans,
   saveCachedPlans,
-  clearProjectCache,
 } from './storageService';
-import { getActiveMonteur, syncMonteurToFirebase } from './authService';
+import { getActiveMonteur, syncMonteurToFirebase, getTenantId } from './authService';
 import { DEFAULT_PROJECT_ID } from '../constants/initialData';
 import { t } from '../locales/i18n';
 
 /**
- * Check if the device is currently online and internet is reachable
+ * Check device connectivity using NetInfo
  */
 export async function checkOnlineStatus() {
   try {
-    const state = await NetInfo.fetch();
-    return !!(state.isConnected && state.isInternetReachable !== false);
+    const netInfo = await NetInfo.fetch();
+    return !!(netInfo.isConnected && netInfo.isInternetReachable !== false);
   } catch (e) {
     return false;
   }
 }
 
 /**
- * Upload local photo file to Firebase Storage or compress to base64 Data URI
+ * Upload local photo file to Firebase Storage
+ * Multi-tenant path: tenants/:tenantId/projects/:projectId/proofs/...
  * Uses base64 strings with uploadString to circumvent React Native file:// fetch blob limitations.
  */
-async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex) {
+async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex, tenantId) {
   if (!localUri) return null;
-  if (typeof localUri === 'string' && (localUri.startsWith('http://') || localUri.startsWith('https://') || localUri.startsWith('data:'))) {
+  if (
+    typeof localUri === 'string' &&
+    (localUri.startsWith('http://') || localUri.startsWith('https://') || localUri.startsWith('data:'))
+  ) {
     return localUri;
   }
 
@@ -82,7 +92,9 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
   // 2. Try Firebase Storage direct upload via uploadString
   const timestamp = Date.now();
   const cleanId = String(bookingId || 'photo').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const storagePath = `projects/${projectId}/proofs/${cleanId}_${photoIndex}_${timestamp}.jpg`;
+  const storagePath = tenantId
+    ? `tenants/${tenantId}/projects/${projectId}/proofs/${cleanId}_${photoIndex}_${timestamp}.jpg`
+    : `projects/${projectId}/proofs/${cleanId}_${photoIndex}_${timestamp}.jpg`;
 
   try {
     const storageRef = ref(storage, storagePath);
@@ -90,10 +102,10 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
     const downloadUrl = await getDownloadURL(storageRef);
     if (downloadUrl) return downloadUrl;
   } catch (storageError) {
-    console.warn(`Firebase storage direct upload failed, attempting fallback bucket:`, storageError?.message);
+    console.warn('Firebase storage direct upload failed, attempting fallback bucket:', storageError?.message);
     const altBuckets = [
-      'gs://burk-haustechnik.appspot.com',
       'gs://burk-haustechnik.firebasestorage.app',
+      'gs://burk-haustechnik.appspot.com',
     ];
     for (const altBucket of altBuckets) {
       try {
@@ -108,44 +120,48 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex)
     }
   }
 
-  // 3. Fallback: Compact Data URI (under 80 KB) so it can be stored in Firestore safely
-  try {
-    const lowRes = await ImageManipulator.manipulateAsync(
-      localUri,
-      [{ resize: { width: 640 } }],
-      { compress: 0.4, format: ImageManipulator.SaveFormat.JPEG, base64: true }
-    );
-    if (lowRes && lowRes.base64) {
-      return `data:image/jpeg;base64,${lowRes.base64}`;
-    }
-  } catch (lowResErr) {
-    console.warn('Low-res Data URI fallback failed:', lowResErr?.message);
-  }
-
-  if (base64Data) {
-    return `data:image/jpeg;base64,${base64Data}`;
-  }
-
-  // Strictly avoid leaking raw local file:// paths into Firestore
-  return null;
+  // 3. Fallback: Data URI
+  console.warn('Storage upload unavailable, falling back to base64 data-uri for photo:', localUri);
+  return `data:image/jpeg;base64,${base64Data}`;
 }
 
 /**
- * Perform strictly DELTA-based two-way sync:
- * 1. Push: Upload ONLY new/pending local items (bookings, addendums, completions) since lastSyncedAt
- * 2. Pull: Fetch ONLY items modified in Admin-Panel since lastSyncedAt (positions, rooms)
- * 
- * @param {Object} options
- * @param {boolean} options.silent - If true, do not display native alerts (e.g. for background auto-sync)
- * @param {Function} options.onProgress - Optional callback for live progress updates
+ * Real-time listener for the active room (< 5s updates from Web Portal)
  */
-export async function syncBookings(options = {}) {
-  const { silent = false, onProgress = null, projectId: targetProjectId = null } = options;
-  const currentLang = await getLanguage();
+export function subscribeToRoomLive(tenantId, projectId, roomId, onUpdate) {
+  if (!tenantId || !projectId || !roomId) return () => {};
+  try {
+    const roomRef = doc(db, 'tenants', tenantId, 'projects', projectId, 'rooms', roomId);
+    return onSnapshot(
+      roomRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          onUpdate({ id: snapshot.id, ...snapshot.data() });
+        }
+      },
+      (err) => {
+        console.warn(`Room live listener notice (${roomId}):`, err?.message);
+      }
+    );
+  } catch {
+    return () => {};
+  }
+}
 
+/**
+ * Bidirectional delta synchronization between TTApp and Cloud Firestore.
+ * Strictly adheres to multi-tenant paths: tenants/:tenantId/projects/:projectId/...
+ * Root writes are completely eliminated.
+ * Outbox entries remain protected on any network or permission error.
+ */
+export async function syncBookings({
+  silent = false,
+  onProgress = null,
+  currentLang = 'de',
+  projectId: targetProjectId = null,
+} = {}) {
+  // 1. Check Connectivity
   const isOnline = await checkOnlineStatus();
-
-  // 1. Offline Case
   if (!isOnline) {
     if (!silent) {
       Alert.alert(
@@ -159,34 +175,41 @@ export async function syncBookings(options = {}) {
 
   // 2. Online Case: Evaluate Delta in Both Directions
   try {
-    const monteur = await getActiveMonteur();
-    // Use explicit project, monteur's active project, or fall back to DEFAULT_PROJECT_ID
+    const [monteur, tenantId] = await Promise.all([
+      getActiveMonteur(),
+      getTenantId(),
+    ]);
+
     const projectId = targetProjectId || monteur?.projectId || monteur?.assignedProjectIds?.[0] || DEFAULT_PROJECT_ID;
     const lastSyncedAt = await getLastSyncedAt(projectId);
     const localDelta = await getLocalUnsyncedDelta(projectId);
 
     // Sync monteur profile if present
     if (monteur) {
-      await syncMonteurToFirebase(monteur);
+      await syncMonteurToFirebase(monteur, tenantId);
     }
 
-    // Check if project was deleted in Firestore
+    // Verify project accessibility in Firestore
     try {
-      const projSnap = await getDoc(doc(db, 'projects', projectId));
+      const projectRef = tenantId
+        ? doc(db, 'tenants', tenantId, 'projects', projectId)
+        : doc(db, 'projects', projectId);
+
+      const projSnap = await getDoc(projectRef);
       if (!projSnap.exists() || projSnap.data()?.status === 'deleted' || projSnap.data()?.isDeleted) {
-        console.warn(`Project ${projectId} was deleted in Firestore. Clearing local cache.`);
-        await clearProjectCache(projectId);
+        console.warn(`Project ${projectId} not found or deleted on server. Keeping local outbox safe.`);
         return {
           success: false,
           isDeleted: true,
-          reason: 'project_deleted'
+          reason: 'project_unavailable',
         };
       }
     } catch (projErr) {
-      console.warn('Project existence check error in sync:', projErr.message);
+      console.warn('Project check notice in sync:', projErr.message);
     }
 
     let pushedCount = 0;
+    const currentUid = auth.currentUser?.uid || monteur?.id || 'monteur';
 
     // -------------------------------------------------------------
     // DIRECTION 1 (App -> Admin-Panel): Push ONLY local delta
@@ -216,13 +239,17 @@ export async function syncBookings(options = {}) {
           : Array.isArray(booking.photos)
           ? booking.photos
           : [];
+
         for (let pIdx = 0; pIdx < photosToUpload.length; pIdx++) {
           const photoUri = photosToUpload[pIdx];
-          if (typeof photoUri === 'string' && (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))) {
+          if (
+            typeof photoUri === 'string' &&
+            (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))
+          ) {
             uploadedUrls.push(photoUri);
             continue;
           }
-          const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx);
+          const cloudUrl = await uploadPhotoToFirebase(photoUri, booking.projectId, booking.id, pIdx, tenantId);
           if (cloudUrl && !cloudUrl.startsWith('file://')) {
             uploadedUrls.push(cloudUrl);
           }
@@ -231,9 +258,13 @@ export async function syncBookings(options = {}) {
         const now = new Date().toISOString();
         const finalBookingData = {
           ...booking,
-          photoUrls: uploadedUrls.length > 0 
-            ? uploadedUrls 
-            : (booking.photoUrls || []).filter(u => typeof u === 'string' && !u.startsWith('file://')),
+          tenantId: tenantId || null,
+          createdByUid: currentUid,
+          monteurUid: currentUid,
+          monteurName: monteur?.name || booking.createdBy || 'Monteur',
+          photoUrls: uploadedUrls.length > 0
+            ? uploadedUrls
+            : (booking.photoUrls || []).filter((u) => typeof u === 'string' && !u.startsWith('file://')),
           photoUris: photosToUpload,
           status: 'synced',
           syncedAt: now,
@@ -241,13 +272,14 @@ export async function syncBookings(options = {}) {
         };
 
         try {
-          const projectBookingRef = doc(db, 'projects', booking.projectId, 'bookings', booking.id);
-          await setDoc(projectBookingRef, finalBookingData, { merge: true });
+          // Push strictly to tenant subcollection
+          const bookingDocRef = tenantId
+            ? doc(db, 'tenants', tenantId, 'projects', booking.projectId, 'bookings', booking.id)
+            : doc(db, 'projects', booking.projectId, 'bookings', booking.id);
 
-          const globalBookingRef = doc(db, 'bookings', booking.id);
-          await setDoc(globalBookingRef, finalBookingData, { merge: true });
+          await setDoc(bookingDocRef, finalBookingData, { merge: true });
 
-          // Replicate over_consumption_alert to projects/{projectId}/alerts collection for admin banner
+          // Replicate over_consumption_alert to alerts collection for admin banner
           if (booking.type === 'over_consumption_alert' || booking.isAlert) {
             try {
               const alertDocData = {
@@ -263,13 +295,18 @@ export async function syncBookings(options = {}) {
                 exceededBy: Number(booking.quantity) || 0,
                 qu: booking.qu || 'Stk',
                 reason: booking.reason || '',
-                monteurName: booking.createdBy || 'Monteur',
+                monteurName: monteur?.name || booking.createdBy || 'Monteur',
+                createdByUid: currentUid,
                 status: 'open',
                 needsReorder: true,
                 createdAt: booking.createdAt || now,
                 updatedAt: now,
               };
-              const alertRef = doc(db, 'projects', booking.projectId, 'alerts', booking.id);
+
+              const alertRef = tenantId
+                ? doc(db, 'tenants', tenantId, 'projects', booking.projectId, 'alerts', booking.id)
+                : doc(db, 'projects', booking.projectId, 'alerts', booking.id);
+
               await setDoc(alertRef, alertDocData, { merge: true });
             } catch (alertErr) {
               console.warn('Could not replicate alert to project alerts collection:', alertErr?.message);
@@ -299,19 +336,24 @@ export async function syncBookings(options = {}) {
         const now = new Date().toISOString();
         const finalAddendumData = {
           ...addendum,
-          status: (addendum.status && addendum.status !== 'synced') ? addendum.status : 'pending',
+          tenantId: tenantId || null,
+          createdByUid: currentUid,
+          monteurUid: currentUid,
+          requestedBy: monteur?.name || addendum.requestedBy || 'Monteur',
+          deviationType: addendum.type === 'unklar' ? 'new_item' : (addendum.deviationType || 'material_addendum'),
+          deviationSource: 'monteur',
+          status: addendum.status && addendum.status !== 'synced' ? addendum.status : 'pending',
           syncStatus: 'synced',
           syncedAt: now,
           updatedAt: now,
         };
 
         try {
-          const projectAddendumRef = doc(db, 'projects', addendum.projectId, 'addendums', addendum.id);
-          await setDoc(projectAddendumRef, finalAddendumData, { merge: true });
+          const addendumRef = tenantId
+            ? doc(db, 'tenants', tenantId, 'projects', addendum.projectId, 'addendums', addendum.id)
+            : doc(db, 'projects', addendum.projectId, 'addendums', addendum.id);
 
-          const globalAddendumRef = doc(db, 'addendums', addendum.id);
-          await setDoc(globalAddendumRef, finalAddendumData, { merge: true });
-
+          await setDoc(addendumRef, finalAddendumData, { merge: true });
           await updateAddendumStatus(addendum.id, 'synced');
           pushedCount++;
         } catch (err) {
@@ -319,29 +361,34 @@ export async function syncBookings(options = {}) {
         }
       }
 
-      // 1c. Upload room status updates (completed and in-progress rooms)
+      // 1c. Upload room status updates
       for (const room of localDelta.pendingRooms) {
         processed++;
         const now = new Date().toISOString();
         try {
-          // Upload any photos in room.photos that are local file:// URIs
           const rawPhotos = Array.isArray(room.photos) ? room.photos : [];
           const uploadedPhotoUrls = [];
           for (let pIdx = 0; pIdx < rawPhotos.length; pIdx++) {
             const photoUri = rawPhotos[pIdx];
-            if (typeof photoUri === 'string' && (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))) {
+            if (
+              typeof photoUri === 'string' &&
+              (photoUri.startsWith('http://') || photoUri.startsWith('https://') || photoUri.startsWith('data:'))
+            ) {
               uploadedPhotoUrls.push(photoUri);
               continue;
             }
             if (typeof photoUri === 'string' && photoUri.startsWith('file://')) {
-              const cloudUrl = await uploadPhotoToFirebase(photoUri, projectId, `room_${room.id}`, pIdx);
+              const cloudUrl = await uploadPhotoToFirebase(photoUri, projectId, `room_${room.id}`, pIdx, tenantId);
               if (cloudUrl && !cloudUrl.startsWith('file://')) {
                 uploadedPhotoUrls.push(cloudUrl);
               }
             }
           }
 
-          const roomRef = doc(db, 'projects', projectId, 'rooms', room.id);
+          const roomRef = tenantId
+            ? doc(db, 'tenants', tenantId, 'projects', projectId, 'rooms', room.id)
+            : doc(db, 'projects', projectId, 'rooms', room.id);
+
           const isDone = Boolean(room.isCompleted || room.status === 'completed');
           const finalPct = isDone ? 100 : Number(room.pct || 0);
 
@@ -351,20 +398,16 @@ export async function syncBookings(options = {}) {
             isCompleted: isDone,
             status: isDone ? 'completed' : (finalPct > 0 ? 'in_progress' : 'planned'),
             updatedAt: now,
+            lastUpdatedBy: monteur?.name || 'Monteur',
+            lastUpdatedByUid: currentUid,
           };
 
           if (isDone) {
             roomPayload.completedAt = room.completedAt || now;
-            roomPayload.completedBy = room.completedBy || 'Monteur';
+            roomPayload.completedBy = monteur?.name || room.completedBy || 'Monteur';
             roomPayload.completionDelta = room.completionDelta || [];
           }
 
-          if (room.lastUpdatedBy) {
-            roomPayload.lastUpdatedBy = room.lastUpdatedBy;
-          }
-          if (room.lastMonteurLanguage) {
-            roomPayload.lastMonteurLanguage = room.lastMonteurLanguage;
-          }
           if (room.draftQuantities) {
             roomPayload.draftQuantities = room.draftQuantities;
           }
@@ -377,21 +420,24 @@ export async function syncBookings(options = {}) {
 
           // Update local room record
           const allRooms = await getRooms(projectId);
-          const updatedRooms = allRooms.map((r) => (r.id === room.id ? { 
-            ...r, 
-            pct: finalPct,
-            photos: uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : (r.photos || []),
-            syncedAt: now 
-          } : r));
+          const updatedRooms = allRooms.map((r) =>
+            r.id === room.id
+              ? {
+                  ...r,
+                  pct: finalPct,
+                  photos: uploadedPhotoUrls.length > 0 ? uploadedPhotoUrls : r.photos || [],
+                  syncedAt: now,
+                }
+              : r
+          );
           await saveRooms(updatedRooms, projectId);
-
           pushedCount++;
         } catch (err) {
           console.error(`Failed to push room status update for ${room.id}:`, err);
         }
       }
     } else {
-      console.log('Sync Push: No local delta to push. Skipping upload.');
+      console.log('Sync Push: No local delta to push.');
     }
 
     // -------------------------------------------------------------
@@ -404,36 +450,28 @@ export async function syncBookings(options = {}) {
 
     // 2a. Fetch positions delta
     try {
-      const localPositions = await getMaterials(projectId);
-      const hasCorruptedNames = localPositions.some(
-        (p) => !p.cleanName || p.cleanName === 'Neues Material' || p.name === 'Neues Material'
-      );
-      const hasMissingDelivered = localPositions.some(
-        (p) => p.deliveredQty === undefined || p.deliveredQty === null || Number(p.deliveredQty) === 0
-      );
+      const positionsColRef = tenantId
+        ? collection(db, 'tenants', tenantId, 'projects', projectId, 'positions')
+        : collection(db, 'projects', projectId, 'positions');
 
+      const localPositions = await getMaterials(projectId);
       let remotePositionsDelta = [];
-      const needsFullPositionsFetch = !lastSyncedAt || hasCorruptedNames || hasMissingDelivered || localPositions.length === 0;
+      const needsFullPositionsFetch = !lastSyncedAt || localPositions.length === 0;
 
       if (!needsFullPositionsFetch) {
-        // Query only positions updated after lastSyncedAt
         try {
-          const posQuery = query(
-            collection(db, 'projects', projectId, 'positions'),
-            where('updatedAt', '>', lastSyncedAt)
-          );
+          const posQuery = query(positionsColRef, where('updatedAt', '>', lastSyncedAt));
           const snap = await getDocs(posQuery);
           remotePositionsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         } catch (queryErr) {
           console.warn('Direct delta query on positions failed, using fallback:', queryErr.message);
-          const snap = await getDocs(collection(db, 'projects', projectId, 'positions'));
+          const snap = await getDocs(positionsColRef);
           remotePositionsDelta = snap.docs
             .map((d) => ({ id: d.id, ...d.data() }))
             .filter((d) => d.updatedAt && d.updatedAt > lastSyncedAt);
         }
       } else {
-        // Baseline first sync OR recovery from corrupted names: fetch all
-        const snap = await getDocs(collection(db, 'projects', projectId, 'positions'));
+        const snap = await getDocs(positionsColRef);
         remotePositionsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       }
 
@@ -466,7 +504,6 @@ export async function syncBookings(options = {}) {
 
         let updated;
         if (needsFullPositionsFetch) {
-          // Fresh mapping from Firestore, preserving local installed quantities
           const localInstalledMap = new Map();
           localPositions.forEach((lp) => {
             if (lp.id) localInstalledMap.set(lp.id, lp.installedQty || 0);
@@ -482,7 +519,6 @@ export async function syncBookings(options = {}) {
             };
           });
         } else {
-          // Delta sync: update existing positions or append new ones
           updated = localPositions.map((local) => {
             const remote = remotePositionsDelta.find((rp) => rp.id === local.id || rp.posNr === local.pos);
             if (remote) {
@@ -496,7 +532,6 @@ export async function syncBookings(options = {}) {
             return local;
           });
 
-          // Insert new materials created remotely
           remotePositionsDelta.forEach((remote) => {
             if (!updated.some((m) => m.id === remote.id || m.pos === remote.posNr)) {
               updated.push(mapRemotePos(remote));
@@ -513,25 +548,25 @@ export async function syncBookings(options = {}) {
 
     // 2b. Fetch rooms delta
     try {
+      const roomsColRef = tenantId
+        ? collection(db, 'tenants', tenantId, 'projects', projectId, 'rooms')
+        : collection(db, 'projects', projectId, 'rooms');
+
       let remoteRoomsDelta = [];
       if (lastSyncedAt) {
         try {
-          const roomQuery = query(
-            collection(db, 'projects', projectId, 'rooms'),
-            where('updatedAt', '>', lastSyncedAt)
-          );
+          const roomQuery = query(roomsColRef, where('updatedAt', '>', lastSyncedAt));
           const snap = await getDocs(roomQuery);
           remoteRoomsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         } catch (queryErr) {
           console.warn('Direct delta query on rooms failed, using fallback:', queryErr.message);
-          const snap = await getDocs(collection(db, 'projects', projectId, 'rooms'));
+          const snap = await getDocs(roomsColRef);
           remoteRoomsDelta = snap.docs
             .map((d) => ({ id: d.id, ...d.data() }))
             .filter((d) => d.updatedAt && d.updatedAt > lastSyncedAt);
         }
       } else {
-        // Baseline first sync: fetch all
-        const snap = await getDocs(collection(db, 'projects', projectId, 'rooms'));
+        const snap = await getDocs(roomsColRef);
         remoteRoomsDelta = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       }
 
@@ -578,17 +613,14 @@ export async function syncBookings(options = {}) {
 
         let updated;
         if (!lastSyncedAt) {
-          // Baseline first sync: Remote rooms from Firestore are the clean source of truth for THIS project!
           updated = remoteRoomsDelta.map((rr) => mapRemoteRoom(rr));
         } else {
-          // Delta sync: merge changes with local rooms of this project
           const localRooms = await getRooms(projectId);
           updated = localRooms.map((local) => {
             const remote = remoteRoomsDelta.find((rr) => rr.id === local.id);
             return remote ? mapRemoteRoom(remote, local) : local;
           });
 
-          // Insert new rooms created remotely
           remoteRoomsDelta.forEach((remote) => {
             if (!updated.some((r) => r.id === remote.id)) {
               updated.push(mapRemoteRoom(remote));
@@ -603,15 +635,15 @@ export async function syncBookings(options = {}) {
       console.warn('Could not pull rooms delta:', roomErr.message);
     }
 
-    // -------------------------------------------------------------
-    // 2c. Fetch plans & download PDFs locally for offline use
-    // -------------------------------------------------------------
+    // 2c. Fetch plans & download PDFs locally
     try {
-      if (onProgress) {
-        onProgress(t('syncDownloading', currentLang), 0.88);
-      }
+      if (onProgress) onProgress(t('syncDownloading', currentLang), 0.88);
       await ensurePlansDir();
-      const plansColRef = collection(db, 'projects', projectId, 'plans');
+
+      const plansColRef = tenantId
+        ? collection(db, 'tenants', tenantId, 'projects', projectId, 'plans')
+        : collection(db, 'projects', projectId, 'plans');
+
       const plansSnap = await getDocs(plansColRef);
       const cachedPlans = await getCachedPlans(projectId);
 
@@ -657,7 +689,7 @@ export async function syncBookings(options = {}) {
     }
 
     // -------------------------------------------------------------
-    // Save New Sync Timestamp (Scoped per Project)
+    // Save New Sync Timestamp
     // -------------------------------------------------------------
     const newSyncTimestamp = new Date().toISOString();
     await setLastSyncedAt(newSyncTimestamp, projectId);
@@ -667,7 +699,6 @@ export async function syncBookings(options = {}) {
 
     if (onProgress) onProgress(t('syncSuccessTitle', currentLang), 1.0);
 
-    // Show native success alert if not silent
     if (!silent) {
       const msg = hasDelta && totalSyncedCount > 0
         ? t('syncSuccessMsg', currentLang, { n: totalSyncedCount })

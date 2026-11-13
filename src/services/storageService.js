@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { INITIAL_ROOMS, INITIAL_MATERIALS, DEFAULT_PROJECT, DEFAULT_PROJECT_ID, INITIAL_PLANS } from '../constants/initialData';
 
-// Storage keys
+// Base storage keys
 const KEYS = {
   LANGUAGE: 'ttapp_selected_language',
   ROOMS: 'ttapp_cached_rooms',
@@ -45,7 +45,41 @@ export async function ensurePlansDir() {
 }
 
 // -------------------------------------------------------------
-// 1. Language Persistence
+// 1. Storage Context & Namespacing Helpers
+// -------------------------------------------------------------
+export async function getStorageContext(projectId) {
+  let tenantId = null;
+  let userId = null;
+  let activeProjectId = projectId;
+  try {
+    tenantId = await AsyncStorage.getItem('ttapp_tenant_id');
+    const rawMonteur = await AsyncStorage.getItem('ttapp_active_monteur');
+    if (rawMonteur) {
+      const m = JSON.parse(rawMonteur);
+      userId = m?.id || m?.uid;
+      if (!activeProjectId) {
+        activeProjectId = m?.projectId || m?.assignedProjectIds?.[0];
+      }
+    }
+  } catch {}
+
+  return {
+    tenantId,
+    userId: userId || 'common',
+    projectId: activeProjectId || DEFAULT_PROJECT_ID,
+  };
+}
+
+function buildScopedKey(baseKey, context) {
+  const { tenantId, userId, projectId } = context;
+  if (tenantId) {
+    return `@ttapp:${baseKey}:${tenantId}:${userId}:${projectId}`;
+  }
+  return `${KEYS[baseKey.toUpperCase()] || baseKey}_${projectId}`;
+}
+
+// -------------------------------------------------------------
+// 2. Language Persistence
 // -------------------------------------------------------------
 export async function getLanguage() {
   try {
@@ -65,35 +99,27 @@ export async function setLanguage(lang) {
 }
 
 // -------------------------------------------------------------
-// Helper to resolve active project ID
-// -------------------------------------------------------------
-async function resolveProjectId(projectId) {
-  if (projectId) return projectId;
-  try {
-    const raw = await AsyncStorage.getItem('ttapp_active_monteur');
-    if (raw) {
-      const m = JSON.parse(raw);
-      if (m?.projectId) return m.projectId;
-      if (m?.assignedProjectIds?.[0]) return m.assignedProjectIds[0];
-    }
-  } catch {}
-  return DEFAULT_PROJECT_ID;
-}
-
-// -------------------------------------------------------------
-// 2. Master Data (Rooms, Materials, Project) - Scoped per Project
+// 3. Master Data (Rooms, Materials, Project, Plans)
 // -------------------------------------------------------------
 export async function getRooms(projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.ROOMS}_${pId}`;
-    const data = await AsyncStorage.getItem(key);
+    const ctx = await getStorageContext(projectId);
+    const scopedKey = buildScopedKey('rooms', ctx);
+    const legacyKey = `${KEYS.ROOMS}_${ctx.projectId}`;
+
+    let data = await AsyncStorage.getItem(scopedKey);
+    if (!data && ctx.tenantId) {
+      // Check legacy key if scoped not yet written
+      data = await AsyncStorage.getItem(legacyKey);
+    }
+
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) return parsed;
     }
-    // For default Weingarten project only, check legacy key or INITIAL_ROOMS
-    if (pId === DEFAULT_PROJECT_ID) {
+
+    // STRICT RULE: No dummy initial data when active tenant is present!
+    if (!ctx.tenantId && ctx.projectId === DEFAULT_PROJECT_ID) {
       const legacyData = await AsyncStorage.getItem(KEYS.ROOMS);
       if (legacyData) {
         const parsed = JSON.parse(legacyData);
@@ -140,7 +166,6 @@ export function computeRoomPercentage(room, materials = []) {
   let totalPlanned = 0;
   let totalInstalled = 0;
 
-  // 1. Evaluate room.plannedItems
   if (room.plannedItems && Object.keys(room.plannedItems).length > 0) {
     Object.entries(room.plannedItems).forEach(([matId, item]) => {
       const planned = Number(item.plannedQty || 0);
@@ -152,7 +177,6 @@ export function computeRoomPercentage(room, materials = []) {
       }
     });
   } else if (Array.isArray(room.materials) && room.materials.length > 0) {
-    // 2. Evaluate room.materials
     room.materials.forEach((m) => {
       const mId = m.positionId || m.id;
       const planned = Number(m.plannedQty || 0);
@@ -164,12 +188,17 @@ export function computeRoomPercentage(room, materials = []) {
       }
     });
   } else if (Array.isArray(materials) && materials.length > 0) {
-    // 3. Match from project materials assigned to this room
-    const roomMats = materials.filter(
-      (m) => m && m.assignedRoomNames && m.assignedRoomNames.includes(room.name)
-    );
+    const roomMats = materials.filter((m) => {
+      if (!m.assignedRoomNames || !Array.isArray(m.assignedRoomNames)) return false;
+      return m.assignedRoomNames.some(
+        (rn) =>
+          rn.toLowerCase() === room.name.toLowerCase() ||
+          rn.toLowerCase() === room.id.toLowerCase()
+      );
+    });
+
     roomMats.forEach((m) => {
-      const planned = Number(m.qty || 0);
+      const planned = Number(m.plannedQty || 0);
       const installed = Number(m.installedQty || 0);
       const draft = Number(room.draftQuantities?.[m.id] || 0);
       if (planned > 0) {
@@ -179,47 +208,64 @@ export function computeRoomPercentage(room, materials = []) {
     });
   }
 
-  if (totalPlanned > 0) {
-    return Math.round((totalInstalled / totalPlanned) * 100);
-  }
-
-  return Number(room.pct || 0);
+  if (totalPlanned === 0) return 0;
+  return Math.round((totalInstalled / totalPlanned) * 100);
 }
 
-export async function saveRooms(rooms, projectId, materials = []) {
+export async function saveRooms(rooms, projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.ROOMS}_${pId}`;
-    const normalizedRooms = (Array.isArray(rooms) ? rooms : []).map((r) => {
-      if (!r) return r;
-      const pct = r.isCompleted || Number(r.pct) === 100 ? 100 : computeRoomPercentage(r, materials);
-      return {
-        ...r,
-        pct,
-      };
-    });
-    await AsyncStorage.setItem(key, JSON.stringify(normalizedRooms));
-    if (pId === DEFAULT_PROJECT_ID) {
-      await AsyncStorage.setItem(KEYS.ROOMS, JSON.stringify(normalizedRooms));
-    }
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('rooms', ctx);
+    await AsyncStorage.setItem(key, JSON.stringify(rooms));
   } catch (e) {
     console.warn('Error saving rooms:', e);
   }
 }
 
+export async function updateRoom(updatedRoom, projectId) {
+  try {
+    const rooms = await getRooms(projectId);
+    const index = rooms.findIndex((r) => r.id === updatedRoom.id);
+    let newRooms;
+    if (index >= 0) {
+      newRooms = [...rooms];
+      newRooms[index] = {
+        ...newRooms[index],
+        ...updatedRoom,
+        updatedAt: new Date().toISOString(),
+      };
+    } else {
+      newRooms = [...rooms, { ...updatedRoom, updatedAt: new Date().toISOString() }];
+    }
+    await saveRooms(newRooms, projectId);
+    return newRooms;
+  } catch (e) {
+    console.warn('Error updating room:', e);
+    return [];
+  }
+}
+
 export async function getMaterials(projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.MATERIALS}_${pId}`;
-    const data = await AsyncStorage.getItem(key);
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('materials', ctx);
+    const legacyKey = `${KEYS.MATERIALS}_${ctx.projectId}`;
+
+    let data = await AsyncStorage.getItem(key);
+    if (!data && ctx.tenantId) {
+      data = await AsyncStorage.getItem(legacyKey);
+    }
+
     if (data) {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) return parsed;
     }
-    if (pId === DEFAULT_PROJECT_ID) {
-      const legacy = await AsyncStorage.getItem(KEYS.MATERIALS);
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
+
+    // STRICT RULE: No dummy materials for tenant projects
+    if (!ctx.tenantId && ctx.projectId === DEFAULT_PROJECT_ID) {
+      const legacyData = await AsyncStorage.getItem(KEYS.MATERIALS);
+      if (legacyData) {
+        const parsed = JSON.parse(legacyData);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
       return INITIAL_MATERIALS;
@@ -232,12 +278,9 @@ export async function getMaterials(projectId) {
 
 export async function saveMaterials(materials, projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.MATERIALS}_${pId}`;
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('materials', ctx);
     await AsyncStorage.setItem(key, JSON.stringify(materials));
-    if (pId === DEFAULT_PROJECT_ID) {
-      await AsyncStorage.setItem(KEYS.MATERIALS, JSON.stringify(materials));
-    }
   } catch (e) {
     console.warn('Error saving materials:', e);
   }
@@ -245,60 +288,57 @@ export async function saveMaterials(materials, projectId) {
 
 export async function getProjectInfo(projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const data = await AsyncStorage.getItem(`${KEYS.PROJECT}_${pId}`);
-    if (data) return JSON.parse(data);
-    const legacy = await AsyncStorage.getItem(KEYS.PROJECT);
-    if (legacy) return JSON.parse(legacy);
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('project', ctx);
+    const legacyKey = `${KEYS.PROJECT}_${ctx.projectId}`;
+
+    let data = await AsyncStorage.getItem(key);
+    if (!data && ctx.tenantId) {
+      data = await AsyncStorage.getItem(legacyKey);
+    }
+
+    if (data) {
+      return JSON.parse(data);
+    }
+
+    if (!ctx.tenantId && ctx.projectId === DEFAULT_PROJECT_ID) {
+      const legacyData = await AsyncStorage.getItem(KEYS.PROJECT);
+      if (legacyData) return JSON.parse(legacyData);
+      return DEFAULT_PROJECT;
+    }
   } catch (e) {
     console.warn('Error reading project info:', e);
   }
-  return DEFAULT_PROJECT;
+  return {};
 }
 
 export async function saveProjectInfo(project, projectId) {
   try {
-    const pId = projectId || project?.id || DEFAULT_PROJECT_ID;
-    await AsyncStorage.setItem(`${KEYS.PROJECT}_${pId}`, JSON.stringify(project));
-    await AsyncStorage.setItem(KEYS.PROJECT, JSON.stringify(project));
+    const ctx = await getStorageContext(projectId || project?.id);
+    const key = buildScopedKey('project', ctx);
+    await AsyncStorage.setItem(key, JSON.stringify(project || {}));
   } catch (e) {
     console.warn('Error saving project info:', e);
   }
 }
 
-// -------------------------------------------------------------
-// 2b. Plans Caching & Floor Detection
-// -------------------------------------------------------------
-export function getRoomFloor(room) {
-  if (!room) return 'Sonstiges';
-  if (room.floor && typeof room.floor === 'string') {
-    const f = room.floor.trim().toUpperCase();
-    if (f === 'UG' || f.includes('UNTERGESCHOSS') || f.includes('KELLER') || f.startsWith('UG')) return 'UG';
-    if (f === 'EG' || f.includes('ERDGESCHOSS') || f.startsWith('EG')) return 'EG';
-    if (f === 'OG' || f.includes('OBERGESCHOSS') || f.startsWith('OG')) return 'OG';
-    if (f === 'DG' || f.includes('DACHGESCHOSS') || f.startsWith('DG')) return 'DG';
-    if (f.includes('STRANG') || f.includes('SCHEMA')) return 'Strangschema';
-    return room.floor;
-  }
-  const codeOrName = ((room.code || '') + ' ' + (room.name || '')).trim().toUpperCase();
-  if (codeOrName.startsWith('UG') || codeOrName.includes(' UG') || codeOrName.includes('UNTERGESCHOSS')) return 'UG';
-  if (codeOrName.startsWith('EG') || codeOrName.includes(' EG') || codeOrName.includes('ERDGESCHOSS')) return 'EG';
-  if (codeOrName.startsWith('OG') || codeOrName.includes(' OG') || codeOrName.includes('OBERGESCHOSS')) return 'OG';
-  if (codeOrName.startsWith('DG') || codeOrName.includes(' DG') || codeOrName.includes('DACHGESCHOSS')) return 'DG';
-  if (codeOrName.includes('STRANG') || codeOrName.includes('SCHEMA')) return 'Strangschema';
-  return 'Sonstiges';
-}
-
 export async function getCachedPlans(projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.PLANS}_${pId}`;
-    const data = await AsyncStorage.getItem(key);
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('plans', ctx);
+    const legacyKey = `${KEYS.PLANS}_${ctx.projectId}`;
+
+    let data = await AsyncStorage.getItem(key);
+    if (!data && ctx.tenantId) {
+      data = await AsyncStorage.getItem(legacyKey);
+    }
+
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
-    if (pId === DEFAULT_PROJECT_ID) {
+
+    if (!ctx.tenantId && ctx.projectId === DEFAULT_PROJECT_ID) {
       return INITIAL_PLANS;
     }
   } catch (e) {
@@ -309,17 +349,16 @@ export async function getCachedPlans(projectId) {
 
 export async function saveCachedPlans(plans, projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    const key = `${KEYS.PLANS}_${pId}`;
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('plans', ctx);
     await AsyncStorage.setItem(key, JSON.stringify(plans || []));
   } catch (e) {
     console.warn('Error saving cached plans:', e);
   }
 }
 
-
 // -------------------------------------------------------------
-// 3. Persistent Local Images
+// 4. Persistent Local Images
 // -------------------------------------------------------------
 export async function persistPhotoLocally(tempUri) {
   if (!tempUri) return null;
@@ -327,8 +366,6 @@ export async function persistPhotoLocally(tempUri) {
     await ensureProofsDir();
     const filename = `proof_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
     const destination = `${PROOFS_DIR}${filename}`;
-    
-    // Copy the temp photo to document directory for permanent offline availability
     await FileSystem.copyAsync({
       from: tempUri,
       to: destination,
@@ -341,7 +378,7 @@ export async function persistPhotoLocally(tempUri) {
 }
 
 // -------------------------------------------------------------
-// 4. Outbox Queue (Bookings)
+// 5. Outbox Queue (Bookings)
 // -------------------------------------------------------------
 export async function getAllBookings() {
   try {
@@ -365,7 +402,7 @@ export async function enqueueBooking(booking) {
     const newBooking = {
       ...booking,
       id: booking.id || `book_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      projectId: booking.projectId || DEFAULT_PROJECT_ID,
+      projectId: booking.projectId,
       roomId: booking.roomId,
       roomName: booking.roomName,
       itemId: booking.itemId,
@@ -375,7 +412,7 @@ export async function enqueueBooking(booking) {
       qu: booking.qu || 'Stk',
       photoUris: booking.photoUris || (booking.photoUri ? [booking.photoUri] : []),
       photoUrls: booking.photoUrls || [],
-      status: 'pending', // 'pending' | 'synced'
+      status: 'pending',
       timestamp: booking.timestamp || new Date().toISOString(),
       calendarWeek: booking.calendarWeek || 27,
       createdBy: booking.createdBy || 'Monteur',
@@ -386,9 +423,9 @@ export async function enqueueBooking(booking) {
     const updated = [newBooking, ...all.filter((b) => b && b.id !== newBooking.id)];
     await AsyncStorage.setItem(KEYS.BOOKINGS, JSON.stringify(updated));
 
-    // Also optimistically update locally installedQty of the material
+    // Optimistically update locally installedQty
     try {
-      await updateLocalMaterialInstalledQty(newBooking.itemId, newBooking.quantity);
+      await updateLocalMaterialInstalledQty(newBooking.itemId, newBooking.quantity, newBooking.projectId);
     } catch {}
 
     return newBooking;
@@ -398,9 +435,9 @@ export async function enqueueBooking(booking) {
   }
 }
 
-async function updateLocalMaterialInstalledQty(materialId, additionalQty) {
+async function updateLocalMaterialInstalledQty(materialId, additionalQty, projectId) {
   try {
-    const materials = await getMaterials();
+    const materials = await getMaterials(projectId);
     const updated = materials.map((m) => {
       if (m.id === materialId) {
         return {
@@ -410,7 +447,7 @@ async function updateLocalMaterialInstalledQty(materialId, additionalQty) {
       }
       return m;
     });
-    await saveMaterials(updated);
+    await saveMaterials(updated, projectId);
   } catch (e) {
     console.warn('Error updating local material qty:', e);
   }
@@ -447,7 +484,7 @@ export async function clearSyncedBookings() {
 }
 
 // -------------------------------------------------------------
-// 5. Addendums / Nachträge
+// 6. Addendums / Nachträge
 // -------------------------------------------------------------
 export async function getAddendums() {
   try {
@@ -463,10 +500,10 @@ export async function enqueueAddendum(addendum) {
     const all = await getAddendums();
     const newAddendum = {
       id: addendum.id || `add_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      projectId: addendum.projectId || DEFAULT_PROJECT_ID,
+      projectId: addendum.projectId,
       roomId: addendum.roomId,
       roomName: addendum.roomName,
-      type: addendum.type || 'material', // 'material' | 'stunden' | 'unklar'
+      type: addendum.type || 'material',
       title: addendum.title,
       quantity: addendum.quantity,
       qu: addendum.qu || 'Stk',
@@ -518,12 +555,19 @@ export async function updateAddendumStatus(id, status, remoteData = {}) {
 }
 
 // -------------------------------------------------------------
-// 6. Two-Way Delta Sync Tracking (Scoped per Project)
+// 7. Two-Way Delta Sync Tracking (Scoped per Project & Tenant)
 // -------------------------------------------------------------
 export async function getLastSyncedAt(projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
-    return await AsyncStorage.getItem(`${KEYS.LAST_SYNCED_AT}_${pId}`);
+    const ctx = await getStorageContext(projectId);
+    const scopedKey = buildScopedKey('last_synced', ctx);
+    const legacyKey = `${KEYS.LAST_SYNCED_AT}_${ctx.projectId}`;
+
+    const val = await AsyncStorage.getItem(scopedKey);
+    if (!val && ctx.tenantId) {
+      return await AsyncStorage.getItem(legacyKey);
+    }
+    return val;
   } catch (e) {
     return null;
   }
@@ -531,9 +575,10 @@ export async function getLastSyncedAt(projectId) {
 
 export async function setLastSyncedAt(timestamp, projectId) {
   try {
-    const pId = await resolveProjectId(projectId);
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('last_synced', ctx);
     const val = timestamp || new Date().toISOString();
-    await AsyncStorage.setItem(`${KEYS.LAST_SYNCED_AT}_${pId}`, val);
+    await AsyncStorage.setItem(key, val);
     return val;
   } catch (e) {
     console.warn('Error saving lastSyncedAt:', e);
@@ -542,7 +587,8 @@ export async function setLastSyncedAt(timestamp, projectId) {
 }
 
 export async function getLocalUnsyncedDelta(projectId) {
-  const pId = await resolveProjectId(projectId);
+  const ctx = await getStorageContext(projectId);
+  const pId = ctx.projectId;
   const allBookings = await getPendingBookings();
   const allAddendums = await getPendingAddendums();
   const pendingBookings = allBookings.filter((b) => !b.projectId || b.projectId === pId);
@@ -555,7 +601,7 @@ export async function getLocalUnsyncedDelta(projectId) {
     if (r.isCompleted && (!r.syncedAt || (lastSyncedAt && r.completedAt && r.completedAt > lastSyncedAt))) {
       return true;
     }
-    // 2. Room in progress whose local changes (pct, draftQuantities, photos) haven't been synced
+    // 2. Room in progress whose local changes haven't been synced
     const hasUnsyncedChanges = Boolean(
       (r.updatedAt && (!r.syncedAt || r.updatedAt > r.syncedAt)) ||
       (!r.syncedAt && (Number(r.pct) > 0 || (r.draftQuantities && Object.keys(r.draftQuantities).length > 0) || (Array.isArray(r.photos) && r.photos.length > 0)))
@@ -572,24 +618,44 @@ export async function getLocalUnsyncedDelta(projectId) {
   };
 }
 
+/**
+ * Clear project cache safely.
+ * CRITICAL RULE: Under NO circumstances clear the cache if there are pending bookings or addendums!
+ */
 export async function clearProjectCache(projectId) {
   try {
-    const pId = projectId || DEFAULT_PROJECT_ID;
-    await AsyncStorage.removeItem(`${KEYS.ROOMS}_${pId}`);
-    await AsyncStorage.removeItem(`${KEYS.MATERIALS}_${pId}`);
-    await AsyncStorage.removeItem(`${KEYS.PROJECT}_${pId}`);
-    await AsyncStorage.removeItem(`${KEYS.PLANS}_${pId}`);
-    await AsyncStorage.removeItem(`${KEYS.LAST_SYNCED_AT}_${pId}`);
+    const ctx = await getStorageContext(projectId);
+    const pId = ctx.projectId;
 
-    const allRaw = await AsyncStorage.getItem('ttapp_all_projects');
-    if (allRaw) {
-      const all = JSON.parse(allRaw);
-      const filtered = all.filter((p) => p.id !== pId);
-      await AsyncStorage.setItem('ttapp_all_projects', JSON.stringify(filtered));
+    // Outbox safety check: do NOT clear if there are unsynced items
+    const delta = await getLocalUnsyncedDelta(pId);
+    if (delta.hasLocalDelta) {
+      console.warn(`PROTECTION: Refusing to clear cache for project ${pId} because ${delta.totalPendingCount} pending items exist!`);
+      return false;
     }
+
+    const scopedRoomsKey = buildScopedKey('rooms', ctx);
+    const scopedMatsKey = buildScopedKey('materials', ctx);
+    const scopedProjKey = buildScopedKey('project', ctx);
+    const scopedPlansKey = buildScopedKey('plans', ctx);
+    const scopedSyncKey = buildScopedKey('last_synced', ctx);
+
+    await Promise.all([
+      AsyncStorage.removeItem(scopedRoomsKey),
+      AsyncStorage.removeItem(scopedMatsKey),
+      AsyncStorage.removeItem(scopedProjKey),
+      AsyncStorage.removeItem(scopedPlansKey),
+      AsyncStorage.removeItem(scopedSyncKey),
+      AsyncStorage.removeItem(`${KEYS.ROOMS}_${pId}`),
+      AsyncStorage.removeItem(`${KEYS.MATERIALS}_${pId}`),
+      AsyncStorage.removeItem(`${KEYS.PROJECT}_${pId}`),
+      AsyncStorage.removeItem(`${KEYS.PLANS}_${pId}`),
+      AsyncStorage.removeItem(`${KEYS.LAST_SYNCED_AT}_${pId}`),
+    ]);
+
+    return true;
   } catch (e) {
     console.warn('Error clearing project cache:', e);
+    return false;
   }
 }
-
-

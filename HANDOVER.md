@@ -232,5 +232,12 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-2026-10-14 — v2.21 Update: App-Vereinfachung für Monteure (Arbeit nicht blockieren): Begründungszwang bei Mehrverbrauch & Zusatzmaterial entfernt (optional), Nachtrag rein auf Material fokussiert ("mehr Zeit benötigt" und Umschalt-Tabs entfernt), altes OverConsumptionModal gelöscht.
+- **2026-11-13 (v2.30)**
+  - **Ziel / Anlass:** Multi-Tenant Scoping, QR-Code/Invite-Code Geräteaktivierung & Firebase Auth Session-Management.
+  - **Änderungen:**
+    - `ActivationScreen.jsx` & `src/services/apiService.js`: Kamera-QR-Scan & Code-Eingabe gegen `/api/public/invites/redeem`.
+    - `src/services/authService.js`: Einlösen mit Geräte-InstallationId, Sign-In via Firebase Custom-Token, lokaler PIN nur für UI-Lock.
+    - `src/services/storageService.js` & `src/services/syncService.js`: Scoping auf `tenants/:tenantId/projects/:projectId/...`, Outbox-Löschschutz, Storage-Uploads nach `tenants/:tenantId/projects/:projectId/proofs/...`.
+    - `App.js`: Phase `activation` integriert; `src/constants/version.js` auf `v2.30` aktualisiert.
+  - **Verifikation:** `npx expo export` erfolgreich validiert (Android: 802 Module, iOS: 804 Module fehlerfrei gebündelt).
 
