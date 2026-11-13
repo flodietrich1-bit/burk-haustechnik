@@ -38,6 +38,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
   const [errorMsg, setErrorMsg] = useState('');
   const [scannerVisible, setScannerVisible] = useState(false);
   const [scanWarning, setScanWarning] = useState('');
+  const [cameraReady, setCameraReady] = useState(false);
 
   // Synchronous lock to prevent duplicate frames from firing multiple activation requests
   const isScanningRef = useRef(false);
@@ -148,15 +149,17 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
           barcodeScannerSettings={{
             barcodeTypes: ['qr'],
           }}
-          onBarcodeScanned={handleBarcodeScanned}
+          onCameraReady={() => setCameraReady(true)}
+          onBarcodeScanned={cameraReady ? handleBarcodeScanned : undefined}
           onMountError={(e) => {
             console.warn('Camera mount error:', e);
             Alert.alert('Kamera-Fehler', 'Kamera konnte nicht gestartet werden.');
+            setCameraReady(false);
             setScannerVisible(false);
           }}
         />
 
-        <SafeAreaView style={styles.scannerOverlay}>
+        <SafeAreaView style={styles.scannerOverlay} pointerEvents="box-none">
           {/* Top Navigation Row */}
           <View style={styles.scannerTopRow}>
             <TouchableOpacity
@@ -523,7 +526,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 20,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'transparent',
   },
   scannerTopRow: {
     width: '100%',
