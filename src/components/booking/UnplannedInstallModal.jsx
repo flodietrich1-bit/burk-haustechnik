@@ -77,6 +77,7 @@ export default function UnplannedInstallModal({
     const isMissing =
       !unclearText.trim() ||
       qtyVal <= 0 ||
+      !unclearReason.trim() ||
       !unclearSigner.trim();
     if (isMissing) {
       setHasAttemptedUnclearSubmit(true);
@@ -95,7 +96,7 @@ export default function UnplannedInstallModal({
       materialId: matId,
       group: selectedUnclearMat?.group || 'Zusatz / Außerplanmäßig',
       isOrdered: !!selectedUnclearMat,
-      reason: unclearReason.trim() || 'Außerplanmäßig verbaut',
+      reason: unclearReason.trim(),
       signature: null,
       requestedBy: unclearSigner.trim() || monteur?.name || 'Monteur',
       signerName: unclearSigner.trim() || monteur?.name || 'Monteur',
@@ -269,7 +270,7 @@ export default function UnplannedInstallModal({
             {/* Begründung für Einbau */}
             <View style={styles.modalField}>
               <Text style={styles.modalFieldLabel}>
-                {t('unplannedReason', currentLang) || 'Begründung für Einbau'}
+                {t('unplannedReason', currentLang)} <Text style={styles.requiredStar}>*</Text>
               </Text>
               <View style={styles.quickPillsRow}>
                 {[
@@ -293,6 +294,7 @@ export default function UnplannedInstallModal({
                 style={[
                   styles.modalInput,
                   styles.multilineInput,
+                  hasAttemptedUnclearSubmit && !unclearReason.trim() && styles.inputInvalid,
                 ]}
                 placeholder={t('unplannedReasonPlaceholder', currentLang)}
                 placeholderTextColor={COLORS.muted}
