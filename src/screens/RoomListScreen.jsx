@@ -81,11 +81,7 @@ export default function RoomListScreen({
         <View style={styles.roomInfo}>
           <View style={styles.nameRow}>
             <Text style={styles.roomName}>{room.name}</Text>
-            {isCompleted ? (
-              <View style={styles.completedBadge}>
-                <Text style={styles.completedBadgeText}>✓ 100 %</Text>
-              </View>
-            ) : pct > 0 ? (
+            {!isCompleted && pct > 0 && pct < 100 ? (
               <View style={styles.inProgressBadge}>
                 <Text style={styles.inProgressBadgeText}>{pct} %</Text>
               </View>
@@ -98,6 +94,12 @@ export default function RoomListScreen({
             {room.sub || room.code}
           </Text>
         </View>
+
+        {isCompleted && (
+          <View style={styles.completedBadge}>
+            <Text style={styles.completedBadgeText}>✓ {t('roomCompletedBadge', currentLang)}</Text>
+          </View>
+        )}
 
         {/* Chevron Arrow */}
         <Text style={styles.chevron}>›</Text>
@@ -423,12 +425,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#E6FFFA',
     borderWidth: 1,
     borderColor: '#38B2AC',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    borderRadius: 8,
+    minHeight: 34,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
   },
   completedBadgeText: {
-    fontSize: 11,
+    fontSize: 12.5,
     fontWeight: '800',
     color: '#234E52',
   },

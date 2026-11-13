@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.40` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.41` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -99,7 +99,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Only scripts: `start`, `android`, `ios`, `web` [config].
 - No tests, ESLint, Prettier, TypeScript or CI [verified by file listing].
-- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13 for v2.40. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
+- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13 for v2.41. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
 - Release/OTA publish procedure: `AGENTS.md` requires `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive` whenever `Monteur` is pushed. Expo Go development reloads use Metro rather than EAS Update.
 
 ## 11. Deployment
@@ -111,7 +111,7 @@ App distributed through Expo/EAS (project owner `vibe-factory-gmbh`), updates ch
 - Offline-first with outbox + delta sync; sync is idempotent-ish via deterministic IDs and `setDoc(..., {merge:true})`.
 - Per-project local caches (commit `56cd02a`); outbox stays global but is filtered per project at sync time (items without `projectId` are treated as belonging to any project).
 - Rooms are pushed even while in progress (percentage/draft quantities/photos) so admin sees progress. Only explicit `isCompleted`/`status` marks a room complete; a calculated 100% alone does not lock it. Completion requires a locally saved photo and confirmation, then locks the room. A previously completed room with zero photos can be reopened in the app; its unlocked status and cleared completion fields are synced. Remote can also unlock a room by setting `isCompleted:false` or `status:'in_progress'` (see `mapRemoteRoom`).
-- Percentage = installed(+draft) / planned over `plannedItems` (capped per item), fallbacks to `room.materials`, then project materials with `assignedRoomNames` (`computeRoomPercentage`).
+- Percentage = installed(+draft) / planned over `plannedItems` (capped per item), fallbacks to `room.materials`, then project materials with `assignedRoomNames` (`computeRoomPercentage`). The underlying percentage can exceed 100 for over-consumption; the room-list ring and its number display at most 100 and stay green at/above 100. Only an explicit completion status shows the right-aligned “100% fertig” badge.
 - Stock rule: a Monteur cannot book more than delivered/available; over-consumption goes through an alert flow that enqueues a reorder alert. Planned = 0 for unplanned items (v2.11).
 - Fallback for photos never writes `file://` paths to Firestore; data-URI fallback is a deliberate last resort.
 - Terminology: "Nachtrag" was renamed "Mehrbedarf" in UI (v2.4) but code/Firestore still use `addendum(s)`/`nachtrag`.
@@ -133,16 +133,17 @@ Confirmed from code:
 11. `expo-image-picker` uses `MediaTypeOptions` (check against SDK 57 docs; deprecated in newer SDKs — suspected).
 12. Possible mismatch between app writes and local Firestore rules: rules only match `projects/{id}`, `positions`, `rooms`, `bookings`, `addendums`, `users`; no explicit match for `projects/*/bookings`, `projects/*/addendums`, `projects/*/monteurs`, or root `monteurs`, which would be denied if those rules are deployed as-is (**suspected**; deployed rules unknown).
 
-Suspected / unverified: see "suspected" markers above. Full-screen room completion modal layout in Expo Go on a real device: Unknown / needs confirmation.
+Suspected / unverified: see "suspected" markers above. Full-screen room completion modal and the v2.41 room-list/header layout in Expo Go on a real device: Unknown / needs confirmation.
 
 ## 14. Current Work / Open Tasks
 
-- v2.40 presents room completion as a full-screen modal with the X at the top, a scrollable product list using the remaining height, and one green confirmation button at the bottom. The no-photo trigger remains pressable for its photo-required alert and is visibly grey. Device rendering, actual photo capture, and Firestore round trip still need manual confirmation in Expo Go.
+- v2.41 caps the room-list progress ring and numeric label at 100, keeps it green when consumption exceeds plan, removes the in-progress badge at/above 100, and places a larger “100% fertig” badge on the right only for explicitly completed rooms. The header sync control uses a single circular-arrow icon that rotates during sync, without a red border or count badge. Device rendering and the real sync flow still need manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.41: Room-list progress ring caps its arc, number and color at green 100 even for underlying over-consumption; completion badge moves to the right and says “100% fertig” only for completed rooms. Header sync button becomes a single rotating SVG icon without red accents.
 - 2026-11-13 v2.40: Room-completion modal expanded to full screen; cancel action moved to top X, only one fixed green confirmation button at bottom. Grey no-photo completion trigger made clearer; existing photo-required alert retained.
 - 2026-11-13 v2.39: Explicit room completion only; photo guard in the UI and App handler; zero-photo completed rooms can be reopened with sync of cleared completion metadata. Header shows project and tenant branding from Admin, with KW and monteur initials removed.
 - 2026-11-13 v2.38: `getRoomFloor` is exported from `storageService.js` and resolves explicit `floor`/`level`, a floor prefix in room code, or `Sonstiges`; fixes `undefined is not a function` in `RoomListScreen` (and the same latent issue in `BookingScreen`). `Header` replaces the full monteur name with a compact user icon and initials next to the logo and trims vertical padding.
@@ -218,7 +219,7 @@ Suspected / unverified: see "suspected" markers above. Full-screen room completi
 | Login / PIN / seeds | `src/services/authService.js`, `src/screens/PinLockScreen.jsx` |
 | Booking UI / completion recovery / full-screen modal | `src/screens/BookingScreen.jsx`, `src/components/booking/CompleteRoomModal.jsx`, `src/components/booking/completeRoomStyles.js`, `src/components/booking/bookingStyles.js` |
 | Tenant branding / header | `src/services/authService.js`, `src/components/Header.jsx` |
-| Room List & Floor Filter | `src/screens/RoomListScreen.jsx` |
+| Room List & Floor Filter / capped ring | `src/screens/RoomListScreen.jsx`, `src/components/ProgressRing.jsx` |
 | Photos | `src/screens/PhotoCaptureScreen.jsx` |
 | Text/translation | `src/locales/i18n.js` |
 | Version/theme | `src/constants/version.js`, `src/constants/theme.js` |
@@ -237,6 +238,11 @@ Suspected / unverified: see "suspected" markers above. Full-screen room completi
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.41)**
+  - **Anlass:** Screenshot zeigte ein irritierendes 100%-Fertig-Badge direkt am Raumtitel; bei Mehrverbrauch konnte der Ring 101 anzeigen. Sync-Icon hatte roten Rand und eine schwer erkennbare Glyphe.
+  - **Änderungen:** Ring-Bogen und Zahl in der Raumliste auf 100 begrenzt und bei ≥100 grün; in Arbeit befindliche Räume mit ≥100 erhalten kein Fertig-Badge. Das vergrößerte, vertikal zentrierte Badge „100% fertig“ steht rechts ausschließlich bei explizitem Abschlussstatus; Text in allen vier Sprachen ergänzt. Sync-Knopf als klares SVG-Kreispfeil-Symbol ohne roten Rand/Zähler, mit Rotation während Synchronisierung. App-Anzeigeversion v2.41.
+  - **Verifikation:** `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden. Gerätedarstellung: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.40)**
   - **Anlass:** Nutzer wünschte einen deutlich grauen Monteur-fertig-Button ohne Foto samt Hinweis beim Tippen und eine bildschirmfüllende Abschlussübersicht mit X oben, mehr Platz für Produkte und einem grünen Abschlussbutton unten.

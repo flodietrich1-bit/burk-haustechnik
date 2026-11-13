@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import { SvgUri } from 'react-native-svg';
+import Svg, { Path, SvgUri } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { LANGUAGES, t } from '../locales/i18n';
 
@@ -9,7 +9,6 @@ export default function Header({
   subTitle = '',
   branding = null,
   isOnline = false,
-  pendingCount = 0,
   currentLang = 'de',
   onSelectLang,
   onSyncPress,
@@ -90,28 +89,24 @@ export default function Header({
           <TouchableOpacity
             style={[
               styles.syncButton,
-              pendingCount > 0 ? styles.syncButtonPending : styles.syncButtonIdle,
-              isSyncing && styles.syncButtonSyncing,
-              !isSyncing && branding?.primaryColor && { backgroundColor: branding.primaryColor },
+              branding?.primaryColor && { backgroundColor: branding.primaryColor },
             ]}
             onPress={onSyncPress}
             disabled={isSyncing}
             accessibilityLabel={t('syncBtn', currentLang)}
             activeOpacity={0.7}
           >
-            <Animated.Text
-              style={[
-                styles.syncIcon,
-                isSyncing && { transform: [{ rotate: spinInterpolate }] },
-              ]}
-            >
-              {isSyncing ? '⟳' : '⇅'}
-            </Animated.Text>
-            {pendingCount > 0 && !isSyncing && (
-              <View style={styles.syncRedBadge}>
-                <Text style={styles.syncRedBadgeText}>{pendingCount}</Text>
-              </View>
-            )}
+            <Animated.View style={isSyncing ? { transform: [{ rotate: spinInterpolate }] } : undefined}>
+              <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
+                <Path
+                  d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"
+                  stroke="#FFFFFF"
+                  strokeWidth={2.2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </Svg>
+            </Animated.View>
           </TouchableOpacity>
           {onLockPress && (
             <TouchableOpacity style={styles.menuButton} onPress={onLockPress} accessibilityLabel={t('logoutDeviceTitle', currentLang)}>
@@ -212,46 +207,12 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   syncButton: {
-    flexDirection: 'row',
+    width: 38,
+    height: 38,
     alignItems: 'center',
-    gap: 4,
-    width: 34,
-    height: 34,
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    borderRadius: 16,
-  },
-  syncButtonPending: {
+    borderRadius: 19,
     backgroundColor: COLORS.amber,
-    borderWidth: 1.5,
-    borderColor: '#EF4444',
-  },
-  syncRedBadge: {
-    backgroundColor: '#EF4444',
-    minWidth: 20,
-    height: 20,
-    borderRadius: 10,
-    paddingHorizontal: 5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 4,
-  },
-  syncRedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-    textAlign: 'center',
-  },
-  syncButtonIdle: {
-    backgroundColor: COLORS.amber,
-  },
-  syncButtonSyncing: {
-    backgroundColor: '#1D6FA4',
-  },
-  syncIcon: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: 'bold',
   },
   menuButton: {
     width: 34,

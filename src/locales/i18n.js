@@ -139,6 +139,7 @@ export const TRANSLATIONS = {
   completeExact: { de: 'Exakt wie geplant', ro: 'Exact conform planului', pl: 'Dokładnie wg planu', hr: 'Točno prema planu' },
   completeRoomConfirm: { de: 'Jetzt als „Monteur fertig“ abschließen', ro: 'Finalizează acum ca „Montator gata”', pl: 'Zakończ teraz jako „Monter gotowy”', hr: 'Završi sada kao „Monter završio”' },
   roomCompletedTitle: { de: 'Monteur fertig gemeldet', ro: 'Montator gata raportat', pl: 'Zgłoszono monter gotowy', hr: 'Monter završio prijavljeno' },
+  roomCompletedBadge: { de: '100% fertig', ro: '100% finalizat', pl: '100% gotowe', hr: '100% gotovo' },
   roomCompletedSub: { de: 'Mengen-Delta im Bauleiter-Admin-Panel hinterlegt', ro: 'Diferența de cantitate salvată în panoul admin', pl: 'Różnica ilościowa zapisana w panelu kierownika', hr: 'Razlika u količini spremljena u administratorskoj ploči' },
   roomLockedBanner: { de: 'Dieser Raum wurde fertiggestellt (schreibgeschützt).', ro: 'Această încăpere a fost finalizată (numai citire).', pl: 'To pomieszczenie zostało ukończone (tylko do odczytu).', hr: 'Ova prostorija je dovršena (samo za čitanje).' },
   roomLockedBannerSub: { de: 'Änderungen können nur durch den Bauleiter im Admin-Bereich freigeschaltet werden.', ro: 'Modificările pot fi deblocate doar de către șeful de șantier în panoul de administrare.', pl: 'Zmiany mogą zostać odblokowane tylko przez kierownika budowy w panelu administratora.', hr: 'Izmjene može otključati samo voditelj gradilišta u administratorskoj ploči.' },

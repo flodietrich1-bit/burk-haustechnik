@@ -1201,7 +1201,6 @@ export default function App() {
         subTitle={[project?.projectNumber, selectedRoom?.name || project?.client].filter(Boolean).join(' · ')}
         branding={tenantBranding}
         isOnline={isOnline}
-        pendingCount={pendingCount}
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSyncPress={handleManualSync}

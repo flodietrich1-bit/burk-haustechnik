@@ -6,14 +6,10 @@ import { COLORS } from '../constants/theme';
 export default function ProgressRing({ size = 46, strokeWidth = 5, percentage = 0 }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const clampedPct = Math.min(100, Math.max(0, percentage));
+  const clampedPct = Math.min(100, Math.max(0, Number(percentage) || 0));
   const strokeDashoffset = circumference * (1 - clampedPct / 100);
 
-  const color = percentage > 110
-    ? COLORS.red
-    : percentage > 100
-    ? '#EAB308'
-    : clampedPct >= 75
+  const color = clampedPct >= 75
     ? COLORS.green
     : clampedPct >= 40
     ? COLORS.amber
@@ -47,7 +43,7 @@ export default function ProgressRing({ size = 46, strokeWidth = 5, percentage = 
         />
       </Svg>
       <View style={styles.textWrapper}>
-        <Text style={[styles.pctText, { fontSize: size * 0.26 }]}>{percentage}</Text>
+        <Text style={[styles.pctText, { fontSize: size * 0.26 }]}>{clampedPct}</Text>
       </View>
     </View>
   );
