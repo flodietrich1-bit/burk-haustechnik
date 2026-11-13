@@ -92,11 +92,13 @@ export default function App() {
   // 1. Initial App Loading & Persistent Session Restore
   useEffect(() => {
     async function initApp() {
+      let restoredSession = null;
       try {
         const savedLang = await getLanguage();
         setCurrentLang(savedLang);
 
         const session = await restoreSession();
+        restoredSession = session;
         if (!session.isActivated) {
           setAppPhase('activation');
           return;
@@ -146,7 +148,18 @@ export default function App() {
         }
       } catch (err) {
         console.error('Error during app initialization:', err);
-        setAppPhase('activation');
+        // A startup failure after activation must not demand a new one-time invite.
+        const [savedMonteur, savedTenantId] = await Promise.all([
+          getActiveMonteur(),
+          getTenantId(),
+        ]);
+        if (savedMonteur && savedTenantId) {
+          setMonteur(savedMonteur);
+          setAvailableProjects(restoredSession?.projects || []);
+          setAppPhase('project_select');
+        } else {
+          setAppPhase('activation');
+        }
       }
     }
 
@@ -197,6 +210,18 @@ export default function App() {
 
     return () => clearInterval(syncInterval);
   }, [appPhase, isSyncing, project?.id]);
+
+  const refreshData = async (targetProjectId) => {
+    const pId = targetProjectId || project?.id;
+    const [r, m, delta] = await Promise.all([
+      getRooms(pId),
+      getMaterials(pId),
+      getLocalUnsyncedDelta(pId),
+    ]);
+    setRooms(r);
+    setMaterials(m);
+    setPendingCount(delta.totalPendingCount);
+  };
 
   // Live onSnapshot listener for the active room (< 5s updates from Web Portal)
   useEffect(() => {

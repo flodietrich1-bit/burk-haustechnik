@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.34` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.37` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -18,7 +18,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 ## 3. Technology Stack
 
 - Expo SDK `^58.0.0`, React Native `0.88.1`, React `19.3.0`; JavaScript only (no TypeScript) [config: `package.json`].
-- Libraries: `firebase ^12.19` (Firestore, Storage; `getAuth` initialised but sign-in never used), `@react-native-async-storage/async-storage`, `@react-native-community/netinfo`, `expo-file-system`, `expo-image-manipulator`, `expo-image-picker`, `expo-updates`, `expo-status-bar`, `react-native-svg` (ProgressRing) [config/code].
+- Libraries: `firebase ^12.19` (Firestore, Storage, Auth custom-token session), `@react-native-async-storage/async-storage`, `@react-native-community/netinfo`, `expo-file-system`, `expo-image-manipulator`, `expo-image-picker`, `expo-updates`, `expo-status-bar`, `react-native-svg` (ProgressRing) [config/code].
 - Package manager: npm (`package-lock.json`) [config].
 - Backend: Firebase project `burk-haustechnik` (Firestore + Storage); config object hard-coded in `src/services/firebase.js` [code].
 - Hosting/distribution: Expo/EAS (`owner: vibe-factory-gmbh`, updates URL `https://u.expo.dev/<projectId>`, `runtimeVersion.policy: appVersion`) [config]. No `eas.json` in repo; build profiles Unknown / needs confirmation.
@@ -50,9 +50,9 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 [code] Single-activity, state-driven app. `App.js` holds all state and handlers and passes props down.
 
-- `appPhase`: `loading` → `pin` → (`project_select` if >1 assigned project) → `app`. Within `app`, `currentScreen`: `rooms` → `book` → `photos` → (`book`) / `done` → `rooms`. There is no navigation library.
-- Startup (`initApp`): loads language, active monteur, cached rooms/materials/project (using the fallback project), pending delta; always shows the PIN screen; checks for an EAS update in production builds and reloads if available.
-- Login: `PinLockScreen` → `authenticateByPin` → `handleUnlockWithAutoSync` (sync overlay when online, then project select or direct entry).
+- `appPhase`: `loading` → `activation` (no saved session) or `project_select`/`app` (saved session). The legacy `pin` phase remains in code but is not used by the current activation flow. Within `app`, `currentScreen`: `rooms` → `book` → `photos` → (`book`) / `done` → `rooms`. There is no navigation library.
+- Startup (`initApp`): restores the locally saved tenant/monteur session, loads assigned projects, then opens project selection or the sole assigned project. A failed data load after activation falls back to project selection without deleting activation. It checks for an EAS update in production builds.
+- Login: `ActivationScreen` → `activateDeviceWithInvite` (backend invite redemption and Firebase custom-token sign-in) → project select or direct entry. `PinLockScreen`/`authenticateByPin` remain as legacy code.
 - Booking flow: selecting a room restores room drafts (`draftQuantities`, `photos`, `draftUnclear`). Quantity steppers in `BookingScreen` change `sessionQuantities`; leaving the room (`handleLeaveRoomDraft`) or saving photos persists drafts into the room object, recomputes `pct` (`computeRoomPercentage`) and triggers a silent sync if online. "Complete room" (`handleCompleteRoom`) enqueues one booking per material delta (plus photo-doc booking if no deltas, unclear-item bookings with `status: 'pending_assignment'`, and a `room_completion` booking), updates local `installedQty`, marks the room `isCompleted`/100 %, and syncs.
 - Extra flows: `handleAddNachtrag` (Mehrbedarf → `enqueueAddendum`), `handleAddUnclearItem` (unplanned installed material → adds to local catalog + room + addendum of type `ausserplanmaessig`), `handleOverConsumptionAlert` (enqueue booking with `type: 'over_consumption_alert'`).
 - Offline-first: all of the above write to AsyncStorage first. `getLocalUnsyncedDelta(projectId)` finds pending bookings/addendums (`status === 'pending'`) and rooms with unsynced changes. `syncBookings` pushes those, then pulls positions and rooms changed since `lastSyncedAt` (per project), then stores a new `lastSyncedAt`. A NetInfo listener triggers silent sync on reconnect.
@@ -76,7 +76,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 ## 7. Authentication & Authorization
 
-[code] "Authentication" is a client-side 4-digit PIN lookup; there is **no Firebase Auth sign-in** (`getAuth` is created but never used).
+[code] Current device activation redeems a one-time invite with the backend, signs in with a Firebase custom token, and stores tenant/monteur locally. `restoreSession` uses those local records on reload. Explicit `logoutDevice` signs out and removes them; an installation ID alone cannot restore a signed-out session. The older client-side PIN flow remains as legacy code.
 - Online: query `users` then `monteurs` by PIN directly from the client. Offline/fallback: `ttapp_known_monteurs` cache or the hard-coded `SEED_MONTEURS` list in `authService.js` (contains names and PINs — do not copy them elsewhere). Note: `ttapp_known_monteurs` is only read, never written anywhere in the app [code], so the offline fallback is effectively the seed list.
 - Lockout: 3 wrong PINs → 30 min lock, stored in AsyncStorage (bypassable by clearing app data).
 - Project access: Strictly governed by project settings (`projects/{projectId}.assignedMonteurIds`, managed in `ProjectSettingsView` in ToolTime admin-web) matching `monteur.id`, name slug, or name; plus `monteur.assignedProjectIds`/`projectIds`; admins have access to all projects. Users with no assigned projects see an empty state in `ProjectSelectScreen` and cannot access unauthorized projects.
@@ -98,8 +98,8 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Only scripts: `start`, `android`, `ios`, `web` [config].
 - No tests, ESLint, Prettier, TypeScript or CI [verified by file listing].
-- Suggested smoke checks (not run during the takeover): `npx expo-doctor`, `npx expo export --platform web`.
-- Release/OTA publish procedure (`eas update`, channel/branch names): Unknown / needs confirmation.
+- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-13. `npm start -- --port 8082` started Metro; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
+- Release/OTA publish procedure: `AGENTS.md` requires `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive` whenever `Monteur` is pushed. Expo Go development reloads use Metro rather than EAS Update.
 
 ## 11. Deployment
 
@@ -136,12 +136,13 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 14. Current Work / Open Tasks
 
-- Working tree was clean at takeover (branch `Monteur`, HEAD `2014ddb`); no uncommitted/in-progress work found. No TODO/FIXME comments exist in app code [verified by grep].
+- v2.37 reload fix on branch `Monteur` includes the missing `refreshData` helper and startup error recovery. Device reload still needs manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.37: Expo Go reload now has the missing `refreshData` helper; startup errors after an activation retain the local session and route to project selection rather than demanding a new one-time invite. `expo-doctor` 20/20 and iOS export passed; Expo Go device reload and live Firebase session restoration remain unverified.
 - 2026-10-14 v2.21: App-Vereinfachung für Monteure (Arbeit nicht blockieren):
   - `NachtragModal.jsx`: Segmented-Control-Tabs (`📦 Material` und `⏱ Arbeitszeit`) komplett entfernt. Nachträge erfassen ab sofort ausschließlich Material ("mehr Zeit benötigt" entfernt, da Zeitrisiko beim Unternehmer/Nachkalkulation liegt und nicht ins Aufmaß gehört).
   - Begründungszwang aufgehoben: Notiz/Begründung in `NachtragModal.jsx` und `UnplannedInstallModal.jsx` ist ab sofort rein optional (kein Pflichtstern, keine Fehlermarkierung, keine Blockade beim Absenden).
@@ -231,6 +232,12 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.37)**
+  - **Anlass:** Normaler Expo Go Reload führte trotz vorhandener Geräteaktivierung zum Aktivierungsbildschirm.
+  - **Ursache:** `App.js` rief `refreshData` ohne Definition auf; der allgemeine Startup-Catch behandelte diesen Fehler wie eine fehlende Aktivierung.
+  - **Änderungen:** Bereits vorhandene uncommitted Ergänzung von `refreshData` beibehalten; Startup-Catch prüft lokale Aktivierung und zeigt bei anderem Startfehler die Projektauswahl. App-Anzeigeversion auf v2.37 erhöht.
+  - **Verifikation:** `npx expo-doctor` (20/20), `npx expo export --platform ios` und `git diff --check` erfolgreich. Web-Export nicht möglich, da `web` nicht in `app.json` als Plattform aktiviert ist. Reload in Expo Go und echte Firebase-Sitzung: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.34)**
   - **Ziel / Anlass:** Beseitigung mehrfacher Frame-Doppel-Scans via useRef-Lock, Härtung der Rate-Limit-Schwellen auf dem Server & iOS-Kamera-Plugin-Konfiguration.
