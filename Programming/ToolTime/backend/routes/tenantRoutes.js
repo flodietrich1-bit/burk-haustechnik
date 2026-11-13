@@ -204,7 +204,7 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
     });
   } catch (error) {
     console.error('Material order email failed:', error.message);
-    return res.status(502).json({ code: 'EMAIL_SEND_FAILED' });
+    return res.status(502).json({ code: 'EMAIL_SEND_FAILED', details: error.message });
   }
   if (!delivery.sent) return res.status(503).json({ code: 'EMAIL_NOT_CONFIGURED' });
   try {

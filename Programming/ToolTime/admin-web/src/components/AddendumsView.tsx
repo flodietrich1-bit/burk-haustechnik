@@ -367,8 +367,13 @@ Bauleitung`;
 
       setReorderItem(null);
     } catch (err: any) {
-      console.warn('Error confirming reorder:', err.message);
-      setReorderError(err.message === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' : err.message === 'EMAIL_SEND_FAILED' ? 'Die E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.' : err.message === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' : `Bestellung fehlgeschlagen: ${err.message}`);
+      const details = err.details ? ` (${err.details})` : '';
+      setReorderError(
+        (err.code || err.message) === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' 
+        : (err.code || err.message) === 'EMAIL_SEND_FAILED' ? `Die E-Mail konnte nicht gesendet werden${details}. Bitte prüfe die Resend-Konfiguration oder versuche es erneut.` 
+        : (err.code || err.message) === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' 
+        : `Bestellung fehlgeschlagen: ${err.details || err.message}`
+      );
     } finally {
       setIsProcessingReorder(false);
     }
@@ -485,7 +490,13 @@ Bauleitung`;
       setIsBatchModalOpen(false);
     } catch (err: any) {
       console.warn('Error confirming batch request:', err.message);
-      setBatchError(err.message === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' : err.message === 'EMAIL_SEND_FAILED' ? 'Die E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.' : err.message === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' : `Sammelanfrage fehlgeschlagen: ${err.message}`);
+      const details = err.details ? ` (${err.details})` : '';
+      setBatchError(
+        (err.code || err.message) === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' 
+        : (err.code || err.message) === 'EMAIL_SEND_FAILED' ? `Die E-Mail konnte nicht gesendet werden${details}. Bitte prüfe die Resend-Konfiguration oder versuche es erneut.` 
+        : (err.code || err.message) === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' 
+        : `Sammelanfrage fehlgeschlagen: ${err.details || err.message}`
+      );
     } finally {
       setIsProcessingBatch(false);
     }

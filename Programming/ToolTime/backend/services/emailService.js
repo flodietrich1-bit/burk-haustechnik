@@ -20,7 +20,17 @@ export async function sendEmail({ to, subject, text, html, attachments = [], ide
       }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) throw new Error(`RESEND_HTTP_${response.status}`);
+    if (!response.ok) {
+      let details = '';
+      if (typeof response.text === 'function') {
+        try {
+          const bodyText = await response.text();
+          const parsed = JSON.parse(bodyText);
+          details = parsed.message || parsed.error || bodyText;
+        } catch {}
+      }
+      throw new Error(details ? `RESEND_HTTP_${response.status}: ${details}` : `RESEND_HTTP_${response.status}`);
+    }
     const result = await response.json();
     if (!result.id) throw new Error('RESEND_RESPONSE_INVALID');
     return { sent: true, provider: 'resend', messageId: result.id };

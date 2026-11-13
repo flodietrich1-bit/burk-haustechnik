@@ -30,7 +30,12 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!response.headers.get('content-type')?.includes('application/json')) throw new ApiConnectionError(url);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.code || `HTTP_${response.status}`);
+  if (!response.ok) {
+    const error: any = new Error(body.code || `HTTP_${response.status}`);
+    error.code = body.code;
+    error.details = body.details;
+    throw error;
+  }
   return body as T;
 }
 
