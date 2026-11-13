@@ -13,14 +13,26 @@ service firebase.storage {
     function activeTenant(tenantId) { return firestore.get(/databases/(default)/documents/tenants/$(tenantId)).data.status == 'active'; }
     function activeMember(tenantId) { return signedIn() && activeTenant(tenantId) && member(tenantId).data.status == 'active'; }
     function tenantAdmin(tenantId) { return isSuperadmin() || (activeMember(tenantId) && member(tenantId).data.role == 'admin'); }
+    function project(tenantId, projectId) { return firestore.get(/databases/(default)/documents/tenants/$(tenantId)/projects/$(projectId)); }
+    function projectAssigned(tenantId, projectId) {
+      return tenantAdmin(tenantId) || (activeMember(tenantId) && (
+        member(tenantId).data.role == 'bauleiter' ||
+        member(tenantId).data.get('assignedProjectIds', []).hasAny([projectId]) ||
+        (member(tenantId).data.role == 'monteur' && project(tenantId, projectId).data.get('assignedMonteurIds', []).hasAny([request.auth.uid]))
+      ));
+    }
     match /tenants/{tenantId}/branding/{fileName} {
       allow read: if isSuperadmin() || activeMember(tenantId);
       allow write: if tenantAdmin(tenantId) && request.resource.size < 5 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
     }
     match /tenants/{tenantId}/projects/{projectId}/{allPaths=**} {
-      allow read: if isSuperadmin() || activeMember(tenantId);
+      allow read: if isSuperadmin() || (activeMember(tenantId) && projectAssigned(tenantId, projectId));
       allow write: if tenantAdmin(tenantId) && request.resource.size < 100 * 1024 * 1024;
+      allow create: if (isSuperadmin() || (activeMember(tenantId) && projectAssigned(tenantId, projectId)))
+        && request.resource.size < 25 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
     match /{allPaths=**} { allow read, write: if false; }
   }
 }
+
