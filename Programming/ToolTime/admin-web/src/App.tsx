@@ -36,6 +36,7 @@ import {
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
 import { brandBackgroundColor, brandTextAccentColor, readableTextColor, type TenantBranding } from './types/branding';
 import { api } from './services/apiClient';
+import { isAddendumTodoForRole } from './utils/addendumWorkflow';
 
 interface AppProps { authenticatedUser: User; tenantId: string; branding: TenantBranding | null; onLogout: () => void; }
 
@@ -216,21 +217,8 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
     }
   };
 
-  // Addendums to confirm / process:
-  // - Kaufmaennisch: Nachträge, die der Bauleiter angefragt hat (status === 'requested' || 'needs_discussion')
-  // - Admin: Angefragte Nachträge zur Bestätigung bzw. offene Nachträge
-  // - Bauleiter: Offene Nachträge von Monteuren (pending) + Klärungsbedarf (needs_discussion)
   const openAddendumsCount = useMemo(() => {
-    const requested = addendums.filter(a => !a.isHidden && (a.status === 'requested' || a.status === 'needs_discussion')).length;
-    const pending = addendums.filter(a => !a.isHidden && a.status === 'pending').length;
-
-    if (currentUser?.role === 'kaufmaennisch') {
-      return requested;
-    }
-    if (currentUser?.role === 'admin') {
-      return requested > 0 ? requested : pending;
-    }
-    return pending + addendums.filter(a => !a.isHidden && a.status === 'needs_discussion').length;
+    return addendums.filter(a => currentUser && isAddendumTodoForRole(a, currentUser.role)).length;
   }, [addendums, currentUser?.role]);
   
   // Reorders and deviation count (distinct positions with genuine deviation or active alert)

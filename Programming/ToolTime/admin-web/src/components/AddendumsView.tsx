@@ -16,23 +16,18 @@ import {
   Send,
   AlertTriangle,
   Mail,
-  FileText,
-  Eye,
-  EyeOff,
-  ShoppingCart
+  FileText
 } from 'lucide-react';
 import { 
   updateAddendumStatus, 
   createAddendum, 
   getMaterialActualQty,
   convertAddendumToLvPosition,
-  addPositionDeliveredQty,
-  toggleAddendumHidden,
-  addBookingEntry,
   getActiveTenantId
 } from '../services/firestoreService';
 import type { Booking } from '../types';
 import { api } from '../services/apiClient';
+import { isAddendumTodoForRole, isAddendumVisibleToRole } from '../utils/addendumWorkflow';
 
 interface AddendumsViewProps {
   addendums: Addendum[];
@@ -93,19 +88,7 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   bookings = [], currentUser, focusedItemId
 }) => {
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'time' | 'material' | 'unclear'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'pending' | 'requested' | 'approved' | 'rejected' | 'needs_discussion'>('all');
-  const [showHidden, setShowHidden] = useState<boolean>(false);
-  const [isReorderingStock, setIsReorderingStock] = useState<string | null>(null);
-  const [stockSuccessToast, setStockSuccessToast] = useState<string | null>(null);
-
-  // Auto-default to 'todo' if there are open items, otherwise 'all'
-  const initialFilterSet = React.useRef(false);
-  useEffect(() => {
-    if (initialFilterSet.current || addendums.length === 0) return;
-    const hasTodo = addendums.some(a => (a.status === 'pending' || a.status === 'requested' || a.status === 'needs_discussion') && !a.isHidden);
-    setStatusFilter(hasTodo ? 'todo' : 'all');
-    initialFilterSet.current = true;
-  }, [addendums]);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'todo' | 'requested' | 'approved' | 'rejected' | 'needs_discussion'>('todo');
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createError, setCreateError] = useState('');
@@ -158,7 +141,6 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [lvUnitPrice, setLvUnitPrice] = useState<string>('0');
   const [lvRoomId, setLvRoomId] = useState<string>('');
   const [isProcessingConvert, setIsProcessingConvert] = useState<boolean>(false);
-  const [commercialNote, setCommercialNote] = useState<Record<string, string>>({});
   const [commercialBusy, setCommercialBusy] = useState<string | null>(null);
   const [commercialError, setCommercialError] = useState('');
   const [commercialErrorItemId, setCommercialErrorItemId] = useState<string | null>(null);
@@ -331,13 +313,6 @@ Bauleitung`;
     return { subj, body };
   };
 
-  // 1. Direct In-Stock Approval: "Material verfügbar - Freigeben"
-  const handleApproveInStock = async (item: Addendum) => {
-    await updateAddendumStatus(item.id, 'approved', projectId, {
-      approvalType: 'in_stock'
-    });
-  };
-
   // For Regiestunden / Arbeitszeit
   const handleApproveHours = async (item: Addendum) => {
     await updateAddendumStatus(item.id, 'approved', projectId, {
@@ -447,22 +422,15 @@ Bauleitung`;
   };
 
   // Metrics
-  const visibleAddendums = addendums.filter(a => showHidden || !a.isHidden);
-  const totalCount = visibleAddendums.length;
+  const visibleAddendums = addendums.filter(a => isAddendumVisibleToRole(a, currentUser.role));
   const timeItems = visibleAddendums.filter(a => getItemCategory(a) === 'time');
   const materialItems = visibleAddendums.filter(a => getItemCategory(a) === 'material');
   const unclearItems = visibleAddendums.filter(a => getItemCategory(a) === 'unclear');
 
   const unrequestedMaterialItems = materialItems.filter(a => a.status === 'pending');
-  const requestedMaterialItems = materialItems.filter(a => a.status === 'requested');
 
-  const openTimeCount = timeItems.filter(a => a.status === 'pending').length;
-  const openMaterialCount = unrequestedMaterialItems.length;
-  const openUnclearCount = unclearItems.filter(a => a.status === 'pending').length;
-
-  const todoItems = visibleAddendums.filter(a => a.status === 'pending' || a.status === 'requested' || a.status === 'needs_discussion');
+  const todoItems = visibleAddendums.filter(a => isAddendumTodoForRole(a, currentUser.role));
   const todoCount = todoItems.length;
-  const hiddenCount = addendums.filter(a => a.isHidden).length;
 
   // 4. Batch Request Modal handlers
   const handleOpenBatchRequestModal = () => {
@@ -526,11 +494,10 @@ Bauleitung`;
     }
   };
 
-  // Mark requested item as ordered / approved
-  const handleCommercialDecision = async (item: Addendum, decision: 'approved' | 'needs_discussion') => {
+  const handleMaterialDecision = async (item: Addendum, fulfillment: 'reordered' | 'in_stock') => {
     try {
       setCommercialBusy(item.id); setCommercialError(''); setCommercialErrorItemId(null);
-      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/addendums/${item.id}/commercial-decision`, { method: 'POST', body: JSON.stringify({ decision, note: commercialNote[item.id] || '' }) });
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/addendums/${item.id}/commercial-decision`, { method: 'POST', body: JSON.stringify({ decision: 'approved', fulfillment }) });
     } catch (err: any) {
       setCommercialError(err.message || 'Entscheidung konnte nicht gespeichert werden.'); setCommercialErrorItemId(item.id);
     } finally { setCommercialBusy(null); }
@@ -611,83 +578,13 @@ Bauleitung`;
     }
   };
 
-  // Toggle card hidden status (Auge anklicken)
-  const handleToggleHide = async (item: Addendum) => {
-    if (!projectId) return;
-    try {
-      await toggleAddendumHidden(projectId, item.id, !item.isHidden);
-    } catch (err: any) {
-      console.error('Fehler beim Ändern des Ausblenden-Status:', err);
-    }
-  };
-
-  // Direct stock reorder for Admin & Kaufmännische Leitung when material is insufficient
-  const handleDirectReorderStock = async (item: Addendum, stockInfo: any) => {
-    if (!projectId) return;
-    const defQty = Number(stockInfo?.deficit) || 0;
-    if (defQty <= 0) return;
-
-    const p = (item.materialId ? posIdMap.get(item.materialId) : undefined) ||
-      (item.itemOz ? posMap.get(item.itemOz) : undefined) ||
-      positions.find(pos => pos.shortText.trim().toLowerCase() === item.title.trim().toLowerCase());
-
-    const targetKey = p?.id || p?.posNr || item.materialId || item.itemOz || item.title;
-    if (!targetKey) {
-      alert('Keine passende LV-Position gefunden, um den Bestand nachzubuchen.');
-      return;
-    }
-
-    const promptVal = window.prompt(
-      `Fehlmenge für „${item.title}“ jetzt nachbestellen und als verfügbaren Projektbestand einbuchen:\n\nBitte Nachbestellmenge bestätigen oder anpassen (${stockInfo.qu}):`,
-      String(defQty)
-    );
-    if (!promptVal) return;
-
-    const finalQty = Number.parseFloat(promptVal.replace(',', '.'));
-    if (!Number.isFinite(finalQty) || finalQty <= 0) {
-      alert('Bitte eine gültige positive Zahl eingeben.');
-      return;
-    }
-
-    setIsReorderingStock(item.id);
-    try {
-      await addPositionDeliveredQty(projectId, targetKey, finalQty, stockInfo.qu);
-
-      const actorName = currentUser.name || (currentUser.role === 'admin' ? 'Administrator' : 'Kaufmännische Leitung');
-      await addBookingEntry(projectId, {
-        roomId: item.roomId || 'allgemein',
-        roomName: item.roomName || 'Projektbestand',
-        positionName: item.title,
-        quantity: finalQty,
-        qu: stockInfo.qu,
-        type: 'material_reorder',
-        note: `Nachbestellung über ${finalQty} ${stockInfo.qu} veranlasst (${actorName}). Verfügbarer Bestand aufgestockt.`,
-        createdBy: actorName,
-      });
-
-      setStockSuccessToast(`+${finalQty} ${stockInfo.qu} erfolgreich nachbestellt und als verfügbarer Bestand verbucht.`);
-      window.setTimeout(() => setStockSuccessToast(null), 5000);
-    } catch (err: any) {
-      console.error('Fehler bei der Nachbestellung:', err);
-      alert('Fehler beim Nachbestellen: ' + (err.message || err));
-    } finally {
-      setIsReorderingStock(null);
-    }
-  };
-
   // Filtered List
-  const displayedList = addendums.filter(item => {
-    // 1. Filter out hidden items unless showHidden is active
-    if (!showHidden && item.isHidden) {
-      if (focusedItemId !== item.id) return false;
-    }
+  const displayedList = visibleAddendums.filter(item => {
     const cat = getItemCategory(item);
     if (categoryFilter !== 'all' && cat !== categoryFilter) return false;
 
-    // Status Filter: 'todo' includes all actionable items (pending, requested, needs_discussion)
     if (statusFilter === 'todo') {
-      const isTodo = item.status === 'pending' || item.status === 'requested' || item.status === 'needs_discussion';
-      if (!isTodo && focusedItemId !== item.id) return false;
+      if (!isAddendumTodoForRole(item, currentUser.role) && focusedItemId !== item.id) return false;
     } else if (statusFilter !== 'all' && item.status !== statusFilter) {
       if (focusedItemId !== item.id) return false;
     }
@@ -696,23 +593,6 @@ Bauleitung`;
 
   return (
     <div className="space-y-6">
-      {/* Toast Notification */}
-      {stockSuccessToast && (
-        <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 px-4 py-3 rounded-2xl flex items-center justify-between shadow-xs animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center space-x-2.5">
-            <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-            <span className="text-xs font-bold">{stockSuccessToast}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setStockSuccessToast(null)}
-            className="text-emerald-700 hover:text-emerald-900 text-xs font-bold px-2 py-1 rounded-lg hover:bg-emerald-100 cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {/* Header Banner */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -732,11 +612,11 @@ Bauleitung`;
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-          {canManageAddendums && unrequestedMaterialItems.length > 0 && (
+          {currentUser.role === 'bauleiter' && unrequestedMaterialItems.length > 0 && (
             <button
               onClick={handleOpenBatchRequestModal}
               className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-              title={`${unrequestedMaterialItems.length} offene Material-Nachträge gesammelt per E-Mail an ${managerFirstName} anfragen`}
+              title="Mit Klick auf den Button wird das Material beim Kaufmann angefragt"
             >
               <Mail className="w-4 h-4" />
               <span>Material anfragen ({unrequestedMaterialItems.length})</span>
@@ -753,140 +633,15 @@ Bauleitung`;
         </div>
       </div>
 
-      {/* KPI Cards: The 3 Core Categories */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Category 1: Time / Hours */}
-        <div 
-          onClick={() => setCategoryFilter(categoryFilter === 'time' ? 'all' : 'time')}
-          className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-amber-400 ${
-            categoryFilter === 'time' ? 'ring-2 ring-amber-500 border-amber-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">Mehr Zeit, Regie benötigt</span>
-                <span className="text-[10px] text-slate-400">Verzögerung, Mehraufwand</span>
-              </div>
-            </div>
-            <span className="text-xl font-black text-amber-600">
-              {openTimeCount}
-            </span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-            <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-              openTimeCount > 0 ? 'text-amber-700 bg-amber-50' : 'text-slate-500 bg-slate-100'
-            }`}>
-              {openTimeCount} ausstehend
-            </span>
-          </div>
-        </div>
-
-        {/* Category 2: Additional Material */}
-        <div 
-          onClick={() => setCategoryFilter(categoryFilter === 'material' ? 'all' : 'material')}
-          className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-blue-400 flex flex-col justify-between ${
-            categoryFilter === 'material' ? 'ring-2 ring-[#3B82C4] border-[#3B82C4]' : 'border-slate-200'
-          }`}
-        >
-          <div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#3B82C4] flex items-center justify-center font-bold">
-                  <Package className="w-5 h-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-slate-800 block">Mehr Material benötigt</span>
-                  <span className="text-[10px] text-slate-400">Zusatzmaterial, Mehrbedarf</span>
-                </div>
-              </div>
-              <span className="text-xl font-black text-[#3B82C4]">
-                {openMaterialCount}
-              </span>
-            </div>
-            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-              <div className="flex items-center space-x-1.5">
-                <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-                  openMaterialCount > 0 ? 'text-blue-700 bg-blue-50' : 'text-slate-500 bg-slate-100'
-                }`}>
-                  {openMaterialCount} ausstehend
-                </span>
-                {requestedMaterialItems.length > 0 && (
-                  <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full text-[10px]">
-                    {requestedMaterialItems.length} angefragt
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Action button inside card */}
-          {canManageAddendums && unrequestedMaterialItems.length > 0 ? (
-            <div className="mt-3 pt-3 border-t border-slate-100" onClick={e => e.stopPropagation()}>
-              <button
-                type="button"
-                onClick={handleOpenBatchRequestModal}
-                className="w-full flex items-center justify-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                title={`${unrequestedMaterialItems.length} offene Positionen gesammelt per E-Mail bei ${managerFirstName} anfragen`}
-              >
-                <Mail className="w-4 h-4" />
-                <span>Material anfragen ({unrequestedMaterialItems.length})</span>
-              </button>
-            </div>
-          ) : requestedMaterialItems.length > 0 ? (
-            <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-center space-x-1.5 text-[11px] text-indigo-700 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Alle offenen Posten bei {managerFirstName} angefragt</span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* Category 3: Unplanned Material Installed */}
-        <div 
-          onClick={() => setCategoryFilter(categoryFilter === 'unclear' ? 'all' : 'unclear')}
-          className={`cursor-pointer bg-white rounded-2xl border p-5 shadow-xs transition-all hover:border-purple-400 ${
-            categoryFilter === 'unclear' ? 'ring-2 ring-purple-500 border-purple-500' : 'border-slate-200'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
-                <HelpCircle className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-xs font-bold text-slate-800 block">Anderes Material verbaut</span>
-                <span className="text-[10px] text-slate-400">Planabweichung, nicht im Plan</span>
-              </div>
-            </div>
-            <span className="text-xl font-black text-purple-600">
-              {openUnclearCount}
-            </span>
-          </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-500 text-[11px]">Offene Prüfungen:</span>
-            <span className={`font-bold px-2 py-0.5 rounded-full text-[10px] ${
-              openUnclearCount > 0 ? 'text-purple-700 bg-purple-50' : 'text-slate-500 bg-slate-100'
-            }`}>
-              {openUnclearCount} ausstehend
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Categories */}
         <div className="flex flex-wrap items-center gap-1.5">
           {[
-            { id: 'all' as const, label: `Alle Meldungen (${totalCount})` },
-            { id: 'time' as const, label: `⏱ Mehr Zeit, Regie (${timeItems.length})` },
-            { id: 'material' as const, label: `📦 Mehr Material benötigt (${materialItems.length})` },
-            { id: 'unclear' as const, label: `❓ Anderes Material (${unclearItems.length})` },
+            { id: 'all' as const, label: 'Alle Meldungen', open: todoCount },
+            { id: 'time' as const, label: '⏱ Mehr Zeit, Regie', open: timeItems.filter(a => isAddendumTodoForRole(a, currentUser.role)).length },
+            { id: 'material' as const, label: '📦 Mehr Material benötigt', open: materialItems.filter(a => isAddendumTodoForRole(a, currentUser.role)).length },
+            { id: 'unclear' as const, label: '❓ Anderes Material', open: unclearItems.filter(a => isAddendumTodoForRole(a, currentUser.role)).length },
           ].map(tab => (
             <button
               key={tab.id}
@@ -897,23 +652,22 @@ Bauleitung`;
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              {tab.label}
+              {tab.label} <span className="text-red-600">({tab.open})</span>
             </button>
           ))}
         </div>
 
-        {/* Status Filter & Hidden Cards Toggle */}
+        {/* Status Filter */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Status Filter */}
           <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
             {[
-              { id: 'all' as const, label: 'Alle Status' },
-              { id: 'todo' as const, label: `To-Do / Offen (${todoCount})` },
-              { id: 'pending' as const, label: `Ausstehend Bauleitung (${openTimeCount + openMaterialCount + openUnclearCount})` },
-              { id: 'requested' as const, label: `Angefragt (${requestedMaterialItems.length})` },
-              { id: 'needs_discussion' as const, label: 'Rücksprache' },
-              { id: 'approved' as const, label: 'Freigegeben' },
-              { id: 'rejected' as const, label: 'Abgelehnt' },
+              { id: 'all' as const, label: 'Alle Status', count: null },
+              { id: 'todo' as const, label: 'To-Do / Offen', count: todoCount },
+              { id: 'requested' as const, label: 'Angefragt', count: visibleAddendums.filter(a => a.status === 'requested').length },
+              { id: 'needs_discussion' as const, label: 'Rücksprache', count: visibleAddendums.filter(a => a.status === 'needs_discussion').length },
+              { id: 'approved' as const, label: 'Freigegeben', count: visibleAddendums.filter(a => a.status === 'approved').length },
+              { id: 'rejected' as const, label: 'Abgelehnt', count: visibleAddendums.filter(a => a.status === 'rejected').length },
             ].map(s => (
               <button
                 key={s.id}
@@ -924,34 +678,11 @@ Bauleitung`;
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
-                {s.label}
+                {s.label} {s.count !== null && <span className={s.id === 'todo' ? 'text-red-600' : 'text-slate-400'}>({s.count})</span>}
               </button>
             ))}
           </div>
 
-          {/* Eye Icon Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setShowHidden(prev => !prev)}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
-              showHidden
-                ? 'bg-purple-50 text-purple-800 border-purple-300 shadow-2xs'
-                : 'bg-white text-slate-600 hover:text-slate-800 hover:bg-slate-50 border-slate-200'
-            }`}
-            title={showHidden ? 'Ausgeblendete Kacheln verbergen (Auge schließen)' : 'Ausgeblendete Kacheln anzeigen (Auge öffnen)'}
-          >
-            {showHidden ? (
-              <>
-                <Eye className="w-4 h-4 text-purple-600" />
-                <span>Versteckte anzeigen ({hiddenCount})</span>
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-4 h-4 text-slate-400" />
-                {hiddenCount > 0 && <span className="text-slate-400">({hiddenCount})</span>}
-              </>
-            )}
-          </button>
         </div>
       </div>
 
@@ -975,7 +706,7 @@ Bauleitung`;
             const needsDiscussion = item.status === 'needs_discussion';
             const isApproved = item.status === 'approved';
             const isRejected = item.status === 'rejected';
-            const stockInfo = (cat === 'material' || cat === 'unclear') ? getItemStockInfo(item) : null;
+            const stockInfo = cat === 'material' ? getItemStockInfo(item) : null;
             const hasExistingPosition = item.deviationSource === 'gaeb_vs_dwg' || !!(item.materialId && posIdMap.has(item.materialId)) || !!(item.itemOz && posMap.has(item.itemOz)) || positions.some(position => position.shortText.trim().toLowerCase() === item.title.trim().toLowerCase());
             const canCreateLv = cat !== 'time' && !item.isLvPosition && !item.lvPosNr && !hasExistingPosition;
 
@@ -1005,13 +736,10 @@ Bauleitung`;
             return (
               <div 
                 key={item.id} id={`addendum-${item.id}`}
-                className={`bg-white rounded-2xl border shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${
-                  focusedItemId === item.id ? 'border-blue-400 ring-2 ring-blue-200' :
-                  item.isHidden ? 'opacity-75 bg-slate-50/60 border-dashed border-slate-300' : 'border-slate-200'
-                }`}
+                className={`bg-white rounded-2xl border shadow-xs p-5 hover:border-slate-300 transition-all flex flex-col justify-between space-y-4 ${focusedItemId === item.id ? 'border-blue-400 ring-2 ring-blue-200' : 'border-slate-200'}`}
               >
                 <div className="space-y-3">
-                  {/* Top Bar: Category Badge + Status Badge + Eye Hide Toggle */}
+                  {/* Top Bar: Category Badge + Status Badge */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold border ${theme.badgeBg}`}>
@@ -1033,22 +761,6 @@ Bauleitung`;
                     </div>
 
                     <div className="flex items-center space-x-1.5 shrink-0">
-                      {item.isHidden && (
-                        <span className="text-[10px] bg-slate-200/80 text-slate-600 font-bold px-2 py-0.5 rounded-md">
-                          Ausgeblendet
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleHide(item)}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          item.isHidden ? 'text-purple-600 hover:bg-purple-100 bg-purple-50' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                        }`}
-                        title={item.isHidden ? 'Kachel wieder einblenden' : 'Kachel als irrelevant verstecken'}
-                      >
-                        {item.isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                      </button>
-
                       <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
                         isApproved ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                         isRejected ? 'bg-red-100 text-red-800 border border-red-200' :
@@ -1057,15 +769,20 @@ Bauleitung`;
                         'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}>
                         {isApproved 
-                          ? (item.approvalType === 'reordered' 
-                              ? `Freigegeben (Bestellung bestätigt: ${item.reorderedQty || item.quantity})`
-                              : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
+                          ? '✓ Freigegeben'
                           : isRejected ? 'Abgelehnt' : needsDiscussion ? 'Rücksprache erforderlich'
                           : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
                           : 'Ausstehend'}
                       </span>
                     </div>
                   </div>
+
+                  {isApproved && item.commercialApprovedBy && item.commercialApprovedAt && (
+                    <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span>{item.commercialApprovedBy} hat am {new Date(item.commercialApprovedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })} Uhr {item.reorderedQty || item.quantity} {item.qu || 'Stk'} {item.title} {item.approvalType === 'in_stock' ? 'aus dem Lager freigegeben' : 'nachbestellt'}.</span>
+                    </div>
+                  )}
 
                   {/* Title & Quantity Pill */}
                   <div className="flex items-start justify-between gap-3">
@@ -1202,22 +919,8 @@ Bauleitung`;
                       {!stockInfo.isSufficient && (
                         <div className="space-y-2 pt-1">
                           <p className="text-[10.5px] text-red-700 font-medium bg-red-50/80 p-1.5 rounded-md text-center">
-                            Achtung: Der verbleibende Bestand reicht nicht für alle weiteren Räume aus! Bitte nachbestellen.
+                            Der verbleibende Bestand reicht laut Planung nicht für alle weiteren Räume aus.
                           </p>
-                          {(currentUser?.role === 'admin' || currentUser?.role === 'kaufmaennisch' || canCommercialDecide) && (
-                            <button
-                              type="button"
-                              onClick={() => handleDirectReorderStock(item, stockInfo)}
-                              disabled={isReorderingStock === item.id}
-                              className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-60"
-                              title={`Fehlmenge von ${stockInfo.deficit} ${stockInfo.qu} jetzt nachbestellen und als verfügbaren Projektbestand einbuchen`}
-                            >
-                              <ShoppingCart className="w-4 h-4" />
-                              <span>
-                                {isReorderingStock === item.id ? 'Wird als Bestand eingebucht...' : `Fehlmenge jetzt nachbestellen (+${stockInfo.deficit} ${stockInfo.qu})`}
-                              </span>
-                            </button>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1266,30 +969,25 @@ Bauleitung`;
                 {/* Entscheidungen zum Materialbedarf */}
                 {(isRequested || needsDiscussion) && item.commercialNote && <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">Rücksprache: {item.commercialNote}</p>}
                 {needsDiscussion && canManageAddendums && <button type="button" onClick={() => handleOpenReorderModal(item)} className="self-start rounded-xl bg-[#3B82C4] px-4 py-2 text-xs font-bold text-white">Anfrage überarbeitet erneut senden</button>}
-                {(isRequested || needsDiscussion) && canCommercialDecide && (
+                {cat === 'material' && (isRequested || needsDiscussion || (isPending && currentUser.role === 'admin')) && canCommercialDecide && (
                   <div className="space-y-2 border-t border-slate-100 pt-3">
-                    <label className="block text-xs font-semibold text-slate-700">Notiz für die Bauleitung
-                      <textarea value={commercialNote[item.id] || ''} onChange={event => setCommercialNote(previous => ({ ...previous, [item.id]: event.target.value }))} rows={2} className="mt-1 w-full rounded-lg border border-slate-200 p-2 text-sm" placeholder="Optional bei Freigabe, erforderlich für Rücksprache" />
-                    </label>
                     {commercialError && commercialErrorItemId === item.id && <p role="alert" className="text-xs text-red-700">{commercialError}</p>}
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={!!commercialBusy} onClick={() => void handleCommercialDecision(item, 'approved')} className="rounded-xl bg-[#2FA36B] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Bestellung bestätigen</button>
-                      <button type="button" disabled={!!commercialBusy || !commercialNote[item.id]?.trim()} onClick={() => void handleCommercialDecision(item, 'needs_discussion')} className="rounded-xl border border-orange-300 bg-orange-50 px-4 py-2 text-xs font-bold text-orange-900 disabled:opacity-50">Rücksprache erforderlich</button>
+                      <button type="button" title="Das Material ist im Lager nicht verfügbar und wird bestellt" disabled={!!commercialBusy} onClick={() => void handleMaterialDecision(item, 'reordered')} className="rounded-xl bg-red-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Fehlmenge nachbestellen</button>
+                      <button type="button" title="Das Material ist im Lager verfügbar und wird von dort geliefert" disabled={!!commercialBusy} onClick={() => void handleMaterialDecision(item, 'in_stock')} className="rounded-xl bg-[#2FA36B] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Lagerbestand verwenden</button>
                     </div>
-                    <p className="text-xs text-slate-500">Bestätigt der Bauleitung, dass die Bestellung beim Lieferanten aufgegeben wurde, und schließt die Anfrage ab.</p>
                   </div>
                 )}
                 {isPending && canManageAddendums && (
                   <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    {cat === 'time' ? <button type="button" onClick={() => void handleApproveHours(item)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">Regiestunden freigeben</button> : <>
-                      <button type="button" onClick={() => void handleApproveInStock(item)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">verfügbar - freigeben</button>
-                      <button type="button" onClick={() => handleOpenReorderModal(item)} className="rounded-xl bg-[#3B82C4] px-3.5 py-2 text-xs font-bold text-white">nicht verfügbar - anfragen</button>
-                      {canCreateLv && <button type="button" onClick={() => handleOpenConvertModal(item)} className="rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900">Als neue LV-Position anlegen</button>}
-                    </>}
-                    <button type="button" onClick={() => { setRejectItem(item); setRejectReason(''); setRejectError(''); }} className="rounded-xl border border-red-300 px-3.5 py-2 text-xs font-bold text-red-700">Ablehnen</button>
+                    {cat === 'time' && <button type="button" onClick={() => void handleApproveHours(item)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">Regiestunden freigeben</button>}
+                    {cat === 'material' && currentUser.role !== 'admin' && <button type="button" title="Mit Klick auf den Button wird das Material beim Kaufmann angefragt" onClick={() => handleOpenReorderModal(item)} className="rounded-xl bg-[#3B82C4] px-3.5 py-2 text-xs font-bold text-white">Material anfragen</button>}
+                    {cat === 'unclear' && canCreateLv && <button type="button" onClick={() => handleOpenConvertModal(item)} className="rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900" title="Das bereits verbaute Material als LV-Position für Aufmaß und Abrechnung erfassen">Als LV-Position fürs Aufmaß anlegen</button>}
+                    {cat === 'unclear' && !canCreateLv && <button type="button" onClick={() => void updateAddendumStatus(item.id, 'approved', projectId)} className="rounded-xl bg-[#2FA36B] px-3.5 py-2 text-xs font-bold text-white">Für Aufmaß freigeben</button>}
+                    {cat !== 'material' && <button type="button" onClick={() => { setRejectItem(item); setRejectReason(''); setRejectError(''); }} className="rounded-xl border border-red-300 px-3.5 py-2 text-xs font-bold text-red-700">Ablehnen</button>}
                   </div>
                 )}
-                {isApproved && canCreateLv && <button type="button" onClick={() => handleOpenConvertModal(item)} className="self-start rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900">Als neue LV-Position anlegen</button>}
+                {isApproved && canCreateLv && canManageAddendums && <button type="button" onClick={() => handleOpenConvertModal(item)} className="self-start rounded-xl border border-amber-300 bg-amber-100 px-3.5 py-2 text-xs font-bold text-amber-900">Als LV-Position fürs Aufmaß anlegen</button>}
 
               </div>
             );
@@ -1412,7 +1110,7 @@ Bauleitung`;
               <div className="flex items-center space-x-2">
                 <Send className="w-5 h-5 text-[#3B82C4]" />
                 <h3 className="font-bold text-base text-slate-900">
-                  Material-Nachbestellung an Kfm. Leitung
+                  Material beim Kaufmann anfragen
                 </h3>
               </div>
               <button
@@ -1547,7 +1245,7 @@ Bauleitung`;
                   className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
-                  <span>Bestellung absenden &amp; freigeben ({reorderQty} {reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk')})</span>
+                  <span>Materialanfrage absenden ({reorderQty} {reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk')})</span>
                 </button>
               </div>
             </div>
@@ -1775,7 +1473,7 @@ Bauleitung`;
                 className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50 text-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                <span>Bestellung absenden &amp; als angefragt markieren ({unrequestedMaterialItems.length})</span>
+                <span>Materialanfragen absenden ({unrequestedMaterialItems.length})</span>
               </button>
             </div>
           </div>

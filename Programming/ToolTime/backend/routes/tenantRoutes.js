@@ -195,7 +195,7 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
   const portalOrigin = process.env.PUBLIC_APP_URL || 'https://p12-aufmass.de';
   const portalUrl = `${portalOrigin.replace(/\/$/, '')}/t/${encodeURIComponent(tenantId)}?project=${encodeURIComponent(projectId)}&tab=addendums&item=${encodeURIComponent(entries[0].id)}`;
   const rows = entries.map(entry => `<tr><td>${escapeHtml(entry.itemOz || '–')}</td><td>${escapeHtml(entry.title)}</td><td>${escapeHtml(entry.orderQuantity)} ${escapeHtml(entry.qu || 'Stk')}</td><td>${escapeHtml(entry.description || entry.note || '–')}</td><td>${escapeHtml(entry.requestedBy || 'Bauleitung')}</td></tr>`).join('');
-  const html = `<div style="font-family:Arial,sans-serif;max-width:760px;margin:auto;color:#172334"><h1 style="color:${safePrimary}">Neue Materialanfrage</h1><p>Hallo ${escapeHtml(String(recipientName || 'kaufmännische Leitung').split(' ')[0])},</p><p>für das Projekt <strong>${escapeHtml(project.get('name'))}</strong> liegt eine Materialanfrage vor.</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="8"><thead><tr><th>Position</th><th>Material</th><th>Menge</th><th>Begründung</th><th>Erfasst von</th></tr></thead><tbody>${rows}</tbody></table><p style="white-space:pre-wrap">${escapeHtml(text.trim())}</p><p><a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:${safePrimary};color:${buttonTextColor};padding:14px 20px;border-radius:8px;text-decoration:none">Jetzt im Portal prüfen &amp; freigeben</a></p></div>`;
+  const html = `<div style="font-family:Arial,sans-serif;max-width:760px;margin:auto;color:#172334"><h1 style="color:${safePrimary}">Neue Materialanfrage</h1><p>Hallo ${escapeHtml(String(recipientName || 'kaufmännische Leitung').split(' ')[0])},</p><p>für das Projekt <strong>${escapeHtml(project.get('name'))}</strong> liegt eine Materialanfrage vor.</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="8"><thead><tr><th>Position</th><th>Material</th><th>Menge</th><th>Begründung</th><th>Erfasst von</th></tr></thead><tbody>${rows}</tbody></table><p style="white-space:pre-wrap">${escapeHtml(text.trim())}</p><p><a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:${safePrimary};color:${buttonTextColor};padding:14px 20px;border-radius:8px;text-decoration:none">Materialanfrage im Portal prüfen</a></p></div>`;
   let delivery;
   try {
     delivery = await sendEmail({
@@ -225,8 +225,8 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
 
 tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commercial-decision', requireTenantRole('admin', 'kaufmaennisch'), async (req, res) => {
   const { tenantId, projectId, addendumId } = req.params;
-  const { decision, note } = req.body || {};
-  if (!['approved', 'needs_discussion'].includes(decision) || (decision === 'needs_discussion' && !String(note || '').trim()) || String(note || '').length > 2000) return res.status(400).json({ code: 'DECISION_INVALID' });
+  const { decision, note, fulfillment } = req.body || {};
+  if (!['approved', 'needs_discussion'].includes(decision) || (decision === 'approved' && !['reordered', 'in_stock'].includes(fulfillment)) || (decision === 'needs_discussion' && !String(note || '').trim()) || String(note || '').length > 2000) return res.status(400).json({ code: 'DECISION_INVALID' });
   const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
   const project = await projectRef.get();
   if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
@@ -241,11 +241,16 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commerci
   try {
     await adminDb.runTransaction(async transaction => {
       const item = await transaction.get(ref);
-      if (!item.exists || !['requested', 'needs_discussion'].includes(item.get('status'))) throw new Error('ADDENDUM_NOT_REQUESTED');
+      const canApprovePending = req.auth.platformRole === 'superadmin' || req.tenantMember?.role === 'admin';
+      if (!item.exists || !(['requested', 'needs_discussion'].includes(item.get('status')) || (canApprovePending && item.get('status') === 'pending'))) throw new Error('ADDENDUM_NOT_REQUESTED');
       const actor = req.tenantMember?.displayName || req.auth.email || 'Kaufmännische Leitung';
-      transaction.update(ref, { status: decision, approvalType: decision === 'approved' ? 'reordered' : item.get('approvalType') || null, commercialApprovedBy: decision === 'approved' ? actor : null, commercialApprovedAt: decision === 'approved' ? now : null, commercialNote: String(note || '').trim(), updatedAt: now });
+      const quantity = Number(item.get('reorderedQty') || item.get('quantity')) || 0;
+      transaction.update(ref, { status: decision, approvalType: decision === 'approved' ? fulfillment : item.get('approvalType') || null, commercialApprovedBy: decision === 'approved' ? actor : null, commercialApprovedAt: decision === 'approved' ? now : null, commercialNote: String(note || '').trim(), updatedAt: now });
       const eventId = `commercial_${decision}_${addendumId}_${Date.now()}`;
-      transaction.set(projectRef.collection('bookings').doc(eventId), { id: eventId, projectId, roomId: item.get('roomId') || 'allgemein', roomName: item.get('roomName') || '', positionName: item.get('title') || '', quantity: Number(item.get('reorderedQty') || item.get('quantity')) || 0, qu: item.get('qu') || 'Stk', type: 'commercial_decision', note: decision === 'approved' ? `Kaufmännische Leitung (${actor}) hat die Nachbestellung für ${item.get('title')} bestätigt.` : `Rücksprache zu ${item.get('title')} erforderlich: ${String(note).trim()}`, createdBy: actor, timestamp: now, createdAt: now });
+      const eventNote = decision === 'approved'
+        ? `${actor} hat am ${new Date(now).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })} ${quantity} ${item.get('qu') || 'Stk'} ${item.get('title') || 'Material'} ${fulfillment === 'in_stock' ? 'aus dem Lager freigegeben' : 'nachbestellt'}.`
+        : `Rücksprache zu ${item.get('title')} erforderlich: ${String(note).trim()}`;
+      transaction.set(projectRef.collection('bookings').doc(eventId), { id: eventId, projectId, roomId: item.get('roomId') || 'allgemein', roomName: item.get('roomName') || '', positionName: item.get('title') || '', quantity, qu: item.get('qu') || 'Stk', type: 'commercial_decision', note: eventNote, createdBy: actor, timestamp: now, createdAt: now });
     });
     res.json({ success: true, status: decision });
   } catch (error) {

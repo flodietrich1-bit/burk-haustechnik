@@ -48,11 +48,13 @@ test('material request sends one branded email and commercial approval updates a
       const result = await nativeFetch(url, { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       return { status: result.status, body: await result.json() };
     }
+    const prematureApproval = await post(`${path}/addendums/add-1/commercial-decision`, buyerToken, { decision: 'approved', fulfillment: 'reordered' });
+    assert.equal(prematureApproval.status, 409);
     const payload = { recipient: 'primary', subject: 'Materialanfrage', text: 'Bitte bestellen', orderId, addendumIds: ['add-1'], quantities: { 'add-1': 6 } };
     const first = await post(`${path}/material-orders`, senderToken, payload);
     assert.equal(first.status, 200, JSON.stringify(first.body));
     assert.equal(sent.length, 1);
-    assert.match(sent[0].body.html, /Jetzt im Portal prüfen &amp; freigeben/);
+    assert.match(sent[0].body.html, /Materialanfrage im Portal prüfen/);
     assert.match(sent[0].body.html, /Projekt &lt;Test&gt;/);
     assert.match(sent[0].body.html, /item=add-1/);
     assert.equal(sent[0].headers['Idempotency-Key'], `material-order-${orderId}`);
@@ -73,11 +75,13 @@ test('material request sends one branded email and commercial approval updates a
     assert.equal(followUp.status, 200, JSON.stringify(followUp.body));
     assert.equal(sent.length, 2);
     assert.equal((await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/add-1`).get()).get('status'), 'requested');
-    const approved = await post(`${path}/addendums/add-1/commercial-decision`, buyerToken, { decision: 'approved', note: 'Bestellt' });
+    const approved = await post(`${path}/addendums/add-1/commercial-decision`, buyerToken, { decision: 'approved', fulfillment: 'reordered' });
     assert.equal(approved.status, 200, JSON.stringify(approved.body));
     const final = await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/add-1`).get();
     assert.equal(final.get('status'), 'approved');
+    assert.equal(final.get('approvalType'), 'reordered');
     assert.equal(final.get('commercialApprovedBy'), 'Einkauf Test');
+    assert.ok(final.get('commercialApprovedAt'));
     const feed = await adminDb.collection(`tenants/${tenantId}/projects/project-1/bookings`).get();
     assert.equal(feed.size, 4);
     await adminDb.doc(`tenants/${tenantId}/members/${sender.uid}`).update({ role: 'admin' });
@@ -97,6 +101,13 @@ test('material request sends one branded email and commercial approval updates a
     assert.equal(unplanned.body.createdByRole, 'monteur');
     assert.equal(unplanned.body.roomName, 'Bad EG');
     assert.equal((await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/${unplanned.body.id}`).get()).get('status'), 'pending');
+    await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/add-2`).set({ title: 'Rohr aus Lager', type: 'material', quantity: 3, qu: 'm', status: 'pending' });
+    const stockApproval = await post(`${path}/addendums/add-2/commercial-decision`, senderToken, { decision: 'approved', fulfillment: 'in_stock' });
+    assert.equal(stockApproval.status, 200, JSON.stringify(stockApproval.body));
+    const stockItem = await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/add-2`).get();
+    assert.equal(stockItem.get('status'), 'approved');
+    assert.equal(stockItem.get('approvalType'), 'in_stock');
+    assert.equal(stockItem.get('commercialApprovedBy'), 'Bauleiter Test');
   } finally {
     globalThis.fetch = nativeFetch;
     await new Promise(resolve => server.close(resolve));

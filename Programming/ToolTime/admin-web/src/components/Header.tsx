@@ -6,6 +6,7 @@ import type { TenantBranding } from '../types/branding';
 import { brandBackgroundColor, brandTextAccentColor, readableTextColor } from '../types/branding';
 import type { Project, Alert, User, Addendum } from '../types';
 import { updateAlertStatus } from '../services/firestoreService';
+import { isAddendumTodoForRole } from '../utils/addendumWorkflow';
 
 interface HeaderProps {
   branding: TenantBranding | null;
@@ -42,11 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
 
   const openAlerts = alerts.filter(a => a.status === 'open');
-  const isCommercialOrAdmin = currentUser?.role === 'kaufmaennisch' || currentUser?.role === 'admin';
-  const requestedAddendums = addendums.filter(
-    a => !a.isHidden && (a.status === 'requested' || a.status === 'needs_discussion')
-  );
-  const relevantRequests = isCommercialOrAdmin ? requestedAddendums : [];
+  const relevantRequests = addendums.filter(a => currentUser && isAddendumTodoForRole(a, currentUser.role));
   const totalNotifications = openAlerts.length + relevantRequests.length;
 
   // Close dropdown on click outside
@@ -205,7 +202,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
               title={
                 relevantRequests.length > 0
-                  ? `${relevantRequests.length} offene Materialanfrage(n) & ${openAlerts.length} Alert(s)`
+                  ? `${relevantRequests.length} offene Nachträge & ${openAlerts.length} Alert(s)`
                   : 'Material-Überschreitungen & Alerts'
               }
             >
@@ -245,8 +242,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {relevantRequests.length > 0 && (
                     <div className="space-y-1.5">
                       <div className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center justify-between px-1">
-                        <span>📦 Materialanfragen Bauleitung ({relevantRequests.length})</span>
-                        <span className="text-[9px] bg-purple-500/20 text-purple-200 px-1.5 py-0.5 rounded font-semibold">kfm. Prüfung</span>
+                        <span>📦 Offene Nachträge ({relevantRequests.length})</span>
                       </div>
                       {relevantRequests.map(item => (
                         <div
@@ -267,14 +263,14 @@ export const Header: React.FC<HeaderProps> = ({
                             </span>
                           </div>
                           <div className="text-slate-300 text-[11px] truncate">
-                            {item.roomName ? `Raum: ${item.roomName}` : 'Projektweit'} · {item.description || item.note || 'Materialanfrage'}
+                            {item.roomName ? `Raum: ${item.roomName}` : 'Projektweit'} · {item.description || item.note || 'Nachtrag'}
                           </div>
                           <div className="flex items-center justify-between pt-1 text-[10px] border-t border-slate-700/50">
                             <span className="text-slate-400">
                               Erfasst von: <strong className="text-slate-200">{item.requestedBy || 'Bauleiter'}</strong>
                             </span>
                             <span className="text-purple-400 font-semibold group-hover:underline flex items-center gap-1">
-                              Prüfen & Freigeben →
+                              Nachtrag öffnen →
                             </span>
                           </div>
                         </div>
