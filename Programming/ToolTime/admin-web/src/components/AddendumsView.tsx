@@ -29,6 +29,8 @@ import {
   convertAddendumToLvPosition
 } from '../services/firestoreService';
 import type { Booking } from '../types';
+import { api } from '../services/apiClient';
+import { getActiveTenantId } from '../services/firestoreService';
 
 interface AddendumsViewProps {
   addendums: Addendum[];
@@ -105,10 +107,16 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [mailSubject, setMailSubject] = useState<string>('');
   const [mailBody, setMailBody] = useState<string>('');
   const [isProcessingReorder, setIsProcessingReorder] = useState<boolean>(false);
+  const [reorderRecipient, setReorderRecipient] = useState<'primary' | 'deputy'>('primary');
+  const [reorderError, setReorderError] = useState('');
+  const [reorderOrderId, setReorderOrderId] = useState('');
 
   // Batch Material Request Modal State ("Sammel-Anfrage")
   const [isBatchModalOpen, setIsBatchModalOpen] = useState<boolean>(false);
   const [batchRecipient, setBatchRecipient] = useState<string>('');
+  const [batchRecipientChoice, setBatchRecipientChoice] = useState<'primary' | 'deputy'>('primary');
+  const [batchError, setBatchError] = useState('');
+  const [batchOrderId, setBatchOrderId] = useState('');
   const [batchSubject, setBatchSubject] = useState<string>('');
   const [batchBody, setBatchBody] = useState<string>('');
   const [isProcessingBatch, setIsProcessingBatch] = useState<boolean>(false);
@@ -258,17 +266,19 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
     };
   };
 
-  const managerFirstName = (project?.commercialManager || 'Andreas').trim().split(/\s+/)[0];
-  const managerEmail = project?.commercialManagerEmail || 'andreas@burk-haustechnik.de';
+  const managerName = reorderRecipient === 'deputy' ? project?.deputyCommercialManager : project?.commercialManager;
+  const managerEmail = reorderRecipient === 'deputy' ? project?.deputyCommercialManagerEmail : project?.commercialManagerEmail;
+  const managerFirstName = (managerName || 'kaufmännische Leitung').trim().split(/\s+/)[0];
 
-  const generateMailContent = (item: Addendum, qty: number, unit: string) => {
+  const generateMailContent = (item: Addendum, qty: number, unit: string, recipient: 'primary' | 'deputy' = reorderRecipient) => {
     const pName = project?.name || 'Bauvorhaben';
     const posStr = item.itemOz ? `Pos. ${item.itemOz}: ` : '';
     const creator = getAddendumCreator(item).displayName;
     const reason = item.description || item.note || 'Abweichung GAEB vs. DWG / Mehrbedarf';
 
     const subj = `Materialanfrage: ${qty} ${unit} ${posStr}${item.title} (Projekt ${pName})`;
-    const body = `Hallo ${managerFirstName},
+    const firstName = (recipient === 'deputy' ? project?.deputyCommercialManager : project?.commercialManager)?.trim().split(/\s+/)[0] || 'kaufmännische Leitung';
+    const body = `Hallo ${firstName},
 
 für das Bauvorhaben "${pName}" muss folgendes Material aus einem Nachtrag angefragt und bestellt werden:
 
@@ -281,7 +291,7 @@ für das Bauvorhaben "${pName}" muss folgendes Material aus einem Nachtrag angef
 Bitte prüfe die kaufmännische Freigabe und veranlasse die Bestellung beim Großhändler.
 
 Viele Grüße,
-Bauleitung Burk Haustechnik`;
+Bauleitung`;
     return { subj, body };
   };
 
@@ -318,9 +328,12 @@ Bauleitung Burk Haustechnik`;
     const stockInfo = getItemStockInfo(item);
     const initQty = stockInfo.deficit > 0 ? stockInfo.deficit : Math.max(1, rawQty);
     const unit = item.qu || (typeof item.quantity === 'string' && item.quantity.includes('m') ? 'm' : 'Stk');
-    const { subj, body } = generateMailContent(item, initQty, unit);
+    const { subj, body } = generateMailContent(item, initQty, unit, 'primary');
 
     setReorderItem(item);
+    setReorderRecipient('primary');
+    setReorderError('');
+    setReorderOrderId(crypto.randomUUID());
     setReorderQty(initQty);
     setMailSubject(subj);
     setMailBody(body);
@@ -340,11 +353,16 @@ Bauleitung Burk Haustechnik`;
 
   const handleConfirmReorder = async () => {
     if (!reorderItem) return;
+    if (!managerEmail) { setReorderError('Für dieses Projekt ist kein kaufmännischer Leiter mit E-Mail-Adresse hinterlegt. Bitte ergänze ihn in den Projekteinstellungen.'); return; }
     setIsProcessingReorder(true);
+    setReorderError('');
     try {
       const unit = reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
       const targetKey = reorderItem.materialId || reorderItem.itemOz || reorderItem.title;
 
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/material-orders`, {
+        method: 'POST', body: JSON.stringify({ recipient: reorderRecipient, subject: mailSubject, text: mailBody, orderId: reorderOrderId }),
+      });
       await addPositionDeliveredQty(projectId, targetKey, reorderQty, unit);
       await updateAddendumStatus(reorderItem.id, 'requested', projectId, {
         requestedAt: new Date().toISOString(),
@@ -352,13 +370,10 @@ Bauleitung Burk Haustechnik`;
         reorderedQty: reorderQty,
       });
 
-      // Open mailto link
-      const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(mailSubject)}&body=${encodeURIComponent(mailBody)}`;
-      window.open(mailtoUrl, '_blank');
-
       setReorderItem(null);
     } catch (err: any) {
       console.warn('Error confirming reorder:', err.message);
+      setReorderError(err.message === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' : err.message === 'EMAIL_SEND_FAILED' ? 'Die E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.' : err.message === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' : `Bestellung fehlgeschlagen: ${err.message}`);
     } finally {
       setIsProcessingReorder(false);
     }
@@ -442,7 +457,7 @@ Bauleitung Burk Haustechnik`;
    • Erfasst von: ${creator}`;
     }).join('\n\n');
 
-    const body = `Hallo ${managerFirstName},
+    const body = `Hallo ${(project?.commercialManager || 'kaufmännische Leitung').trim().split(/\s+/)[0]},
 
 für das Bauvorhaben "${pName}" müssen folgende ${unrequestedMaterialItems.length} Materialien aus Nachträgen und Planungsabweichungen angefragt und bestellt werden:
 
@@ -451,28 +466,32 @@ ${itemsList}
 Bitte prüfe die kaufmännische Freigabe und veranlasse die Bestellung beim Großhändler.
 
 Viele Grüße,
-Bauleitung Burk Haustechnik`;
+Bauleitung`;
 
-    setBatchRecipient(managerEmail);
+    setBatchRecipient(managerEmail || '');
+    setBatchRecipientChoice('primary');
+    setBatchError('');
+    setBatchOrderId(crypto.randomUUID());
     setBatchSubject(subj);
     setBatchBody(body);
     setIsBatchModalOpen(true);
   };
 
   const handleConfirmBatchRequest = async () => {
+    if (!batchRecipient) { setBatchError('Für dieses Projekt ist kein kaufmännischer Leiter mit E-Mail-Adresse hinterlegt.'); return; }
     setIsProcessingBatch(true);
+    setBatchError('');
     try {
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/material-orders`, {
+        method: 'POST', body: JSON.stringify({ recipient: batchRecipientChoice, subject: batchSubject, text: batchBody, orderId: batchOrderId }),
+      });
       const ids = unrequestedMaterialItems.map(i => i.id);
-      await batchUpdateAddendumsRequested(projectId, ids, managerFirstName);
-
-      // Open mailto URL
-      const mailtoUrl = `mailto:${encodeURIComponent(batchRecipient)}?subject=${encodeURIComponent(batchSubject)}&body=${encodeURIComponent(batchBody)}`;
-      window.open(mailtoUrl, '_blank');
+      await batchUpdateAddendumsRequested(projectId, ids, batchRecipientChoice === 'deputy' ? project?.deputyCommercialManager || 'Kaufmännische Vertretung' : project?.commercialManager || 'Kaufmännische Leitung');
 
       setIsBatchModalOpen(false);
     } catch (err: any) {
       console.warn('Error confirming batch request:', err.message);
-      alert('Fehler beim Absenden: ' + err.message);
+      setBatchError(err.message === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist noch nicht eingerichtet.' : err.message === 'EMAIL_SEND_FAILED' ? 'Die E-Mail konnte nicht gesendet werden. Bitte erneut versuchen.' : err.message === 'COMMERCIAL_MANAGER_MISSING' ? 'Der kaufmännische Empfänger fehlt oder ist kein aktiver Benutzer dieser Firma. Bitte prüfe die Projektzuweisung.' : `Sammelanfrage fehlgeschlagen: ${err.message}`);
     } finally {
       setIsProcessingBatch(false);
     }
@@ -1402,7 +1421,7 @@ Bauleitung Burk Haustechnik`;
       {/* Modal: Material Nachbestellen mit Stepper & E-Mail-Entwurf */}
       {reorderItem && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[92vh] overflow-y-auto p-7 sm:p-9 space-y-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center space-x-2">
                 <Send className="w-5 h-5 text-[#3B82C4]" />
@@ -1419,7 +1438,7 @@ Bauleitung Burk Haustechnik`;
               </button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="space-y-5 text-sm">
               {/* Top Box: Stepper [-] QTY [+] and Product Details */}
               <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between gap-3">
@@ -1478,12 +1497,25 @@ Bauleitung Burk Haustechnik`;
                 <label className="font-bold text-slate-700 block mb-1">
                   Empfänger (Kaufmännische Leitung / Einkauf) *
                 </label>
-                <input
-                  type="text"
-                  value={project?.commercialManagerEmail ? `${project.commercialManager || 'Kfm. Leitung'} <${project.commercialManagerEmail}>` : 'Einkauf Burk Haustechnik <einkauf@burk-haustechnik.de>'}
-                  disabled
-                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-slate-600"
-                />
+                {!project?.commercialManagerEmail && <p role="alert" className="mb-2 rounded-lg bg-red-50 p-3 text-red-700">Kein kaufmännischer Leiter mit E-Mail-Adresse hinterlegt. Bitte ergänze ihn in den Projekteinstellungen.</p>}
+                <select
+                  value={reorderRecipient}
+                  onChange={event => {
+                    const recipient = event.target.value as 'primary' | 'deputy';
+                    setReorderRecipient(recipient);
+                    setReorderError('');
+                    if (reorderItem) {
+                      const unit = reorderItem.qu || (typeof reorderItem.quantity === 'string' && reorderItem.quantity.includes('m') ? 'm' : 'Stk');
+                      const { body } = generateMailContent(reorderItem, reorderQty, unit, recipient);
+                      setMailBody(body);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-800"
+                >
+                  <option value="primary">{project?.commercialManager || 'Kaufmännische Leitung'} · {project?.commercialManagerEmail || 'E-Mail fehlt'}</option>
+                  {project?.deputyCommercialManagerEmail && <option value="deputy">Vertretung: {project.deputyCommercialManager || 'Kaufmännische Leitung'} · {project.deputyCommercialManagerEmail}</option>}
+                </select>
+                {managerEmail && <p className="mt-1 text-xs text-slate-600">Die E-Mail wird an {managerName || 'Kaufmännische Leitung'} &lt;{managerEmail}&gt; gesendet.</p>}
               </div>
 
               {/* Subject */}
@@ -1503,12 +1535,14 @@ Bauleitung Burk Haustechnik`;
                   Nachrichtentext (Anrede mit Vorname: {managerFirstName}) *
                 </label>
                 <textarea
-                  rows={8}
+                  rows={12}
                   value={mailBody}
                   onChange={e => setMailBody(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
+                  className="w-full min-h-72 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm leading-relaxed focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30"
                 />
               </div>
+
+              {reorderError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{reorderError}</p>}
 
               {/* Action Buttons */}
               <div className="pt-2 flex items-center justify-end space-x-2">
@@ -1522,7 +1556,7 @@ Bauleitung Burk Haustechnik`;
 
                 <button
                   type="button"
-                  disabled={isProcessingReorder}
+                  disabled={isProcessingReorder || !managerEmail || !mailSubject.trim() || !mailBody.trim()}
                   onClick={handleConfirmReorder}
                   className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50"
                 >
@@ -1653,8 +1687,8 @@ Bauleitung Burk Haustechnik`;
               <div className="p-3 bg-blue-50/80 border border-blue-200/90 rounded-xl text-blue-900 text-xs flex items-start space-x-2.5">
                 <CheckCircle2 className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
                 <div className="leading-relaxed">
-                  Nach dem Klick auf Absenden wird das Standard-E-Mail-Programm mit vorausgefüllter E-Mail an <strong>{managerFirstName}</strong> ({batchRecipient}) geöffnet.
-                  Alle {unrequestedMaterialItems.length} Positionen werden im System direkt auf den Status <strong>„angefragt“</strong> gesetzt.
+                  Nach dem Klick auf Absenden wird die E-Mail an <strong>{batchRecipient || 'die kaufmännische Leitung'}</strong> versendet.
+                  Erst danach werden die {unrequestedMaterialItems.length} Positionen als <strong>„angefragt“</strong> markiert.
                 </div>
               </div>
 
@@ -1699,12 +1733,17 @@ Bauleitung Burk Haustechnik`;
               {/* Recipient */}
               <div>
                 <label className="font-bold text-slate-700 block mb-1">Empfänger (Kaufmännische Leitung) *</label>
-                <input
-                  type="text"
-                  value={batchRecipient}
-                  onChange={e => setBatchRecipient(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#3B82C4]/30 text-xs"
-                />
+                {!project?.commercialManagerEmail && <p role="alert" className="mb-2 rounded-lg bg-red-50 p-3 text-red-700">Kein kaufmännischer Leiter mit E-Mail-Adresse hinterlegt. Bitte ergänze ihn in den Projekteinstellungen.</p>}
+                <select value={batchRecipientChoice} onChange={e => {
+                  const choice = e.target.value as 'primary' | 'deputy';
+                  setBatchRecipientChoice(choice);
+                  setBatchRecipient(choice === 'deputy' ? project?.deputyCommercialManagerEmail || '' : project?.commercialManagerEmail || '');
+                  const firstName = (choice === 'deputy' ? project?.deputyCommercialManager : project?.commercialManager)?.trim().split(/\s+/)[0] || 'kaufmännische Leitung';
+                  setBatchBody(previous => previous.replace(/^Hallo [^,]+,/, `Hallo ${firstName},`));
+                }} className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm">
+                  <option value="primary">{project?.commercialManager || 'Kaufmännische Leitung'} · {project?.commercialManagerEmail || 'E-Mail fehlt'}</option>
+                  {project?.deputyCommercialManagerEmail && <option value="deputy">Vertretung: {project.deputyCommercialManager || 'Kaufmännische Leitung'} · {project.deputyCommercialManagerEmail}</option>}
+                </select>
               </div>
 
               {/* Subject */}
@@ -1733,6 +1772,7 @@ Bauleitung Burk Haustechnik`;
             </div>
 
             {/* Actions */}
+            {batchError && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{batchError}</p>}
             <div className="pt-2 border-t border-slate-100 flex items-center justify-end space-x-2 shrink-0">
               <button
                 type="button"
@@ -1744,12 +1784,12 @@ Bauleitung Burk Haustechnik`;
 
               <button
                 type="button"
-                disabled={isProcessingBatch || unrequestedMaterialItems.length === 0}
+                disabled={isProcessingBatch || unrequestedMaterialItems.length === 0 || !batchRecipient || !batchSubject.trim() || !batchBody.trim()}
                 onClick={handleConfirmBatchRequest}
                 className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] text-white font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.01] disabled:opacity-50 text-xs cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                <span>E-Mail öffnen &amp; als angefragt markieren ({unrequestedMaterialItems.length})</span>
+                <span>Bestellung absenden &amp; als angefragt markieren ({unrequestedMaterialItems.length})</span>
               </button>
             </div>
           </div>

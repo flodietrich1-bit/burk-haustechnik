@@ -11,9 +11,12 @@
     "emulators": "XDG_CONFIG_HOME=/tmp/tooltime-firebase-config firebase emulators:start --only auth,firestore,storage --config ../firebase.json --project demo-tooltime",
     "seed:local": "FIREBASE_PROJECT_ID=demo-tooltime FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 node scripts/seedEmulator.js",
     "test": "node test_converter.js",
+    "test:email": "node --test tests/emailService.test.js tests/invitationDeliveryService.test.js",
     "test:rules": "node --test tests/firestoreRules.test.js",
     "test:local-api": "node tests/localApiSmoke.js",
-    "bootstrap": "node scripts/bootstrap.js"
+    "bootstrap": "node scripts/bootstrap.js",
+    "cleanup:legacy": "node scripts/cleanLegacyDemoData.js",
+    "grant:superadmin": "node scripts/grantSuperadmin.js"
   },
   "keywords": [],
   "author": "",

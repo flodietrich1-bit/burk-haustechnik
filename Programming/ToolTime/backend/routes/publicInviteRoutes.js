@@ -9,10 +9,10 @@ export const publicInviteRouter = Router();
 const redeemLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false });
 
 publicInviteRouter.post('/validate-web', redeemLimiter, async (req, res) => {
-  const { code, qrToken, email } = req.body || {};
-  if ((!code && !qrToken) || !/^\S+@\S+\.\S+$/.test(String(email || '').trim())) return res.status(400).json({ code: 'INVITE_INVALID' });
+  const { code, qrToken, email, tenantSlug } = req.body || {};
+  if ((!code && !qrToken) || (!qrToken && !/^\S+@\S+\.\S+$/.test(String(email || '').trim()))) return res.status(400).json({ code: 'INVITE_INVALID' });
   try {
-    const result = await inspectWebInvite({ code, qrToken, email });
+    const result = await inspectWebInvite({ code, qrToken, email, tenantSlug });
     if (!result) return res.status(400).json({ code: 'INVITE_INVALID' });
     res.json(result);
   } catch (error) {
@@ -41,13 +41,13 @@ publicInviteRouter.post('/redeem', redeemLimiter, async (req, res) => {
 
 
 publicInviteRouter.post('/redeem-web', redeemLimiter, authenticateFirebaseUser, async (req, res) => {
-  const { code, qrToken } = req.body || {};
+  const { code, qrToken, tenantSlug } = req.body || {};
   if (!code && !qrToken) return res.status(400).json({ code: 'INVITE_INVALID' });
   try {
     const codeFingerprint = crypto.createHash('sha256').update(String(code || qrToken)).digest('hex');
     const limit = await consumeInviteAttempt({ ip: req.ip || 'unknown', installationId: req.auth.uid, codeFingerprint });
     if (!limit.allowed) return res.status(429).json({ code: 'INVITE_RATE_LIMITED', retryAfterSeconds: limit.retryAfterSeconds });
-    const result = await redeemInvite({ code, qrToken, webUid: req.auth.uid });
+    const result = await redeemInvite({ code, qrToken, webUid: req.auth.uid, tenantSlug });
     if (!result) return res.status(400).json({ code: 'INVITE_INVALID' });
     await clearInviteAttempt({ ip: req.ip || 'unknown', installationId: req.auth.uid, codeFingerprint });
     res.json(result);

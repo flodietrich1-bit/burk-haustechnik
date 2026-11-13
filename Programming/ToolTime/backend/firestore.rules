@@ -2,16 +2,45 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function isSuperadmin() { return signedIn() && 'platformRole' in request.auth.token && request.auth.token.platformRole == 'superadmin'; }
+    function userPath() { return /databases/$(database)/documents/users/$(request.auth.uid); }
+    function isSuperadmin() {
+      return signedIn() && (
+        ('platformRole' in request.auth.token && request.auth.token.platformRole == 'superadmin') ||
+        (exists(userPath()) && get(userPath()).data.platformRole == 'superadmin')
+      );
+    }
     function memberPath(tenantId) { return /databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid); }
     function isActiveTenant(tenantId) { return exists(/databases/$(database)/documents/tenants/$(tenantId)) && get(/databases/$(database)/documents/tenants/$(tenantId)).data.status == 'active'; }
     function isActiveMember(tenantId) { return signedIn() && isActiveTenant(tenantId) && exists(memberPath(tenantId)) && get(memberPath(tenantId)).data.status == 'active'; }
     function tenantRole(tenantId) { return get(memberPath(tenantId)).data.role; }
     function hasTenantRole(tenantId, roles) { return isSuperadmin() || (isActiveMember(tenantId) && tenantRole(tenantId) in roles); }
     function projectAssigned(tenantId, projectId) {
-      return hasTenantRole(tenantId, ['admin']) || (isActiveMember(tenantId) && get(memberPath(tenantId)).data.assignedProjectIds.hasAny([projectId]));
+      return hasTenantRole(tenantId, ['admin']) || (isActiveMember(tenantId) && (
+        get(memberPath(tenantId)).data.get('assignedProjectIds', []).hasAny([projectId]) ||
+        (tenantRole(tenantId) == 'monteur' && get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('assignedMonteurIds', []).hasAny([request.auth.uid])) ||
+        (tenantRole(tenantId) == 'bauleiter' && (
+          get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('projectManagerId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('deputyProjectManagerId', '') == request.auth.uid ||
+          (request.auth.token.get('email', '') != '' && (
+            get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('projectManagerEmail', '') == request.auth.token.get('email', '') ||
+            get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('deputyProjectManagerEmail', '') == request.auth.token.get('email', '')
+          ))
+        )) ||
+        (tenantRole(tenantId) == 'kaufmaennisch' && (
+          get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('commercialManagerId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('deputyCommercialManagerId', '') == request.auth.uid ||
+          (request.auth.token.get('email', '') != '' && (
+            get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('commercialManagerEmail', '') == request.auth.token.get('email', '') ||
+            get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('deputyCommercialManagerEmail', '') == request.auth.token.get('email', '')
+          ))
+        ))
+      ));
     }
 
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isSuperadmin());
+      allow list, write: if false;
+    }
     match /tenants/{tenantId} {
       allow read: if isSuperadmin() || isActiveMember(tenantId);
       allow create, update, delete: if isSuperadmin();

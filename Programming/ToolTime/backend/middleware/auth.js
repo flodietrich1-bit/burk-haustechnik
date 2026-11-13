@@ -7,6 +7,10 @@ export async function authenticateFirebaseUser(req, res, next) {
 
   try {
     req.auth = await adminAuth.verifyIdToken(match[1], true);
+    if (req.auth.platformRole !== 'superadmin') {
+      const profile = await adminDb.doc(`users/${req.auth.uid}`).get();
+      if (profile.get('platformRole') === 'superadmin') req.auth.platformRole = 'superadmin';
+    }
     next();
   } catch {
     res.status(401).json({ code: 'AUTH_INVALID' });

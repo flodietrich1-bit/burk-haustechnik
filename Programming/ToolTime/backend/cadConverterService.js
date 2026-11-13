@@ -3,9 +3,6 @@ import path from 'path';
 import os from 'os';
 import { exec, execSync } from 'child_process';
 import DxfParser from 'dxf-parser';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebaseConfig.js';
 import { renderCadToVectorPdf } from './vectorPdfRenderer.js';
 import { uploadAndTranslateDwg } from './apsService.js';
 
@@ -228,15 +225,7 @@ export async function convertCadToPdf({
   });
 }
 
-/**
- * Comprehensive Backend Process:
- * 1. Initializes plan in Firestore with status 'processing'
- * 2. Converts CAD to vector PDF
- * 3. Uploads original DWG to projects/{projectId}/plans/{planId}.dwg
- * 4. Uploads generated PDF to projects/{projectId}/plans/{planId}.pdf
- * 5. Updates Firestore with exact structure:
- *    { id, name, fileName, floor, dwgUrl, pdfUrl, status: 'ready', createdAt }
- */
+/** Converts a plan and optionally starts APS translation. The browser persists the plan in tenant Firestore/Storage. */
 export async function processAndStorePlan({
   projectId,
   planId,
@@ -248,127 +237,21 @@ export async function processAndStorePlan({
 }) {
   const floor = floorOverride || detectLevelFromFilename(fileName);
   const name = nameOverride || generatePlanName(fileName, floor);
-  const now = new Date().toISOString();
-
-  const planRef = doc(db, 'projects', projectId, 'plans', planId);
-
-  // Step 1: Initial Firestore entry with 'processing' status
-  const initialPlanDoc = {
-    id: planId,
-    name,
-    fileName,
-    floor,
-    dwgUrl: '',
-    pdfUrl: '',
-    status: 'processing',
-    createdAt: now
+  const pdfBuffer = await convertCadToPdf({
+    inputBuffer: fileBuffer, fileName, floor, projectName, planName: name
+  });
+  let apsUrn = null;
+  if (path.extname(fileName).toLowerCase() === '.dwg') {
+    try {
+      const result = await uploadAndTranslateDwg(fileBuffer, fileName);
+      apsUrn = result?.urn || null;
+    } catch (error) {
+      console.warn('APS translation failed:', error);
+    }
+  }
+  return {
+    success: true,
+    plan: { id: planId, projectId, name, fileName, floor, status: 'ready', createdAt: new Date().toISOString(), ...(apsUrn ? { apsUrn } : {}) },
+    pdfBuffer
   };
-
-  try {
-    await setDoc(planRef, initialPlanDoc, { merge: true });
-  } catch (initErr) {
-    console.warn(`Firestore initial setDoc notice for plan ${planId}:`, initErr.message);
-  }
-
-  try {
-    // Step 2: Convert CAD to high-res vector PDF
-    const pdfBuffer = await convertCadToPdf({
-      inputBuffer: fileBuffer,
-      fileName,
-      floor,
-      projectName,
-      planName: name
-    });
-
-    // Step 3: Upload original DWG to Firebase Storage: projects/{projectId}/plans/{planId}.dwg
-    const dwgStoragePath = `projects/${projectId}/plans/${planId}.dwg`;
-    const dwgRef = ref(storage, dwgStoragePath);
-    let dwgUrl = '';
-    try {
-      await uploadBytes(dwgRef, fileBuffer, {
-        contentType: 'application/acad',
-        customMetadata: { originalFileName: fileName }
-      });
-      dwgUrl = await getDownloadURL(dwgRef);
-    } catch (dwgUploadErr) {
-      console.warn(`DWG Storage upload notice:`, dwgUploadErr.message);
-      dwgUrl = `gs://${dwgStoragePath}`;
-    }
-
-    // Step 4: Upload generated PDF to Firebase Storage: projects/{projectId}/plans/{planId}.pdf
-    const pdfStoragePath = `projects/${projectId}/plans/${planId}.pdf`;
-    const pdfRef = ref(storage, pdfStoragePath);
-    let pdfUrl = '';
-    try {
-      await uploadBytes(pdfRef, pdfBuffer, {
-        contentType: 'application/pdf',
-        customMetadata: { generatedFrom: fileName }
-      });
-      pdfUrl = await getDownloadURL(pdfRef);
-    } catch (pdfUploadErr) {
-      console.warn(`PDF Storage upload notice:`, pdfUploadErr.message);
-      pdfUrl = `gs://${pdfStoragePath}`;
-    }
-
-    // Step 4b: Trigger Autodesk Platform Services (APS) translation if DWG
-    let apsUrn = null;
-    if (path.extname(fileName).toLowerCase() === '.dwg') {
-      try {
-        console.log(`[APS] Triggering Autodesk Model Derivative for ${fileName}...`);
-        const apsResult = await uploadAndTranslateDwg(fileBuffer, fileName);
-        apsUrn = apsResult?.urn || null;
-        console.log(`[APS] Translation triggered successfully. URN: ${apsUrn}`);
-      } catch (apsErr) {
-        console.warn(`[APS] Autodesk translation warning:`, apsErr.message);
-      }
-    }
-
-    // Step 5: Update Firestore with final 'ready' document
-    const finalPlanDoc = {
-      id: planId,
-      name,
-      fileName,
-      floor,
-      dwgUrl,
-      pdfUrl,
-      status: 'ready',
-      createdAt: now,
-      pdfSize: pdfBuffer.length,
-      dwgSize: fileBuffer.length,
-      ...(apsUrn ? { apsUrn } : {})
-    };
-
-    try {
-      await setDoc(planRef, finalPlanDoc, { merge: true });
-    } catch (finalDocErr) {
-      console.warn(`Firestore final setDoc notice:`, finalDocErr.message);
-    }
-
-    return {
-      success: true,
-      plan: finalPlanDoc,
-      pdfBuffer
-    };
-  } catch (err) {
-    console.error(`Error processing plan ${planId} (${fileName}):`, err);
-
-    // Update status to 'error'
-    const errorPlanDoc = {
-      id: planId,
-      name,
-      fileName,
-      floor,
-      dwgUrl: '',
-      pdfUrl: '',
-      status: 'error',
-      errorMessage: err.message || String(err),
-      createdAt: now
-    };
-
-    try {
-      await setDoc(planRef, errorPlanDoc, { merge: true });
-    } catch {}
-
-    throw err;
-  }
 }

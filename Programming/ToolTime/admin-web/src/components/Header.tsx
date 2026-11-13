@@ -3,7 +3,7 @@ import {
   Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat, X
 } from 'lucide-react';
 import type { TenantBranding } from '../types/branding';
-import { readableTextColor } from '../types/branding';
+import { brandBackgroundColor, brandTextAccentColor, readableTextColor } from '../types/branding';
 import type { Project, Alert, User } from '../types';
 import { updateAlertStatus } from '../services/firestoreService';
 
@@ -61,8 +61,8 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         
         <div className="flex min-w-0 items-center gap-3 shrink-0">
-          {branding?.logoUrl ? <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1"><img src={branding.logoUrl} alt={`${branding.name} Logo`} className="max-h-full max-w-full object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/></div> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold" style={{ backgroundColor: branding?.primaryColor || '#7437D9', color: readableTextColor(branding?.primaryColor || '#7437D9') }}>{(branding?.name || 'F').charAt(0)}</div>}
-          <span className="max-w-44 truncate text-base font-semibold sm:max-w-64" style={{ color: branding?.secondaryColor }}>{branding?.name || 'Firma'}</span>
+          {branding?.logoUrl ? <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1"><img src={branding.logoUrl} alt={`${branding.name} Logo`} className="max-h-full max-w-full object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/></div> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold" style={{ backgroundColor: brandBackgroundColor(branding?.primaryColor || '#7437D9'), color: readableTextColor(branding?.primaryColor || '#7437D9') }}>{(branding?.name || 'F').charAt(0)}</div>}
+          <span className="max-w-44 truncate text-base font-semibold sm:max-w-64" style={{ color: brandTextAccentColor(branding?.secondaryColor || '#1F1A4D') }}>{branding?.name || 'Firma'}</span>
         </div>
 
         {/* Center / Action Group: Projektname (links) + Button Neues Projekt (rechts) */}
@@ -284,12 +284,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="h-6 w-px bg-slate-700 mx-0.5 hidden sm:block" />
 
-          {/* Sync Status Badge */}
-          <div className="flex items-center space-x-1.5 text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-full shrink-0">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline font-medium">Firestore Live</span>
-          </div>
-
           {/* User Profile Menu */}
           {currentUser && (
             <div className="relative" ref={profileRef}>
@@ -317,11 +311,6 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                     <ChevronDown className={`w-3 h-3 text-slate-400 group-hover:text-white transition-transform ${isProfileOpen ? 'rotate-180' : ''}`} />
                   </div>
-                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-                    currentUser.role === 'admin' ? 'text-blue-400' : 'text-amber-400'
-                  }`}>
-                    {currentUser.role === 'admin' ? 'Eigentümer / Admin' : 'Projektleiter'}
-                  </span>
                 </div>
               </button>
 

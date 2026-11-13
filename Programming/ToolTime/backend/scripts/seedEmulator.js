@@ -11,9 +11,12 @@ let user;
 try { user = await adminAuth.getUserByEmail(email); }
 catch (error) {
   if (error.code !== 'auth/user-not-found') throw error;
-  user = await adminAuth.createUser({ email, password, emailVerified: true, displayName: 'Lokaler Systembetreiber' });
+  const existingMember = await adminDb.collection('tenants/burk/members').where('email', '==', email).limit(1).get();
+  const uid = existingMember.empty ? 'local-superadmin' : existingMember.docs[0].id;
+  user = await adminAuth.createUser({ uid, email, password, emailVerified: true, displayName: 'Lokaler Systembetreiber' });
 }
 await adminAuth.setCustomUserClaims(user.uid, { platformRole: 'superadmin' });
+await adminDb.doc(`users/${user.uid}`).set({ email, displayName: user.displayName, platformRole: 'superadmin', tenantIds: FieldValue.arrayUnion('burk'), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
 const tenantRef = adminDb.doc('tenants/burk');
 await tenantRef.set({

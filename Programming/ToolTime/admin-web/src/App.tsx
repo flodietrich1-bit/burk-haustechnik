@@ -34,7 +34,7 @@ import {
   deleteProject
 } from './services/firestoreService';
 import type { Project, Position, Room, Booking, Addendum, Alert, User } from './types';
-import type { TenantBranding } from './types/branding';
+import { brandBackgroundColor, brandTextAccentColor, readableTextColor, type TenantBranding } from './types/branding';
 
 interface AppProps { authenticatedUser: User; tenantId: string; branding: TenantBranding | null; onLogout: () => void; }
 
@@ -61,6 +61,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   const [searchTerm] = useState<string>('');
   const [isImportOpen, setIsImportOpen] = useState<boolean>(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState<boolean>(false);
+  const [projectPromptShake, setProjectPromptShake] = useState(0);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
 
@@ -68,7 +69,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   useEffect(() => {
     const unsubProjects = listenToProjects((list) => {
       setProjects(list);
-    });
+    }, currentUser.role);
 
     const unsubUsers = listenToUsers((list) => {
       setUsers(list);
@@ -78,38 +79,10 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
       unsubProjects();
       unsubUsers();
     };
-  }, []);
+  }, [tenantId, currentUser.id, currentUser.role]);
 
-  // Compute accessible projects based on current user role (including deputy managers when primary is on leave)
-  const accessibleProjects = useMemo(() => {
-    if (!currentUser) return [];
-    if (currentUser.role === 'admin') return projects;
-    return projects.filter(p => {
-      // 1. Primary project manager or deputy project manager
-      const matchPmId = p.projectManagerId === currentUser.id || p.deputyProjectManagerId === currentUser.id;
-      const matchPmEmail = Boolean(
-        (p.projectManagerEmail && currentUser.email && p.projectManagerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (p.deputyProjectManagerEmail && currentUser.email && p.deputyProjectManagerEmail.toLowerCase() === currentUser.email.toLowerCase())
-      );
-      const matchPmName = Boolean(
-        (p.projectManager && currentUser.name && p.projectManager.toLowerCase().includes(currentUser.name.toLowerCase())) ||
-        (p.deputyProjectManager && currentUser.name && p.deputyProjectManager.toLowerCase().includes(currentUser.name.toLowerCase()))
-      );
-
-      // 2. Primary commercial manager or deputy commercial manager
-      const matchCmId = p.commercialManagerId === currentUser.id || p.deputyCommercialManagerId === currentUser.id;
-      const matchCmEmail = Boolean(
-        (p.commercialManagerEmail && currentUser.email && p.commercialManagerEmail.toLowerCase() === currentUser.email.toLowerCase()) ||
-        (p.deputyCommercialManagerEmail && currentUser.email && p.deputyCommercialManagerEmail.toLowerCase() === currentUser.email.toLowerCase())
-      );
-      const matchCmName = Boolean(
-        (p.commercialManager && currentUser.name && p.commercialManager.toLowerCase().includes(currentUser.name.toLowerCase())) ||
-        (p.deputyCommercialManager && currentUser.name && p.deputyCommercialManager.toLowerCase().includes(currentUser.name.toLowerCase()))
-      );
-
-      return matchPmId || matchPmEmail || matchPmName || matchCmId || matchCmEmail || matchCmName;
-    });
-  }, [projects, currentUser]);
+  // The tenant API returns only projects the signed-in member may access.
+  const accessibleProjects = projects;
 
   // Keep selected project aligned with accessible projects
   useEffect(() => {
@@ -296,7 +269,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   }, [positions, rooms]);
 
   return (
-    <div className="tenant-cockpit min-h-screen bg-white flex flex-col antialiased" style={{ '--tenant-primary': branding?.primaryColor || '#7437D9', '--tenant-secondary': branding?.secondaryColor || '#1F1A4D' } as CSSProperties}>
+    <div className="tenant-cockpit min-h-screen bg-white flex flex-col antialiased" style={{ '--tenant-primary': branding?.primaryColor || '#7437D9', '--tenant-primary-surface': brandBackgroundColor(branding?.primaryColor || '#7437D9'), '--tenant-primary-text': readableTextColor(branding?.primaryColor || '#7437D9'), '--tenant-secondary': brandTextAccentColor(branding?.secondaryColor || '#1F1A4D') } as CSSProperties}>
       {/* Top Navigation: Streamlined with Project Switcher, New Project & Alerts */}
       <Header
         branding={branding}
@@ -319,6 +292,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
           branding={branding}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
+          onProjectTabWithoutProject={() => setProjectPromptShake((count) => count + 1)}
           openAddendumsCount={openAddendumsCount}
           totalPositionsCount={positions.length}
           totalRoomsCount={rooms.length}
@@ -351,8 +325,9 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
 
                 <div className="pt-2">
                   <button
+                    key={projectPromptShake}
                     onClick={() => setIsNewProjectOpen(true)}
-                    className="inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-7 py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    className={`inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-7 py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] ${projectPromptShake ? 'project-create-shake' : ''}`}
                   >
                     <Plus className="w-5 h-5" />
                     <span>Neues Projekt anlegen (3 Schritte)</span>
@@ -466,7 +441,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
 
             {/* TAB: User & Role Admin (Admin only) */}
             {activeTab === 'users' && currentUser.role === 'admin' && (
-              <TenantMembersView tenantId={tenantId} projects={projects} primaryColor={branding?.primaryColor || '#7437D9'} />
+              <TenantMembersView tenantId={tenantId} projects={projects} />
             )}
 
           </div>

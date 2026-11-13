@@ -1,6 +1,18 @@
 {
   "apphosting": {
-    "rootDir": "admin-web"
+    "backendId": "burk-haustechnik",
+    "rootDir": "admin-web",
+    "ignore": [
+      "node_modules",
+      ".git",
+      "admin-web/dist",
+      "backend",
+      "docs",
+      "*.log",
+      ".env",
+      ".env.*"
+    ],
+    "alwaysDeployFromSource": true
   },
   "hosting": {
     "public": "admin-web/dist",
@@ -23,10 +35,23 @@
     "rules": "backend/storage.rules"
   },
   "emulators": {
-    "auth": { "host": "0.0.0.0", "port": 9099 },
-    "firestore": { "host": "0.0.0.0", "port": 8085 },
-    "storage": { "host": "0.0.0.0", "port": 9199 },
-    "ui": { "enabled": true, "host": "0.0.0.0", "port": 4000 },
+    "auth": {
+      "host": "0.0.0.0",
+      "port": 9099
+    },
+    "firestore": {
+      "host": "0.0.0.0",
+      "port": 8085
+    },
+    "storage": {
+      "host": "0.0.0.0",
+      "port": 9199
+    },
+    "ui": {
+      "enabled": true,
+      "host": "0.0.0.0",
+      "port": 4000
+    },
     "singleProjectMode": true
   }
 }

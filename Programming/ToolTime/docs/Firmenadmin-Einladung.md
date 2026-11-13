@@ -1,8 +1,8 @@
-# Firmen-Admin ohne E-Mail-Versand einladen
+# Firmen-Admin einladen
 
 1. Als Superadmin die Firma öffnen und bei „Benutzer und Rollen“ einen Administrator mit seiner echten E-Mail-Adresse einladen.
-2. Im Ergebnis „Aktivierungslink kopieren“ wählen oder den Aktivierungscode notieren. Der QR-Code bleibt für die spätere TT-App; der Web-Link führt zu `/invite`.
-3. Den Link in einem privaten Browserfenster öffnen. Wer nur den Code hat, öffnet die normale Anmeldeseite und wählt „Einladung annehmen“.
+2. Im Ergebnis „Aktivierungslink kopieren“ wählen oder den Aktivierungscode notieren. Für Web-Rollen führen Link und QR-Code zu `/<FIRMA>/invite?token=…&Firma=<FIRMA>`; der QR-Code für Monteure bleibt ein TT-App-Link.
+3. Den Link in einem privaten Browserfenster öffnen. Wer nur den Code hat, öffnet `/<FIRMA>` und wählt „Einladung annehmen“. Die Firmenseite zeigt Name, Logo und Farben bereits vor der Anmeldung.
 4. Die eingeladene E-Mail-Adresse und den Aktivierungscode eingeben. Nach erfolgreicher Prüfung ein neues Passwort festlegen. Besteht für diese E-Mail schon ein Konto, stattdessen mit dessen Passwort anmelden.
 5. „Konto aktivieren“ öffnet den Firmenbereich. Künftige Anmeldungen leiten automatisch zur eigenen Firma; bei mehreren Firmen erscheint eine Auswahl.
 
@@ -10,7 +10,7 @@ Einladungen sind einmalig und sieben Tage gültig. Der Server prüft die E-Mail 
 
 ## Automatischer Versand
 
-Der vorhandene SMTP-Versand in [invitationDeliveryService.js](../backend/services/invitationDeliveryService.js) wird durch `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `INVITE_FROM_EMAIL` und `INVITE_WEB_BASE_URL` konfiguriert. Mit `INVITE_WEB_BASE_URL` enthält die Admin-E-Mail den Aktivierungslink. Ohne `SMTP_HOST` wird keine E-Mail verschickt. Für einen produktiven Versand werden ein Mailanbieter, eine verifizierte Absenderdomain und passende SMTP-Zugangsdaten benötigt. Der manuelle Web-Link funktioniert unabhängig davon.
+Einladungen werden über Resend von `info@p12-aufmass.de` mit Aktivierungslink und der erzeugten PDF als Anhang verschickt, sobald der Backend-Prozess `RESEND_API_KEY` erhält. Die genaue Einrichtung und die Voraussetzungen stehen in [E-Mail-Versand-Resend.md](./E-Mail-Versand-Resend.md). Optional bleibt SMTP als Fallback erhalten. Ohne eingerichteten Versand funktionieren Web-Link, Code und PDF weiterhin manuell.
 
 Im Einladungsdialog bereitet „E-Mail mit PDF vorbereiten“ einen Text mit Aktivierungslink vor. Unterstützt das Gerät Dateifreigabe, wird die PDF mitgeteilt. Andernfalls öffnet sich ein `mailto:`-Entwurf und die PDF wird heruntergeladen; sie muss dann im E-Mail-Programm angehängt werden. Browser können eine Datei nicht zuverlässig direkt an einen `mailto:`-Entwurf anhängen.
 

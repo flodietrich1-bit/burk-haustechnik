@@ -34,6 +34,8 @@ import {
   isRoomMatch,
   getMaterialActualQty 
 } from '../services/firestoreService';
+import { getActiveTenantId } from '../services/firestoreService';
+import { uploadToApi } from '../services/apiClient';
 import { RoomDetailModal } from './RoomDetailModal';
 import { WebPlanViewerModal } from './WebPlanViewerModal';
 import { CircularProgress } from './CircularProgress';
@@ -312,14 +314,8 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
         formData.append('floor', newPlanLevel);
         formData.append('name', planName);
         formData.append('projectName', projectName || 'Bauvorhaben');
-        const beRes = await fetch(`http://localhost:3001/api/projects/${projectId}/plans/upload-and-convert`, {
-          method: 'POST',
-          body: formData
-        });
-        if (beRes.ok) {
-          const beData = await beRes.json();
-          if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
-        }
+        const beData = await uploadToApi<{ plan?: { apsUrn?: string } }>(`/tenants/${encodeURIComponent(getActiveTenantId())}/projects/${encodeURIComponent(projectId)}/plans/upload-and-convert`, formData);
+        if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
       } catch (beErr) {
         console.warn('Backend CAD upload notice:', beErr);
       }

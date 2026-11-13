@@ -5,7 +5,8 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 
 const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
-const env = await initializeTestEnvironment({ projectId: 'demo-tooltime', firestore: { host: '127.0.0.1', port: 8085, rules } });
+const emulatorPort = Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8085').split(':').pop());
+const env = await initializeTestEnvironment({ projectId: 'demo-tooltime', firestore: { host: '127.0.0.1', port: emulatorPort, rules } });
 await env.clearFirestore();
 
 await env.withSecurityRulesDisabled(async context => {
@@ -13,8 +14,14 @@ await env.withSecurityRulesDisabled(async context => {
   await setDoc(doc(db, 'tenants/burk'), { name: 'Burk', status: 'active' });
   await setDoc(doc(db, 'tenants/burk/members/admin-1'), { role: 'admin', status: 'active', assignedProjectIds: [] });
   await setDoc(doc(db, 'tenants/burk/members/monteur-1'), { role: 'monteur', status: 'active', assignedProjectIds: ['project-1'] });
+  await setDoc(doc(db, 'tenants/burk/members/bauleiter-1'), { role: 'bauleiter', status: 'active', assignedProjectIds: [] });
+  await setDoc(doc(db, 'tenants/burk/members/kaufmann-1'), { role: 'kaufmaennisch', status: 'active', assignedProjectIds: [] });
+  await setDoc(doc(db, 'tenants/burk/members/other-bauleiter'), { role: 'bauleiter', status: 'active', assignedProjectIds: [] });
   await setDoc(doc(db, 'tenants/burk/projects/project-1'), { name: 'Projekt 1', status: 'in_progress' });
+  await setDoc(doc(db, 'tenants/burk/projects/project-2'), { name: 'Projekt 2', status: 'in_progress', projectManagerId: 'bauleiter-1', commercialManagerId: 'kaufmann-1' });
   await setDoc(doc(db, 'tenants/other'), { name: 'Other', status: 'active' });
+  await setDoc(doc(db, 'users/super-firestore'), { platformRole: 'superadmin', email: 'admin@example.com' });
+  await setDoc(doc(db, 'users/ordinary'), { email: 'ordinary@example.com' });
 });
 
 test('unauthenticated users cannot read tenants', async () => {
@@ -25,6 +32,21 @@ test('superadmin can read and update every tenant', async () => {
   const db = env.authenticatedContext('super-1', { platformRole: 'superadmin' }).firestore();
   await assertSucceeds(getDoc(doc(db, 'tenants/other')));
   await assertSucceeds(updateDoc(doc(db, 'tenants/other'), { status: 'suspended' }));
+});
+
+test('Firestore user profile grants superadmin access without a token claim', async () => {
+  const db = env.authenticatedContext('super-firestore').firestore();
+  await assertSucceeds(getDoc(doc(db, 'users/super-firestore')));
+  await assertSucceeds(getDoc(doc(db, 'tenants/other')));
+  await assertSucceeds(updateDoc(doc(db, 'tenants/other'), { status: 'active' }));
+});
+
+test('ordinary users cannot write their own global role or inspect another profile', async () => {
+  const db = env.authenticatedContext('ordinary').firestore();
+  await assertSucceeds(getDoc(doc(db, 'users/ordinary')));
+  await assertFails(updateDoc(doc(db, 'users/ordinary'), { platformRole: 'superadmin' }));
+  await assertFails(getDoc(doc(db, 'users/super-firestore')));
+  await assertFails(getDoc(doc(db, 'tenants/other')));
 });
 
 test('tenant admin can access own tenant and all projects but cannot change membership directly', async () => {
@@ -40,6 +62,15 @@ test('assigned monteur can read project and create own booking only', async () =
   await assertSucceeds(getDoc(doc(db, 'tenants/burk/projects/project-1')));
   await assertSucceeds(setDoc(doc(db, 'tenants/burk/projects/project-1/bookings/own'), { createdByUid: 'monteur-1' }));
   await assertFails(setDoc(doc(db, 'tenants/burk/projects/project-1/bookings/forged'), { createdByUid: 'other-user' }));
+});
+
+test('selected project manager and commercial manager can read their project', async () => {
+  for (const uid of ['bauleiter-1', 'kaufmann-1']) {
+    const db = env.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(db, 'tenants/burk/projects/project-2')));
+    await assertFails(getDoc(doc(db, 'tenants/burk/projects/project-1')));
+  }
+  await assertFails(getDoc(doc(env.authenticatedContext('other-bauleiter').firestore(), 'tenants/burk/projects/project-2')));
 });
 
 test('suspended tenant blocks ordinary members', async () => {

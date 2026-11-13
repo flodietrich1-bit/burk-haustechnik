@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { adminAuth, adminDb } from '../adminFirebase.js';
+
+assert.ok(process.env.FIREBASE_AUTH_EMULATOR_HOST && process.env.FIRESTORE_EMULATOR_HOST, 'Local API smoke test requires Firebase emulators');
 
 const authResponse = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=fake-api-key', {
   method: 'POST', headers: { 'content-type': 'application/json' },
@@ -63,6 +66,8 @@ const redeemResponse = await fetch('http://127.0.0.1:3001/api/public/invites/red
 });
 if (redeemResponse.status === 429) {
   console.log('Invite redemption skipped: local rate limit is active.');
+  const revoke = await fetch(`http://127.0.0.1:3001/api/tenants/burk/invites/${invite.inviteId}/revoke`, { method: 'POST', headers });
+  assert.equal(revoke.ok, true);
 } else {
   assert.equal(redeemResponse.ok, true, redeemResponse.ok ? '' : `Invite redemption failed: ${await redeemResponse.text()}`);
   const redemption = await redeemResponse.json();
@@ -74,6 +79,11 @@ if (redeemResponse.status === 429) {
     body: JSON.stringify({ code: invite.shortCode, installationId: 'local-smoke-device-2' }),
   });
   assert.equal(secondRedeem.ok, false, 'A redeemed invitation must not be reusable');
+  const inviteSnap = await adminDb.doc(`tenants/burk/invites/${invite.inviteId}`).get();
+  const testUid = inviteSnap.get('redeemedByUid');
+  const removeMember = await fetch(`http://127.0.0.1:3001/api/tenants/burk/members/${testUid}`, { method: 'DELETE', headers });
+  assert.equal(removeMember.ok, true, removeMember.ok ? '' : await removeMember.text());
+  await adminAuth.deleteUser(testUid);
 }
 
 const createCompany = { legalName: 'Löschtest GmbH', contactName: 'Test Person', phone: '+49 123 456', email: 'test@example.org' };
@@ -83,6 +93,17 @@ const createdResponse = await fetch('http://127.0.0.1:3001/api/tenants', {
 assert.equal(createdResponse.status, 201, createdResponse.ok ? '' : await createdResponse.text());
 const { id: testTenantId } = await createdResponse.json();
 assert.match(testTenantId, /^firma-[a-f0-9]{16}$/);
+const orderProjectId = 'material-order-smoke';
+await adminDb.doc(`tenants/${testTenantId}/projects/${orderProjectId}`).set({ name: 'Testprojekt', status: 'draft' });
+const missingRecipientOrder = await fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/projects/${orderProjectId}/material-orders`, {
+  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID() }),
+});
+assert.equal(missingRecipientOrder.status, 409, 'An order must not be sent without a configured commercial recipient');
+await adminDb.doc(`tenants/${testTenantId}/projects/${orderProjectId}`).update({ commercialManagerEmail: 'old-demo@example.org' });
+const staleRecipientOrder = await fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/projects/${orderProjectId}/material-orders`, {
+  method: 'POST', headers, body: JSON.stringify({ recipient: 'primary', subject: 'Testbestellung', text: 'Testmaterial', orderId: crypto.randomUUID() }),
+});
+assert.equal(staleRecipientOrder.status, 409, 'An obsolete project address must not receive orders');
 const inviteBauleiter = () => fetch(`http://127.0.0.1:3001/api/tenants/${testTenantId}/invites`, {
   method: 'POST', headers, body: JSON.stringify({ displayName: 'Test Bauleiter', email: 'bauleiter@example.org', role: 'bauleiter' }),
 });
@@ -93,6 +114,12 @@ const adminInvite = await fetch(`http://127.0.0.1:3001/api/tenants/${testTenantI
 });
 assert.equal(adminInvite.status, 201, adminInvite.ok ? '' : await adminInvite.text());
 const adminInviteData = await adminInvite.json();
+const linkValidation = await fetch('http://127.0.0.1:3001/api/public/invites/validate-web', {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ qrToken: adminInviteData.qrToken }),
+});
+assert.equal(linkValidation.ok, true, linkValidation.ok ? '' : await linkValidation.text());
+assert.equal((await linkValidation.json()).email, invitedEmail);
 const mismatch = await fetch('http://127.0.0.1:3001/api/public/invites/redeem-web', {
   method: 'POST', headers, body: JSON.stringify({ qrToken: adminInviteData.qrToken }),
 });

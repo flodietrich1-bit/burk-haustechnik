@@ -1,4 +1,4 @@
-import { collection, doc, onSnapshot, setDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, deleteDoc, getDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getActiveTenantId } from './firestoreService';
 import type { 
@@ -15,29 +15,15 @@ import type {
 } from '../types';
 import { getMaterialActualQty } from './firestoreService';
 
-const LOCAL_STORAGE_AUFMASS_PREFIX = 'burk_tooltime_aufmasse_';
+const aufmassCache = new Map<string, AufmassDocument[]>();
+const cacheKey = (projectId: string) => `${getActiveTenantId()}/${projectId}`;
 
 function getLocalAufmasse(projectId: string): AufmassDocument[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_AUFMASS_PREFIX + projectId);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn('LocalStorage error reading aufmasse:', e);
-  }
-  return [];
+  return aufmassCache.get(cacheKey(projectId)) || [];
 }
 
 function saveLocalAufmasse(projectId: string, aufmasse: AufmassDocument[]) {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(LOCAL_STORAGE_AUFMASS_PREFIX + projectId, JSON.stringify(aufmasse));
-  } catch (e) {
-    console.warn('LocalStorage error saving aufmasse:', e);
-  }
+  aufmassCache.set(cacheKey(projectId), aufmasse);
 }
 
 /**
@@ -61,8 +47,8 @@ export function listenToAufmasse(projectId: string, callback: (aufmasse: Aufmass
       saveLocalAufmasse(projectId, list);
       callback(list);
     }, (err) => {
-      console.warn('Firestore listenToAufmasse fallback to localStorage:', err.message);
-      callback(getLocalAufmasse(projectId));
+      console.error('Firestore listenToAufmasse error:', err.message);
+      callback([]);
     });
 
     return unsub;
@@ -78,13 +64,11 @@ export function listenToAufmasse(projectId: string, callback: (aufmasse: Aufmass
 export async function saveAufmassDocument(projectId: string, aufmass: AufmassDocument): Promise<void> {
   // Strip any undefined fields before persisting to Firestore
   const cleaned: AufmassDocument = JSON.parse(JSON.stringify(aufmass));
-  const current = getLocalAufmasse(projectId);
-  const updated = [cleaned, ...current.filter(a => a.id !== cleaned.id)];
-  saveLocalAufmasse(projectId, updated);
-
   try {
     const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse', cleaned.id);
     await setDoc(ref, cleaned);
+    const current = getLocalAufmasse(projectId);
+    saveLocalAufmasse(projectId, [cleaned, ...current.filter(a => a.id !== cleaned.id)]);
   } catch (err: any) {
     console.error('Firestore saveAufmassDocument error:', err);
     throw err;
@@ -95,13 +79,10 @@ export async function saveAufmassDocument(projectId: string, aufmass: AufmassDoc
  * Deletes an Aufmass document
  */
 export async function deleteAufmassDocument(projectId: string, aufmassId: string): Promise<void> {
-  const current = getLocalAufmasse(projectId);
-  const updated = current.filter(a => a.id !== aufmassId);
-  saveLocalAufmasse(projectId, updated);
-
   try {
     const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse', aufmassId);
     await deleteDoc(ref);
+    saveLocalAufmasse(projectId, getLocalAufmasse(projectId).filter(a => a.id !== aufmassId));
   } catch (err: any) {
     console.error('Firestore deleteAufmassDocument error:', err);
     throw err;
@@ -526,8 +507,8 @@ export async function updateAufmassPositionReason(
   newReason: string,
   newCausedBy?: string
 ): Promise<AufmassDocument | null> {
-  const localList = getLocalAufmasse(projectId);
-  const target = localList.find(a => a.id === aufmassId);
+  const document = await getDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'aufmasse', aufmassId));
+  const target = document.exists() ? document.data() as AufmassDocument : null;
   if (!target) return null;
 
   // Clone document

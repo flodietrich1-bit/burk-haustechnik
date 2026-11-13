@@ -24,10 +24,10 @@ function normalizeCode(value) {
   return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-export async function inspectWebInvite({ code, qrToken, email }) {
+export async function inspectWebInvite({ code, qrToken, email, tenantSlug }) {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedCode = normalizeCode(code);
-  if (!normalizedEmail || (!qrToken && normalizedCode.length !== 6)) return null;
+  if (!qrToken && (!normalizedEmail || normalizedCode.length !== 6)) return null;
   const isQr = Boolean(qrToken);
   const lookupHash = hmac(isQr ? `qr:${qrToken}` : `short:${normalizedCode}`);
   const indexCollection = isQr ? 'inviteQrIndex' : 'inviteCodeIndex';
@@ -39,16 +39,17 @@ export async function inspectWebInvite({ code, qrToken, email }) {
     adminDb.doc(`tenants/${tenantId}/invites/${inviteId}`).get(),
   ]);
   const invite = inviteSnap.data();
+  if (tenantSlug && String(tenantSlug).toLowerCase() !== String(tenantSnap.get('publicSlug') || tenantSnap.get('slug') || tenantId).toLowerCase()) return null;
   if (!tenantSnap.exists || tenantSnap.get('status') !== 'active' || !inviteSnap.exists
     || invite.status !== 'pending' || invite.generation !== generation
     || invite.expiresAt.toDate() <= new Date() || invite.role === 'monteur'
-    || invite.emailNormalized !== normalizedEmail) return null;
+    || (normalizedEmail && invite.emailNormalized !== normalizedEmail)) return null;
   try {
-    await adminAuth.getUserByEmail(normalizedEmail);
-    return { accountExists: true };
+    await adminAuth.getUserByEmail(invite.emailNormalized);
+    return { accountExists: true, email: invite.emailNormalized };
   } catch (error) {
     if (error.code !== 'auth/user-not-found') throw error;
-    return { accountExists: false };
+    return { accountExists: false, email: invite.emailNormalized };
   }
 }
 
@@ -89,7 +90,7 @@ export async function createInvite({ tenantId, actorUid, input }) {
   return { inviteId: inviteRef.id, shortCode: formatShortCode(shortCode), qrToken, expiresAt: expiresAt.toISOString() };
 }
 
-export async function redeemInvite({ code, qrToken, installationId, webUid }) {
+export async function redeemInvite({ code, qrToken, installationId, webUid, tenantSlug }) {
   const normalized = normalizeCode(code);
   const isQr = Boolean(qrToken);
   const lookupHash = isQr ? hmac(`qr:${qrToken}`) : hmac(`short:${normalized}`);
@@ -99,6 +100,10 @@ export async function redeemInvite({ code, qrToken, installationId, webUid }) {
 
   const { tenantId, inviteId, generation } = indexSnap.data();
   const inviteRef = adminDb.doc(`tenants/${tenantId}/invites/${inviteId}`);
+  if (tenantSlug) {
+    const tenant = await adminDb.doc(`tenants/${tenantId}`).get();
+    if (String(tenantSlug).toLowerCase() !== String(tenant.get('publicSlug') || tenant.get('slug') || tenantId).toLowerCase()) return null;
+  }
   if (webUid && (await adminDb.doc(`tenants/${tenantId}`).get()).get('status') !== 'active') return null;
   const webUser = webUid ? await adminAuth.getUser(webUid) : null;
   const reservationId = crypto.randomUUID();
@@ -138,6 +143,12 @@ export async function redeemInvite({ code, qrToken, installationId, webUid }) {
     const memberRef = adminDb.doc(`tenants/${tenantId}/members/${user.uid}`);
     const deviceRef = installationId ? memberRef.collection('devices').doc(installationId) : null;
     const batch = adminDb.batch();
+    batch.set(adminDb.doc(`users/${user.uid}`), {
+      email: inviteData.emailNormalized || null,
+      displayName: inviteData.displayName,
+      tenantIds: FieldValue.arrayUnion(tenantId),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
     batch.set(memberRef, {
       displayName: inviteData.displayName, email: inviteData.emailNormalized, role: inviteData.role,
       defaultLanguage: inviteData.defaultLanguage, assignedProjectIds: inviteData.assignedProjectIds,

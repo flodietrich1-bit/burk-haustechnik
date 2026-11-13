@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 interface AuthState {
   user: FirebaseUser | null;
@@ -23,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     const startupTimeout = window.setTimeout(() => {
-      if (active) { setError('Die Anmeldung dauert zu lange. Bitte lade die Seite neu. Falls das Problem bleibt, prüfe den lokalen Auth-Dienst auf Port 9099.'); setLoading(false); }
+      if (active) { setError('Die Anmeldung dauert zu lange. Bitte lade die Seite neu oder melde dich ab und erneut an.'); setLoading(false); }
     }, 8000);
     const unsubscribe = onAuthStateChanged(auth, async nextUser => {
       if (!active) return;
@@ -31,18 +32,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(null);
       try {
         const claims = nextUser ? await Promise.race([
-          nextUser.getIdTokenResult(),
+          nextUser.getIdTokenResult(true),
           new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('AUTH_TIMEOUT')), 8000)),
         ]) : null;
-        if (active) setPlatformRole(claims ? String(claims.claims.platformRole || '') || null : null);
+        const claimRole = claims ? String(claims.claims.platformRole || '') || null : null;
+        const profile = nextUser ? await Promise.race([
+          getDoc(doc(db, 'users', nextUser.uid)).catch(() => null),
+          new Promise<null>(resolve => window.setTimeout(() => resolve(null), 3000)),
+        ]) : null;
+        if (active) setPlatformRole(profile?.get('platformRole') === 'superadmin' ? 'superadmin' : claimRole);
       } catch {
-        if (active) setError('Die Sitzung konnte nicht geprüft werden. Bitte lade die Seite neu und prüfe bei Bedarf den lokalen Auth-Dienst auf Port 9099.');
+        if (active) setError('Die Sitzung konnte nicht geprüft werden. Bitte lade die Seite neu oder melde dich ab und erneut an.');
       } finally {
         window.clearTimeout(startupTimeout);
         if (active) setLoading(false);
       }
     }, () => {
-      if (active) { setError('Die Anmeldung ist nicht erreichbar. Bitte prüfe den lokalen Auth-Dienst auf Port 9099 und lade die Seite neu.'); setLoading(false); }
+      if (active) { setError('Die Anmeldung ist nicht erreichbar. Bitte lade die Seite neu oder melde dich ab und erneut an.'); setLoading(false); }
     });
     return () => { active = false; window.clearTimeout(startupTimeout); unsubscribe(); };
   }, []);

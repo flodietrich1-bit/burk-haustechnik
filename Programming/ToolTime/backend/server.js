@@ -18,6 +18,8 @@ import {
 import { generateAufmassPdf } from './aufmassPdfService.js';
 import { tenantRouter } from './routes/tenantRoutes.js';
 import { publicInviteRouter } from './routes/publicInviteRoutes.js';
+import { publicBrandingRouter } from './routes/publicBrandingRoutes.js';
+import { authenticateFirebaseUser, requireTenantRole } from './middleware/auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -37,6 +39,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use('/api/tenants', tenantRouter);
 app.use('/api/public/invites', publicInviteRouter);
+app.use('/api/public/branding', publicBrandingRouter);
 
 // Multer in-memory storage for high-speed streaming
 const upload = multer({
@@ -134,10 +137,10 @@ app.post('/api/aufmass-pdf', async (req, res) => {
 });
 
 /**
- * 2. Endpoint: Upload, convert, and store in Firebase Storage & Firestore
- * POST /api/projects/:projectId/plans/upload-and-convert
+ * 2. Endpoint: Convert CAD and start optional APS translation for a tenant project.
+ * The authenticated browser stores the plan in tenant Firestore and Storage.
  */
-app.post('/api/projects/:projectId/plans/upload-and-convert', upload.single('file'), async (req, res) => {
+app.post('/api/tenants/:tenantId/projects/:projectId/plans/upload-and-convert', authenticateFirebaseUser, requireTenantRole('admin', 'bauleiter'), upload.single('file'), async (req, res) => {
   try {
     const { projectId } = req.params;
     if (!projectId) {

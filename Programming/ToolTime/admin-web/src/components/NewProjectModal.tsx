@@ -27,7 +27,8 @@ import {
   detectLevelFromFilename, 
   type MultiPlanInput 
 } from '../services/dwgParser';
-import { createProject, uploadPlanFile } from '../services/firestoreService';
+import { createProject, uploadPlanFile, getActiveTenantId } from '../services/firestoreService';
+import { uploadToApi } from '../services/apiClient';
 import type { Project, Position, Room, User, PlanDocument, PlanLevel } from '../types';
 
 export interface UploadedPlanItem {
@@ -69,15 +70,15 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   // Step 2: Beteiligte & Leitung (inkl. Vertretung)
   const [client, setClient] = useState<string>('');
   const [projectManagerId, setProjectManagerId] = useState<string>('');
-  const [projectManager, setProjectManager] = useState<string>('Florian Buck');
-  const [projectManagerEmail, setProjectManagerEmail] = useState<string>('f.buck@burk-haustechnik.de');
+  const [projectManager, setProjectManager] = useState<string>('');
+  const [projectManagerEmail, setProjectManagerEmail] = useState<string>('');
   const [deputyProjectManagerId, setDeputyProjectManagerId] = useState<string>('');
   const [deputyProjectManager, setDeputyProjectManager] = useState<string>('');
   const [deputyProjectManagerEmail, setDeputyProjectManagerEmail] = useState<string>('');
 
   const [commercialManagerId, setCommercialManagerId] = useState<string>('');
-  const [commercialManager, setCommercialManager] = useState<string>('Sabine Müller');
-  const [commercialManagerEmail, setCommercialManagerEmail] = useState<string>('s.mueller@burk-haustechnik.de');
+  const [commercialManager, setCommercialManager] = useState<string>('');
+  const [commercialManagerEmail, setCommercialManagerEmail] = useState<string>('');
   const [deputyCommercialManagerId, setDeputyCommercialManagerId] = useState<string>('');
   const [deputyCommercialManager, setDeputyCommercialManager] = useState<string>('');
   const [deputyCommercialManagerEmail, setDeputyCommercialManagerEmail] = useState<string>('');
@@ -86,7 +87,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
 
   useEffect(() => {
     if (!projectManagerId && users.length > 0) {
-      const bl = users.find(u => u.role === 'projektleiter' || u.role === 'bauleiter') || users.find(u => u.name.includes('Buck')) || users[0];
+      const bl = users.find(u => u.role === 'projektleiter' || u.role === 'bauleiter');
       if (bl) {
         setProjectManagerId(bl.id);
         setProjectManager(bl.name);
@@ -94,7 +95,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       }
     }
     if (!commercialManagerId && users.length > 0) {
-      const kfm = users.find(u => u.role === 'kaufmaennisch') || users.find(u => u.name.includes('Müller')) || users[0];
+      const kfm = users.find(u => u.role === 'kaufmaennisch');
       if (kfm) {
         setCommercialManagerId(kfm.id);
         setCommercialManager(kfm.name);
@@ -438,14 +439,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             formData.append('floor', plan.level);
             formData.append('name', cleanName);
             formData.append('projectName', name || 'Bauvorhaben');
-            const beRes = await fetch(`http://localhost:3001/api/projects/${projectId}/plans/upload-and-convert`, {
-              method: 'POST',
-              body: formData
-            });
-            if (beRes.ok) {
-              const beData = await beRes.json();
-              if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
-            }
+            const beData = await uploadToApi<{ plan?: { apsUrn?: string } }>(`/tenants/${encodeURIComponent(getActiveTenantId())}/projects/${encodeURIComponent(projectId)}/plans/upload-and-convert`, formData);
+            if (beData.plan?.apsUrn) apsUrn = beData.plan.apsUrn;
           } catch (beErr) {
             console.warn('Backend CAD upload notice in NewProjectModal:', beErr);
           }
@@ -488,13 +483,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         endDate: endDate || '',
         trade: trade || 'Sanitärinstallation',
         projectManagerId: projectManagerId || '',
-        projectManager: projectManager || 'Florian Buck',
+        projectManager: projectManager || '',
         projectManagerEmail: projectManagerEmail || '',
         deputyProjectManagerId: deputyProjectManagerId || '',
         deputyProjectManager: deputyProjectManager || '',
         deputyProjectManagerEmail: deputyProjectManagerEmail || '',
         commercialManagerId: commercialManagerId || '',
-        commercialManager: commercialManager || 'Sabine Müller',
+        commercialManager: commercialManager || '',
         commercialManagerEmail: commercialManagerEmail || '',
         deputyCommercialManagerId: deputyCommercialManagerId || '',
         deputyCommercialManager: deputyCommercialManager || '',
@@ -523,11 +518,11 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-6 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+      <div className="new-project-modal bg-white w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-3 sm:my-6 animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[94dvh]">
         
         {/* Modal Header */}
-        <div className="bg-[#1C2A3B] text-white p-5 sm:p-6 flex items-center justify-between border-b border-slate-700">
+        <div className="bg-[#1C2A3B] text-white p-6 sm:px-9 sm:py-7 flex items-center justify-between border-b border-slate-700">
           <div>
             <span className="text-xs font-bold text-[#3B82C4] uppercase tracking-wider block">
               Neues Bauvorhaben
@@ -546,7 +541,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         </div>
 
         {/* 3-Step Indicator Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-3.5 flex items-center justify-between">
+        <div className="bg-slate-50 border-b border-slate-200 px-6 sm:px-9 py-4 flex items-center justify-between gap-4">
           <div className="flex items-center space-x-2 sm:space-x-6 w-full max-w-2xl">
             {/* Step 1 */}
             <div 
@@ -616,13 +611,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-6 sm:px-9 sm:py-8 space-y-8">
           
           {/* ========================================================= */}
           {/* STEP 1: PROJEKT-STAMMDATEN                                 */}
           {/* ========================================================= */}
           {currentStep === 1 && (
-            <div className="space-y-4 animate-in fade-in duration-150">
+            <div className="project-form-fields space-y-6 animate-in fade-in duration-150">
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
                   <Building2 className="w-5 h-5 text-[#3B82C4]" />
@@ -633,7 +628,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-7 gap-y-6 text-sm">
                 <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Projektname / Baumaßnahme *</label>
                   <input
@@ -718,7 +713,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
           {/* STEP 2: BETEILIGTE & LEITUNGEN                             */}
           {/* ========================================================= */}
           {currentStep === 2 && (
-            <div className="space-y-5 animate-in fade-in duration-150">
+            <div className="project-form-fields space-y-7 animate-in fade-in duration-150">
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
                   <Briefcase className="w-5 h-5 text-[#3B82C4]" />
@@ -729,7 +724,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-7 gap-y-6 text-sm">
                 <div className="md:col-span-2">
                   <label className="block font-bold text-slate-700 mb-1">Auftraggeber / Kunde</label>
                   <input
@@ -1285,7 +1280,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         </div>
 
         {/* Modal Footer Controls */}
-        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+        <div className="p-5 sm:px-9 sm:py-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
           <div>
             {currentStep > 1 && (
               <button

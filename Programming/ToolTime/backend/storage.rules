@@ -2,7 +2,13 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
-    function isSuperadmin() { return signedIn() && 'platformRole' in request.auth.token && request.auth.token.platformRole == 'superadmin'; }
+    function userPath() { return /databases/(default)/documents/users/$(request.auth.uid); }
+    function isSuperadmin() {
+      return signedIn() && (
+        ('platformRole' in request.auth.token && request.auth.token.platformRole == 'superadmin') ||
+        (firestore.exists(userPath()) && firestore.get(userPath()).data.platformRole == 'superadmin')
+      );
+    }
     function member(tenantId) { return firestore.get(/databases/(default)/documents/tenants/$(tenantId)/members/$(request.auth.uid)); }
     function activeTenant(tenantId) { return firestore.get(/databases/(default)/documents/tenants/$(tenantId)).data.status == 'active'; }
     function activeMember(tenantId) { return signedIn() && activeTenant(tenantId) && member(tenantId).data.status == 'active'; }

@@ -3,6 +3,7 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
+import { api } from './apiClient';
 import type { Project, Position, Room, Booking, Addendum, Alert, User, PlanDocument, PlanLevel, RoomMaterialRequirement } from '../types';
 
 export const DEFAULT_PROJECT_ID = '';
@@ -21,7 +22,15 @@ export function getActiveTenantId(): string {
 // Initial projects: start completely empty for clean onboarding
 export const INITIAL_PROJECTS: Project[] = [];
 
-// Local storage key for persistent projects in offline / local fallback mode
+// Ephemeral UI cache only. Firestore is the source of truth for business data.
+const dataCache = new Map<string, string>();
+const dataStorage = {
+  getItem: (key: string) => dataCache.get(key) ?? null,
+  setItem: (key: string, value: string) => { dataCache.set(key, value); },
+  removeItem: (key: string) => { dataCache.delete(key); },
+};
+
+// Cache keys are scoped to a tenant so switching companies cannot mix views.
 let LOCAL_STORAGE_PROJECTS_KEY = '';
 let LOCAL_STORAGE_POSITIONS_PREFIX = '';
 let LOCAL_STORAGE_ROOMS_PREFIX = '';
@@ -45,7 +54,7 @@ refreshTenantCacheKeys();
 
 export function getLocalAddendums(projectId: string): Addendum[] {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
+    const raw = dataStorage.getItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -58,7 +67,7 @@ export function getLocalAddendums(projectId: string): Addendum[] {
 
 export function saveLocalAddendums(projectId: string, list: Addendum[]): void {
   try {
-    localStorage.setItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId, JSON.stringify(list));
+    dataStorage.setItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId, JSON.stringify(list));
   } catch (e) {
     console.warn('LocalStorage error saving addendums:', e);
   }
@@ -66,7 +75,7 @@ export function saveLocalAddendums(projectId: string, list: Addendum[]): void {
 
 export function getDeletedProjectIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY);
+    const raw = dataStorage.getItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY);
     return new Set(raw ? JSON.parse(raw) : []);
   } catch {
     return new Set();
@@ -77,7 +86,7 @@ export function addDeletedProjectId(projectId: string) {
   try {
     const current = getDeletedProjectIds();
     current.add(projectId);
-    localStorage.setItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY, JSON.stringify(Array.from(current)));
+    dataStorage.setItem(LOCAL_STORAGE_DELETED_PROJECTS_KEY, JSON.stringify(Array.from(current)));
   } catch {}
 }
 
@@ -89,7 +98,7 @@ export function cleanForFirestore<T>(data: T): T {
 
 export function getLocalProjects(): Project[] {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
+    const raw = dataStorage.getItem(LOCAL_STORAGE_PROJECTS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -133,7 +142,7 @@ export function notifyPlansSubscribers(projectId: string, plans: PlanDocument[])
 
 export function getLocalPlans(projectId: string): PlanDocument[] {
   try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+    const raw = dataStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -221,7 +230,7 @@ export function notifyAlertsSubscribers(projectId: string, alerts: Alert[]) {
 
 function saveLocalProjects(projects: Project[]) {
   try {
-    localStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(projects));
+    dataStorage.setItem(LOCAL_STORAGE_PROJECTS_KEY, JSON.stringify(projects));
   } catch (e) {
     console.warn('LocalStorage error saving projects:', e);
   }
@@ -238,8 +247,25 @@ export const MOCK_ADDENDUMS: Addendum[] = [];
 // Real-time Firestore Listeners with Local Pub/Sub Fallback
 
 // 1. Listen to all projects
-export function listenToProjects(callback: (projects: Project[]) => void) {
+export function listenToProjects(callback: (projects: Project[]) => void, role: string = 'admin') {
   projectSubscribers.add(callback);
+  if (role !== 'admin') {
+    const tenantId = getActiveTenantId();
+    let active = true;
+    saveLocalProjects([]);
+    const refresh = async () => {
+      try {
+        const projects = await api<Project[]>(`/tenants/${tenantId}/projects`);
+        if (active) saveLocalProjects(projects.filter(project => project.status !== 'deleted'));
+      } catch (error) {
+        console.warn('Projektübersicht konnte nicht geladen werden:', error);
+        if (active) saveLocalProjects([]);
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 30000);
+    return () => { active = false; window.clearInterval(interval); projectSubscribers.delete(callback); };
+  }
   // Immediately deliver current cached state synchronously
   callback(getLocalProjects());
 
@@ -287,6 +313,8 @@ export function listenToProject(projectId: string, callback: (project: Project |
     if (snap.exists()) {
       const p = { id: snap.id, ...snap.data() } as Project;
       callback(p);
+    } else {
+      callback(null);
     }
   }, () => {
     // Ignore in fallback mode
@@ -313,7 +341,7 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
   set.add(callback);
 
   // Immediately deliver current cached state synchronously
-  const saved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
   if (saved) {
     try {
       callback(JSON.parse(saved));
@@ -326,11 +354,9 @@ export function listenToPositions(projectId: string, callback: (positions: Posit
 
   const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Position);
-      localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(list));
-      notifyPositionsSubscribers(projectId, list);
-    }
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Position);
+    dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(list));
+    notifyPositionsSubscribers(projectId, list);
   }, () => {
     // Ignore in fallback mode
   });
@@ -356,7 +382,7 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
   set.add(callback);
 
   // Immediately deliver current cached state synchronously
-  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   if (saved) {
     try {
       callback(JSON.parse(saved));
@@ -369,11 +395,9 @@ export function listenToRooms(projectId: string, callback: (rooms: Room[]) => vo
 
   const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Room);
-      localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(list));
-      notifyRoomsSubscribers(projectId, list);
-    }
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Room);
+    dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(list));
+    notifyRoomsSubscribers(projectId, list);
   }, () => {
     // Fallback mode
   });
@@ -399,7 +423,7 @@ export function listenToPlans(projectId: string, callback: (plans: PlanDocument[
   set.add(callback);
 
   // Immediately deliver current cached state synchronously
-  const saved = localStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
   if (saved) {
     try {
       callback(JSON.parse(saved));
@@ -412,11 +436,9 @@ export function listenToPlans(projectId: string, callback: (plans: PlanDocument[
 
   const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'plans');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as PlanDocument);
-      localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(list));
-      notifyPlansSubscribers(projectId, list);
-    }
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as PlanDocument);
+    dataStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(list));
+    notifyPlansSubscribers(projectId, list);
   }, () => {
     // Fallback mode
   });
@@ -486,22 +508,7 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
   let projectList: Addendum[] = [];
 
   const emitMerged = () => {
-    const map = new Map<string, Addendum>();
-
-    // 1. Seed from local storage
-    getLocalAddendums(projectId).forEach(a => {
-      if (a.projectId === projectId || !a.projectId) {
-        map.set(a.id, a);
-      }
-    });
-
-    // 2. Merge with the tenant-scoped Firestore collection
-    projectList.forEach(a => {
-      const existing = map.get(a.id);
-      map.set(a.id, existing ? { ...existing, ...a } : a);
-    });
-
-    const normalized: Addendum[] = Array.from(map.values()).map(item => ({
+    const normalized: Addendum[] = projectList.map(item => ({
       ...item,
       // Normalize 'synced' status from mobile to 'pending'
       status: (item.status && (item.status as string) !== 'synced') ? item.status : 'pending',
@@ -533,22 +540,27 @@ export function listenToAddendums(projectId: string, callback: (addendums: Adden
 
 // Delete a single project and clean all associated local data, users & Firestore subcollections
 export async function deleteProject(projectId: string): Promise<void> {
-  addDeletedProjectId(projectId);
+  const projectRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId);
+  await setDoc(projectRef, {
+    status: 'deleted',
+    isDeleted: true,
+    deletedAt: new Date().toISOString()
+  }, { merge: true });
   const current = getLocalProjects().filter(p => p.id !== projectId);
   saveLocalProjects(current);
-  localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
-  localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
-  localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
-  localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
-  localStorage.removeItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
-  localStorage.removeItem('burk_tooltime_aufmasse_' + projectId);
+  dataStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  dataStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  dataStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  dataStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + projectId);
+  dataStorage.removeItem(LOCAL_STORAGE_ADDENDUMS_PREFIX + projectId);
+  dataStorage.removeItem('burk_tooltime_aufmasse_' + projectId);
 
-  const activeSavedId = localStorage.getItem('burk_tooltime_active_project_id');
+  const activeSavedId = dataStorage.getItem('burk_tooltime_active_project_id');
   if (activeSavedId === projectId) {
     if (current.length > 0) {
-      localStorage.setItem('burk_tooltime_active_project_id', current[0].id);
+      dataStorage.setItem('burk_tooltime_active_project_id', current[0].id);
     } else {
-      localStorage.removeItem('burk_tooltime_active_project_id');
+      dataStorage.removeItem('burk_tooltime_active_project_id');
     }
   }
 
@@ -559,20 +571,7 @@ export async function deleteProject(projectId: string): Promise<void> {
   notifyPlansSubscribers(projectId, []);
 
   try {
-    const projectRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId);
-
-    // 1. Mark as tombstone (status: deleted, isDeleted: true) so all clients filter it out permanently
-    try {
-      await setDoc(projectRef, {
-        status: 'deleted',
-        isDeleted: true,
-        deletedAt: new Date().toISOString()
-      }, { merge: true });
-    } catch {
-      // Document might be offline
-    }
-
-    // 2. Wipe all subcollection documents in Firestore
+    // Wipe all subcollection documents in Firestore after the tombstone is durable.
     const subcollections = [
       'positions',
       'items',
@@ -600,55 +599,25 @@ export async function deleteProject(projectId: string): Promise<void> {
         }
       } catch (subErr) {
         console.warn(`Error wiping subcollection ${sub} for project ${projectId}:`, subErr);
+        throw subErr;
       }
-    }
-
-    // Also update local users cache
-    try {
-      const localUsers = getLocalUsers();
-      let usersChanged = false;
-      const updatedLocalUsers = localUsers.map(u => {
-        if (Array.isArray(u.assignedProjectIds) && u.assignedProjectIds.includes(projectId)) {
-          usersChanged = true;
-          return {
-            ...u,
-            assignedProjectIds: u.assignedProjectIds.filter(id => id !== projectId)
-          };
-        }
-        return u;
-      });
-      if (usersChanged) {
-        localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updatedLocalUsers));
-      }
-    } catch {
-      // ignore
     }
 
     console.log(`✅ Project ${projectId} completely marked as deleted in Firestore and wiped from caches.`);
   } catch (err: any) {
     console.warn('Firestore deleteProject error:', err.message);
+    throw err;
   }
 }
 
 // Clear all projects completely
 export async function clearAllProjects(): Promise<void> {
   const current = getLocalProjects();
-  saveLocalProjects([]);
   for (const p of current) {
-    localStorage.removeItem(LOCAL_STORAGE_POSITIONS_PREFIX + p.id);
-    localStorage.removeItem(LOCAL_STORAGE_ROOMS_PREFIX + p.id);
-    localStorage.removeItem(LOCAL_STORAGE_ALERTS_PREFIX + p.id);
-    localStorage.removeItem(LOCAL_STORAGE_PLANS_PREFIX + p.id);
-    try {
-      await deleteDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', p.id));
-    } catch {
-      // ignore
-    }
+    await deleteProject(p.id);
   }
-  localStorage.removeItem('burk_tooltime_active_project_id');
+  dataStorage.removeItem('burk_tooltime_active_project_id');
 }
-
-let isStorageReachable: boolean | null = null;
 
 export async function uploadPlanFile(
   projectId: string,
@@ -660,99 +629,29 @@ export async function uploadPlanFile(
   const ext = isPdf ? '.pdf' : '.dwg';
   const storagePath = `tenants/${getActiveTenantId()}/projects/${projectId}/plans/${planId}${ext}`;
   
-  if (!storage || isStorageReachable === false) {
-    if (onProgress) onProgress(100);
-    const localUrl = URL.createObjectURL(file);
-    return {
-      downloadUrl: localUrl,
-      dwgUrl: localUrl,
-      pdfUrl: localUrl,
-      storagePath
-    };
-  }
+  if (!storage) throw new Error('Firebase Storage ist nicht konfiguriert. Der Plan wurde nicht gespeichert.');
 
-  return new Promise((resolve) => {
-    let isSettled = false;
-    let uploadTask: any = null;
-
-    const safeSettle = (res: { downloadUrl: string; storagePath: string; dwgUrl?: string; pdfUrl?: string }) => {
-      if (isSettled) return;
-      isSettled = true;
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-      if (onProgress) onProgress(100);
-      resolve({
-        downloadUrl: res.downloadUrl,
-        storagePath: res.storagePath,
-        dwgUrl: res.dwgUrl || res.downloadUrl,
-        pdfUrl: res.pdfUrl || res.downloadUrl
-      });
-    };
-
-    // Safety timeout: 3.5s per file max. If network hangs, CORS blocked, or bucket is 404, fallback quickly
-    const timeoutTimer = setTimeout(() => {
-      if (!isSettled) {
-        console.warn(`Firebase Storage upload timed out for ${file.name}. Falling back to local URL.`);
-        isStorageReachable = false;
-        try {
-          if (uploadTask && typeof uploadTask.cancel === 'function') uploadTask.cancel();
-        } catch {}
-        safeSettle({
-          downloadUrl: URL.createObjectURL(file),
-          storagePath
-        });
+  return new Promise((resolve, reject) => {
+    const uploadTask = uploadBytesResumable(ref(storage, storagePath), file);
+    uploadTask.on('state_changed', (snapshot) => {
+      if (snapshot.totalBytes > 0) {
+        onProgress?.(Math.round(snapshot.bytesTransferred / snapshot.totalBytes * 100));
       }
-    }, 3500);
-
-    try {
-      const storageRef = ref(storage, storagePath);
-      uploadTask = uploadBytesResumable(storageRef, file);
-
-      uploadTask.on(
-        'state_changed',
-        (snapshot: any) => {
-          if (!isSettled && snapshot.totalBytes > 0) {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            if (onProgress) onProgress(Math.min(100, Math.round(progress)));
-          }
-        },
-        (error: any) => {
-          console.warn('Firebase Storage upload failed, fallback to local URL:', error.message || error);
-          isStorageReachable = false;
-          safeSettle({
-            downloadUrl: URL.createObjectURL(file),
-            storagePath
-          });
-        },
-        async () => {
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            isStorageReachable = true;
-            safeSettle({ downloadUrl, storagePath });
-          } catch (err) {
-            console.warn('Failed to retrieve download URL, using local fallback:', err);
-            isStorageReachable = false;
-            safeSettle({
-              downloadUrl: URL.createObjectURL(file),
-              storagePath
-            });
-          }
-        }
-      );
-    } catch (err) {
-      console.warn('Storage upload initiation error, fallback to local URL:', err);
-      isStorageReachable = false;
-      safeSettle({
-        downloadUrl: URL.createObjectURL(file),
-        storagePath
-      });
-    }
+    }, reject, async () => {
+      try {
+        const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+        resolve({ downloadUrl, storagePath, dwgUrl: downloadUrl, pdfUrl: downloadUrl });
+      } catch (error) {
+        reject(error);
+      }
+    });
   });
 }
 
 export async function savePlan(projectId: string, plan: PlanDocument): Promise<void> {
   const current = getLocalPlans(projectId);
   const updated = [plan, ...current.filter(p => p.id !== plan.id)];
-  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
   notifyPlansSubscribers(projectId, updated);
 
   try {
@@ -761,13 +660,14 @@ export async function savePlan(projectId: string, plan: PlanDocument): Promise<v
     await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { plansCount: updated.length });
   } catch (err: any) {
     console.warn('Firestore savePlan error:', err.message);
+    throw err;
   }
 }
 
 export async function updatePlanFloor(projectId: string, planId: string, newFloor: PlanLevel): Promise<void> {
   const current = getLocalPlans(projectId);
   const updated = current.map(p => p.id === planId ? { ...p, floor: newFloor, level: newFloor } : p);
-  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
   notifyPlansSubscribers(projectId, updated);
 
   try {
@@ -775,13 +675,14 @@ export async function updatePlanFloor(projectId: string, planId: string, newFloo
     await updateDoc(pRef, { floor: newFloor, level: newFloor });
   } catch (err: any) {
     console.warn('Firestore updatePlanFloor error:', err.message);
+    throw err;
   }
 }
 
 export async function deletePlan(projectId: string, planId: string): Promise<void> {
   const current = getLocalPlans(projectId);
   const updated = current.filter(p => p.id !== planId);
-  localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + projectId, JSON.stringify(updated));
   notifyPlansSubscribers(projectId, updated);
 
   try {
@@ -790,6 +691,7 @@ export async function deletePlan(projectId: string, planId: string): Promise<voi
     await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { plansCount: updated.length });
   } catch (err: any) {
     console.warn('Firestore deletePlan error:', err.message);
+    throw err;
   }
 }
 
@@ -813,15 +715,15 @@ export async function createProject(
 
   // Save positions, rooms, and plans locally
   if (positions.length > 0) {
-    localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id, JSON.stringify(positions));
+    dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + project.id, JSON.stringify(positions));
     notifyPositionsSubscribers(project.id, positions as Position[]);
   }
   if (rooms.length > 0) {
-    localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id, JSON.stringify(rooms));
+    dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + project.id, JSON.stringify(rooms));
     notifyRoomsSubscribers(project.id, rooms);
   }
   if (plans.length > 0) {
-    localStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + project.id, JSON.stringify(plans));
+    dataStorage.setItem(LOCAL_STORAGE_PLANS_PREFIX + project.id, JSON.stringify(plans));
     notifyPlansSubscribers(project.id, plans);
   }
 
@@ -873,18 +775,19 @@ export async function createProject(
     }
   } catch (err: any) {
     console.warn('Firestore project write failed, preserved in local storage:', err.message);
+    throw err;
   }
 }
 
 export async function savePositionsBatch(projectId: string, positions: Partial<Position>[]) {
   // Save local
-  const currentSaved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  const currentSaved = dataStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
   const currentList: Partial<Position>[] = currentSaved ? JSON.parse(currentSaved) : [];
   const mergedMap = new Map<string, Partial<Position>>();
   currentList.forEach(p => p.id && mergedMap.set(p.id, p));
   positions.forEach(p => p.id && mergedMap.set(p.id, p));
   const mergedList = Array.from(mergedMap.values());
-  localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(mergedList));
+  dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(mergedList));
 
   // Also update project totalPositions
   const projects = getLocalProjects().map(p => {
@@ -925,11 +828,12 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
     await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { totalPositions: mergedList.length });
   } catch (err: any) {
     console.warn('Firestore savePositionsBatch error:', err.message);
+    throw err;
   }
 }
 
 export async function addPositionDeliveredQty(projectId: string, positionIdOrPosNr: string, additionalQty: number, qu?: string) {
-  const currentSaved = localStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  const currentSaved = dataStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
   const currentList: Position[] = currentSaved ? JSON.parse(currentSaved) : [];
   let matchedId = positionIdOrPosNr;
   let found = false;
@@ -968,7 +872,7 @@ export async function addPositionDeliveredQty(projectId: string, positionIdOrPos
     updated.push(newPos);
   }
 
-  localStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(updated));
 
   try {
     const target = updated.find(p => p.id === matchedId);
@@ -978,6 +882,7 @@ export async function addPositionDeliveredQty(projectId: string, positionIdOrPos
     }
   } catch (err: any) {
     console.warn('Firestore addPositionDeliveredQty error:', err.message);
+    throw err;
   }
 }
 
@@ -1012,7 +917,7 @@ export async function convertAddendumToLvPosition(
   if (data.roomId && data.rooms) {
     targetRoom = data.rooms.find(r => r.id === data.roomId || r.code === data.roomId);
   } else if (data.roomId) {
-    const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+    const saved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
     const list: Room[] = saved ? JSON.parse(saved) : [];
     targetRoom = list.find(r => r.id === data.roomId || r.code === data.roomId);
   }
@@ -1083,24 +988,25 @@ export async function convertAddendumToLvPosition(
 }
 
 export async function saveRoom(projectId: string, room: Room) {
-  const currentSaved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const currentSaved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   const currentList: Room[] = currentSaved ? JSON.parse(currentSaved) : [];
   const updated = [room, ...currentList.filter(r => r.id !== room.id)];
-  localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
 
   try {
     const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'rooms', room.id);
     await setDoc(ref, room, { merge: true });
   } catch (err: any) {
     console.warn('Firestore saveRoom error:', err.message);
+    throw err;
   }
 }
 
 export async function deleteRoom(projectId: string, roomId: string) {
-  const currentSaved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const currentSaved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   if (currentSaved) {
     const currentList: Room[] = JSON.parse(currentSaved);
-    localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(currentList.filter(r => r.id !== roomId)));
+    dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(currentList.filter(r => r.id !== roomId)));
   }
 
   try {
@@ -1108,6 +1014,7 @@ export async function deleteRoom(projectId: string, roomId: string) {
     await deleteDoc(ref);
   } catch (err: any) {
     console.warn('Firestore deleteRoom error:', err.message);
+    throw err;
   }
 }
 
@@ -1159,6 +1066,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
     await setDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'addendums', addId), payload, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAddendum error:', err.message);
+    throw err;
   }
 
   return payload;
@@ -1192,6 +1100,7 @@ export async function updateAddendumStatus(
       await setDoc(projRef, payload, { merge: true });
     } catch (err: any) {
       console.warn('Firestore updateAddendumStatus project error:', err.message);
+      throw err;
     }
   }
 }
@@ -1255,7 +1164,7 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
   set.add(callback);
 
   // Immediately deliver current cached state synchronously
-  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   if (saved) {
     try {
       callback(JSON.parse(saved));
@@ -1268,11 +1177,9 @@ export function listenToAlerts(projectId: string, callback: (alerts: Alert[]) =>
 
   const colRef = collection(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'alerts');
   const unsubFirestore = onSnapshot(colRef, (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Alert);
-      localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(list));
-      notifyAlertsSubscribers(projectId, list);
-    }
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Alert);
+    dataStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(list));
+    notifyAlertsSubscribers(projectId, list);
   }, () => {
     // Fallback mode
   });
@@ -1290,7 +1197,7 @@ export async function updateAlertStatus(
   status: 'open' | 'reordered' | 'billed' | 'acknowledged',
   actionNote?: string
 ) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
   const updated = currentList.map(a => {
     if (a.id === alertId) {
@@ -1303,7 +1210,7 @@ export async function updateAlertStatus(
     }
     return a;
   });
-  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
   notifyAlertsSubscribers(projectId, updated);
 
   try {
@@ -1315,14 +1222,15 @@ export async function updateAlertStatus(
     });
   } catch (err: any) {
     console.warn('Firestore updateAlertStatus error:', err.message);
+    throw err;
   }
 }
 
 export async function deleteAlert(projectId: string, alertId: string) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   const currentList: Alert[] = saved ? JSON.parse(saved) : (projectId === DEFAULT_PROJECT_ID ? MOCK_ALERTS : []);
   const updated = currentList.filter(a => a.id !== alertId);
-  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
   notifyAlertsSubscribers(projectId, updated);
 
   try {
@@ -1330,14 +1238,15 @@ export async function deleteAlert(projectId: string, alertId: string) {
     await deleteDoc(ref);
   } catch (err: any) {
     console.warn('Firestore deleteAlert error:', err.message);
+    throw err;
   }
 }
 
 export async function createAlert(projectId: string, alert: Alert) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId);
   const currentList: Alert[] = saved ? JSON.parse(saved) : [];
   const updated = [alert, ...currentList.filter(a => a.id !== alert.id)];
-  localStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ALERTS_PREFIX + projectId, JSON.stringify(updated));
   notifyAlertsSubscribers(projectId, updated);
 
   try {
@@ -1345,6 +1254,7 @@ export async function createAlert(projectId: string, alert: Alert) {
     await setDoc(ref, alert, { merge: true });
   } catch (err: any) {
     console.warn('Firestore createAlert error:', err.message);
+    throw err;
   }
 }
 
@@ -1355,7 +1265,7 @@ export async function completeRoom(
   completedBy: string = 'Florian Buck (Projektleiter)'
 ) {
   const now = new Date().toISOString();
-  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   const currentList: Room[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(r => {
     if (r.id === roomId) {
@@ -1375,7 +1285,7 @@ export async function completeRoom(
     }
     return r;
   });
-  localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
   notifyRoomsSubscribers(projectId, updated);
 
   try {
@@ -1393,6 +1303,7 @@ export async function completeRoom(
     });
   } catch (err: any) {
     console.warn('Firestore completeRoom error:', err.message);
+    throw err;
   }
 }
 
@@ -1533,7 +1444,7 @@ export async function updateRoomMaterialActual(
   positionId: string,
   actualQty: number
 ) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
+  const saved = dataStorage.getItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId);
   const currentList: Room[] = saved ? JSON.parse(saved) : [];
   const updated = currentList.map(r => {
     if (r.id === roomId) {
@@ -1547,7 +1458,7 @@ export async function updateRoomMaterialActual(
     }
     return r;
   });
-  localStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
+  dataStorage.setItem(LOCAL_STORAGE_ROOMS_PREFIX + projectId, JSON.stringify(updated));
   notifyRoomsSubscribers(projectId, updated);
 
   try {
@@ -1558,142 +1469,35 @@ export async function updateRoomMaterialActual(
     }
   } catch (err: any) {
     console.warn('Firestore updateRoomMaterialActual error:', err.message);
+    throw err;
   }
 }
 
 // -------------------------------------------------------------
 // USER MANAGEMENT & STAKEHOLDER ROLES
 // -------------------------------------------------------------
-export const MOCK_USERS: User[] = [
-  {
-    id: 'user_admin_1',
-    name: 'Florian Burk',
-    role: 'admin',
-    email: 'f.burk@burk-haustechnik.de',
-    password: 'Admin2026!',
-    phone: '+49 751 98765-0',
-    status: 'active',
-    createdAt: '2026-01-10T08:00:00.000Z'
-  },
-  {
-    id: 'user_bl_1',
-    name: 'Florian Buck',
-    role: 'projektleiter',
-    email: 'f.buck@burk-haustechnik.de',
-    password: 'Bauleiter2026!',
-    phone: '+49 171 1234567',
-    status: 'active',
-    createdAt: '2026-02-01T09:00:00.000Z'
-  },
-  {
-    id: 'user_bl_2',
-    name: 'Michael Weber',
-    role: 'projektleiter',
-    email: 'm.weber@burk-haustechnik.de',
-    password: 'Bauleiter2026!',
-    phone: '+49 171 2345678',
-    status: 'active',
-    createdAt: '2026-03-15T09:00:00.000Z'
-  },
-  {
-    id: 'user_kfm_1',
-    name: 'Sabine Müller',
-    role: 'kaufmaennisch',
-    email: 's.mueller@burk-haustechnik.de',
-    password: 'Kfm2026!',
-    phone: '+49 751 98765-12',
-    status: 'active',
-    createdAt: '2026-01-15T08:30:00.000Z'
-  },
-  {
-    id: 'user_kfm_2',
-    name: 'Andreas Schmidt',
-    role: 'kaufmaennisch',
-    email: 'a.schmidt@burk-haustechnik.de',
-    password: 'Kfm2026!',
-    phone: '+49 751 98765-14',
-    status: 'active',
-    createdAt: '2026-02-10T08:30:00.000Z'
-  },
-  {
-    id: 'user_mont_1',
-    name: 'Ion Popescu',
-    role: 'monteur',
-    email: 'i.popescu@burk-haustechnik.de',
-    phone: '+49 172 3456789',
-    pin: '1234',
-    defaultLanguage: 'ro',
-    status: 'active',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    createdAt: '2026-04-01T07:00:00.000Z'
-  },
-  {
-    id: 'user_mont_2',
-    name: 'Tomasz Novak',
-    role: 'monteur',
-    email: 't.novak@burk-haustechnik.de',
-    phone: '+49 172 4567890',
-    pin: '4821',
-    defaultLanguage: 'pl',
-    status: 'active',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    createdAt: '2026-04-01T07:00:00.000Z'
-  },
-  {
-    id: 'user_mont_3',
-    name: 'Marko Horvat',
-    role: 'monteur',
-    email: 'm.horvat@burk-haustechnik.de',
-    phone: '+49 172 5678901',
-    pin: '9012',
-    defaultLanguage: 'hr',
-    status: 'active',
-    assignedProjectIds: ['hallenbad-weingarten'],
-    createdAt: '2026-05-15T07:00:00.000Z'
-  },
-  {
-    id: 'user_mont_4',
-    name: 'Stefan Maier',
-    role: 'monteur',
-    email: 's.maier@burk-haustechnik.de',
-    phone: '+49 172 6789012',
-    pin: '5578',
-    defaultLanguage: 'de',
-    status: 'active',
-    assignedProjectIds: ['gemeindehaus-bavendorf'],
-    createdAt: '2026-06-01T07:00:00.000Z'
-  }
-];
-
 /**
- * Normalizes and deduplicates user lists by canonical person identity (normalized name).
- * Combines richer information (email, phone, pin, role, project assignments) and ensures
- * each person appears exactly once in the entire application.
+ * Deduplicates membership snapshots by Firebase UID. Names are not unique identities.
  */
 export function normalizeAndDeduplicateUsers(users: User[]): User[] {
-  const byName = new Map<string, User>();
+  const byUid = new Map<string, User>();
 
   for (const user of users) {
-    if (!user || !user.name) continue;
-    const key = user.name.trim().toLowerCase();
-    const existing = byName.get(key);
+    if (!user?.id) continue;
+    const existing = byUid.get(user.id);
 
     if (!existing) {
-      byName.set(key, { ...user });
+      byUid.set(user.id, { ...user });
     } else {
       const mergedAssignments = Array.from(new Set([
         ...(existing.assignedProjectIds || []),
         ...(user.assignedProjectIds || [])
       ]));
 
-      // Keep standard prefixed ID if available (e.g. user_mont_1 over slug)
-      const keepExistingId = Boolean(existing.id && existing.id.startsWith('user_'));
-      const finalId = keepExistingId ? existing.id : (user.id || existing.id);
-
       const merged: User = {
         ...existing,
         ...user,
-        id: finalId,
+        id: existing.id,
         name: existing.name || user.name,
         role: existing.role || user.role,
         email: existing.email || user.email || '',
@@ -1704,16 +1508,16 @@ export function normalizeAndDeduplicateUsers(users: User[]): User[] {
         status: existing.status || user.status || 'active'
       };
 
-      byName.set(key, merged);
+      byUid.set(user.id, merged);
     }
   }
 
-  return Array.from(byName.values());
+  return Array.from(byUid.values());
 }
 
 export function getLocalUsers(): User[] {
   try {
-    const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
+    const saved = dataStorage.getItem(LOCAL_STORAGE_USERS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -1732,37 +1536,24 @@ export function listenToUsers(callback: (users: User[]) => void) {
 
   const colRef = collection(db, 'tenants', getActiveTenantId(), 'members');
   return onSnapshot(colRef, (snap) => {
-    if (!snap.empty) {
-      const list = snap.docs.map(d => {
-        const data = d.data();
-        return { id: d.id, ...data, name: data.displayName || data.name || '', email: data.email || undefined } as User;
-      });
-      const merged = normalizeAndDeduplicateUsers(list);
-      localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(merged));
-      callback(merged);
-    } else {
-      callback(getLocalUsers());
-    }
-  }, () => {
-    callback(getLocalUsers());
+    const list = snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, name: data.displayName || data.name || '', email: data.email || undefined } as User;
+    });
+    const merged = normalizeAndDeduplicateUsers(list);
+    dataStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(merged));
+    callback(merged);
+  }, (error) => {
+    console.error('Firestore members listener failed:', error);
+    callback([]);
   });
 }
 
-export async function saveUser(user: User) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-  const currentList: User[] = saved ? JSON.parse(saved) : [];
-  const updated = [user, ...currentList.filter(u => u.id !== user.id)];
-  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
-
+export async function saveUser(_user: User) {
   throw new Error('Benutzeränderungen erfolgen ausschließlich über die tenantbezogene Admin-API.');
 }
 
-export async function updateUserPin(userId: string, pin: string) {
-  const saved = localStorage.getItem(LOCAL_STORAGE_USERS_KEY);
-  const currentList: User[] = saved ? JSON.parse(saved) : [];
-  const updated = currentList.map(u => u.id === userId ? { ...u, pin } : u);
-  localStorage.setItem(LOCAL_STORAGE_USERS_KEY, JSON.stringify(updated));
-
+export async function updateUserPin(_userId: string, _pin: string) {
   throw new Error('Cloud-PINs werden im neuen Authentifizierungsmodell nicht mehr unterstützt.');
 }
 
@@ -1789,33 +1580,7 @@ export async function updateProjectDetails(projectId: string, partial: Partial<P
     }), { merge: true });
   } catch (err: any) {
     console.warn('Firestore updateProjectDetails error:', err.message);
-  }
-}
-
-// -------------------------------------------------------------
-// AUTHENTICATION & PASSWORD MANAGEMENT
-// -------------------------------------------------------------
-const LOCAL_STORAGE_AUTH_USER_KEY = 'burk_tooltime_auth_user';
-
-export function getCurrentAuthUser(): User | null {
-  try {
-    const raw = localStorage.getItem(LOCAL_STORAGE_AUTH_USER_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Error reading auth user from localStorage:', e);
-  }
-  return null;
-}
-
-export function setCurrentAuthUser(user: User | null): void {
-  try {
-    if (user) {
-      localStorage.setItem(LOCAL_STORAGE_AUTH_USER_KEY, JSON.stringify(user));
-    } else {
-      localStorage.removeItem(LOCAL_STORAGE_AUTH_USER_KEY);
-    }
-  } catch (e) {
-    console.warn('Error saving auth user to localStorage:', e);
+    throw err;
   }
 }
 

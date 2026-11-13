@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 
 import type { TenantBranding } from '../types/branding';
-import { readableTextColor } from '../types/branding';
 import type { User } from '../types';
 import { ADMIN_PANEL_VERSION } from '../version';
 
@@ -37,6 +36,7 @@ interface SidebarProps {
   branding: TenantBranding | null;
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  onProjectTabWithoutProject: () => void;
   openAddendumsCount: number;
   totalPositionsCount: number;
   totalRoomsCount: number;
@@ -52,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   branding,
   setActiveTab,
+  onProjectTabWithoutProject,
   openAddendumsCount,
   totalPositionsCount,
   totalRoomsCount,
@@ -143,8 +144,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                style={isActive ? { color: readableTextColor(branding?.primaryColor || '#7437D9') } : undefined}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (!hasActiveProject) onProjectTabWithoutProject();
+                }}
                 className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   isActive
                     ? 'tenant-nav-active shadow-sm'
@@ -157,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 {item.badge && (
                   <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-                    item.badgeColor || (isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400')
+                    item.badgeColor || (isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-white')
                   }`}>
                     {item.badge}
                   </span>
@@ -216,7 +219,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  style={isActive ? { color: readableTextColor(branding?.primaryColor || '#7437D9') } : undefined}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                     isActive
                       ? 'tenant-nav-active shadow-sm'

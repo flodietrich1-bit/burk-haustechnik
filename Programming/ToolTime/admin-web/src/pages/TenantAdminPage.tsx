@@ -2,11 +2,43 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Building2, LogOut, Mail, Phone, Plus, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getDownloadURL, ref } from 'firebase/storage';
+import { collection, doc, getDocs, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../auth/AuthProvider';
-import { storage } from '../firebase';
+import { auth, db, storage } from '../firebase';
 import { api } from '../services/apiClient';
 
 interface Tenant { id: string; name: string; status: string; branding?: { logoPath?: string | null; logoZoom?: number }; company?: { contactName?: string; phone?: string; email?: string }; counters?: { activeUsers?: number; inactiveUsers?: number; activeProjects?: number; inactiveProjects?: number }; }
+
+function publicSlugForName(value: string) {
+  return value.trim().toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'firma';
+}
+
+async function createTenantInFirestore(input: { name: string; contactName: string; phone: string; email: string; primaryColor: string; secondaryColor: string }) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Bitte melde dich erneut an.');
+  const base = publicSlugForName(input.name);
+  const reserved = new Set(['admin', 'invite', 'login', 't', 'api']);
+  const slug = reserved.has(base) ? `${base}-${crypto.randomUUID().slice(0, 8)}` : base;
+  const tenantId = await runTransaction(db, async transaction => {
+    const preferredRef = doc(db, 'tenants', slug);
+    const preferred = await transaction.get(preferredRef);
+    const id = preferred.exists() ? `${base.slice(0, 49)}-${crypto.randomUUID().slice(0, 8)}` : slug;
+    const tenantRef = doc(db, 'tenants', id);
+    if (preferred.exists() && (await transaction.get(tenantRef)).exists()) throw new Error('Der Firmenname ist bereits vergeben. Bitte versuche es erneut.');
+    transaction.set(tenantRef, {
+      name: input.name.trim(), slug: id, publicSlug: id, status: 'active',
+      branding: { primaryColor: input.primaryColor, secondaryColor: input.secondaryColor, logoPath: null, logoZoom: 1, logoVersion: 0 },
+      company: { legalName: input.name.trim(), contactName: input.contactName.trim(), phone: input.phone.trim(), email: input.email.trim() },
+      counters: { activeUsers: 0, projects: 0 }, createdBy: uid,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+    return id;
+  });
+  return tenantId;
+}
 
 export function TenantAdminPage() {
   const { logout } = useAuth();
@@ -21,7 +53,22 @@ export function TenantAdminPage() {
   const [primaryColor, setPrimaryColor] = useState('#7E3FE6');
   const [secondaryColor, setSecondaryColor] = useState('#1F1A4D');
   const [error, setError] = useState('');
-  const load = () => api<Tenant[]>('/tenants').then(setTenants).catch(e => setError(e instanceof Error ? e.message : 'Firmen konnten nicht geladen werden.'));
+  const load = async () => {
+    try {
+      const data = await api<Tenant[]>('/tenants');
+      if (!Array.isArray(data)) throw new Error('INVALID_TENANT_RESPONSE');
+      setTenants(data);
+      setError('');
+    } catch {
+      try {
+        const snapshot = await getDocs(collection(db, 'tenants'));
+        setTenants(snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as Tenant));
+        setError('Die Verwaltung ist derzeit eingeschränkt. Firmendaten werden direkt aus Firestore angezeigt.');
+      } catch {
+        setError('Firmen konnten nicht geladen werden. Bitte melde dich erneut an.');
+      }
+    }
+  };
   useEffect(() => { void load(); }, []);
   useEffect(() => {
     let active = true;
@@ -38,7 +85,12 @@ export function TenantAdminPage() {
   async function create(event: FormEvent) {
     event.preventDefault(); setError('');
     try {
-      await api('/tenants', { method: 'POST', body: JSON.stringify({ name, primaryColor, secondaryColor, company: { legalName: name, contactName, phone, email } }) });
+      try {
+        await api('/tenants', { method: 'POST', body: JSON.stringify({ name, primaryColor, secondaryColor, company: { legalName: name, contactName, phone, email } }) });
+      } catch (apiError) {
+        if (!(apiError instanceof Error) || apiError.name !== 'ApiConnectionError') throw apiError;
+        await createTenantInFirestore({ name, contactName, phone, email, primaryColor, secondaryColor });
+      }
       setShowForm(false); setName(''); setContactName(''); setPhone(''); setEmail(''); await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Firma konnte nicht angelegt werden.'); }
   }

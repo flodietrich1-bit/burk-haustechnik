@@ -4,3 +4,8 @@ runConfig:
   minInstances: 0
   maxInstances: 10
   concurrency: 80
+env:
+  - variable: BACKEND_API_URL
+    value: https://tooltime-api-209459117942.europe-west4.run.app
+    availability:
+      - RUNTIME

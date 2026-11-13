@@ -50,12 +50,29 @@ body {
 }
 
 /* Firmencockpit: helle Oberfläche, Firmenfarben nur für Akzente. */
-.tenant-cockpit { --tenant-primary: #7437D9; --tenant-secondary: #1F1A4D; }
-.tenant-cockpit .tenant-nav-active { background: var(--tenant-primary); color: white; }
+.tenant-cockpit { --tenant-primary: #7437D9; --tenant-primary-surface: #7437D9; --tenant-primary-text: #FFFFFF; --tenant-secondary: #1F1A4D; }
+.tenant-cockpit .tenant-nav-active { background: var(--tenant-primary-surface); color: var(--tenant-primary-text); }
 .tenant-cockpit aside [class*="text-[#3B82C4]"] { color: var(--tenant-primary); }
 .tenant-cockpit aside [class*="text-slate-400"] { color: #64748b; }
 .tenant-cockpit main h1, .tenant-cockpit main h2 { color: var(--tenant-secondary); }
-.tenant-cockpit main button[class*="bg-[#3B82C4]"], .tenant-cockpit header button[class*="bg-[#3B82C4]"] { background: var(--tenant-primary); color: white; }
+.tenant-cockpit main button[class*="bg-[#3B82C4]"], .tenant-cockpit header button[class*="bg-[#3B82C4]"] { background: var(--tenant-primary-surface); color: var(--tenant-primary-text); }
 .tenant-cockpit header { color: #1e293b; }
 .tenant-cockpit header > div > div button[class*="bg-slate-800"] { background: #f8fafc; border-color: #e2e8f0; color: #1e293b; }
 .tenant-cockpit header > div > div button[class*="bg-slate-800"] span[class*="text-white"] { color: #1e293b; }
+
+@keyframes project-create-shake {
+  0%, 100% { transform: translateX(0); }
+  15%, 45%, 75% { transform: translateX(-9px); }
+  30%, 60%, 90% { transform: translateX(9px); }
+}
+
+.project-create-shake { animation: project-create-shake 650ms ease-in-out; }
+
+.project-form-fields label { font-size: 0.875rem; line-height: 1.4; margin-bottom: 0.5rem; }
+.project-form-fields input:not([type="checkbox"]),
+.project-form-fields select { min-height: 3rem; padding-top: 0.75rem; padding-bottom: 0.75rem; font-size: 0.875rem; }
+.project-form-fields input::placeholder { font-size: 0.875rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .project-create-shake { animation: none; }
+}
