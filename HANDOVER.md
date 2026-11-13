@@ -10,14 +10,14 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.30` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.31` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
 ## 3. Technology Stack
 
-- Expo SDK `~57.0.24`, React Native `0.86.3`, React `19.2.3`; JavaScript only (no TypeScript) [config: `package.json`].
+- Expo SDK `^58.0.0`, React Native `0.88.1`, React `19.3.0`; JavaScript only (no TypeScript) [config: `package.json`].
 - Libraries: `firebase ^12.19` (Firestore, Storage; `getAuth` initialised but sign-in never used), `@react-native-async-storage/async-storage`, `@react-native-community/netinfo`, `expo-file-system`, `expo-image-manipulator`, `expo-image-picker`, `expo-updates`, `expo-status-bar`, `react-native-svg` (ProgressRing) [config/code].
 - Package manager: npm (`package-lock.json`) [config].
 - Backend: Firebase project `burk-haustechnik` (Firestore + Storage); config object hard-coded in `src/services/firebase.js` [code].
@@ -231,6 +231,14 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.31)**
+  - **Ziel / Anlass:** Upgrade auf Expo SDK 58 (`^58.0.0`), React Native `0.88.1` & React `19.3.0` zur vollen Kompatibilität mit der aktuellen Expo Go iOS App.
+  - **Änderungen:**
+    - `package.json` & `package-lock.json`: Expo 58 Module (`expo-camera`, `expo-file-system`, `expo-image-manipulator`, `expo-image-picker`, `expo-status-bar`, `expo-updates`, `react-native-svg`).
+    - `app.json`: Veraltetes `privacy: "public"` entfernt (Schema-Konformität).
+    - `src/constants/version.js`: Bump auf `v2.31`.
+  - **Verifikation:** `npx expo-doctor` mit 20/20 Checks bestanden. `npx expo export` für iOS (816 Module) und Android (815 Module) erfolgreich gebündelt.
 
 - **2026-11-13 (v2.30)**
   - **Ziel / Anlass:** Multi-Tenant Scoping, QR-Code/Invite-Code Geräteaktivierung & Firebase Auth Session-Management.
