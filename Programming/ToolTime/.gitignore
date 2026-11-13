@@ -14,3 +14,4 @@ yarn-debug.log*
 *.mp4
 *.mov
 _intern/
+.firebase/
