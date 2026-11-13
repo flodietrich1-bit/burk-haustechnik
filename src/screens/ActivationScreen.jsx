@@ -9,25 +9,42 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import Svg, { Path } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
-import { t, LANGUAGES } from '../locales/i18n';
-import { parseInviteInput } from '../services/apiService';
+import { t } from '../locales/i18n';
+import { parseInviteInput, resetInstallationId } from '../services/apiService';
 import { activateDeviceWithInvite } from '../services/authService';
 
-export default function ActivationScreen({ onActivationSuccess, currentLang = 'de', onSelectLang }) {
+/**
+ * Clean vector camera silhouette icon
+ */
+function CameraSilhouetteIcon({ size = 22, color = '#FFFFFF' }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color}>
+      <Path d="M4 7c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V9c0-1.1-.9-2-2-2h-3.17l-1.42-2.58A2 2 0 0 0 13.67 3h-3.34a2 2 0 0 0-1.74 1.42L7.17 7H4zm8 11.5A5.5 5.5 0 1 1 17.5 13 5.5 5.5 0 0 1 12 18.5zm0-9A3.5 3.5 0 1 0 15.5 13 3.5 3.5 0 0 0 12 9.5z" />
+    </Svg>
+  );
+}
+
+export default function ActivationScreen({ onActivationSuccess, currentLang = 'de' }) {
   const [codeDraft, setCodeDraft] = useState('');
   const [isActivating, setIsActivating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [scannerVisible, setScannerVisible] = useState(false);
   const [scannedOnce, setScannedOnce] = useState(false);
+  const [scanWarning, setScanWarning] = useState('');
 
   const [permission, requestPermission] = useCameraPermissions();
 
   const handleOpenScanner = async () => {
     setErrorMsg('');
+    setScanWarning('');
     if (!permission?.granted) {
       const res = await requestPermission();
       if (!res?.granted) {
@@ -55,6 +72,8 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       console.warn('Activation error:', err);
       if (err.code === 'INVITE_RATE_LIMITED') {
         setErrorMsg(t('inviteRateLimited', currentLang));
+        // Reset installation ID so next attempt gets a fresh identifier
+        await resetInstallationId();
       } else {
         setErrorMsg(t('inviteInvalid', currentLang));
       }
@@ -68,15 +87,16 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     const rawData = scanningResult?.data;
     if (!rawData) return;
 
-    setScannedOnce(true);
-    setScannerVisible(false);
-
     const { qrToken, code } = parseInviteInput(rawData);
     if (!qrToken && !code) {
-      setErrorMsg(t('inviteInvalid', currentLang));
+      // Do NOT close the scanner, do NOT hit backend to prevent rate-limiting!
+      setScanWarning(t('scanInvalidQr', currentLang));
       return;
     }
 
+    setScannedOnce(true);
+    setScanWarning('');
+    setScannerVisible(false);
     executeActivation({ code, qrToken });
   };
 
@@ -92,96 +112,93 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {/* Language Switcher Bar */}
-        <View style={styles.langBar}>
-          {LANGUAGES.map((lang) => (
-            <TouchableOpacity
-              key={lang.code}
-              style={[styles.langChip, currentLang === lang.code && styles.langChipActive]}
-              onPress={() => onSelectLang && onSelectLang(lang.code)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.langText, currentLang === lang.code && styles.langTextActive]}>
-                {lang.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Branding */}
-        <View style={styles.topInfo}>
-          <View style={styles.brandRow}>
-            <Text style={styles.brandBold}>burk</Text>
-            <Text style={styles.brandSmall}>Haustechnik</Text>
-          </View>
-          <Text style={styles.appTitle}>Materialtracker</Text>
-        </View>
-
-        {/* Title & Instructions */}
-        <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
-        <Text style={styles.subtitle}>{t('activationSubtitle', currentLang)}</Text>
-
-        {/* Error Alert */}
-        {errorMsg ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
-          </View>
-        ) : null}
-
-        {/* Primary Action: QR Code Scanner Button */}
-        <TouchableOpacity
-          style={styles.primaryScanBtn}
-          onPress={handleOpenScanner}
-          disabled={isActivating}
-          activeOpacity={0.8}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
         >
-          <Text style={styles.primaryScanIcon}>📷</Text>
-          <Text style={styles.primaryScanText}>{t('scanQrBtn', currentLang)}</Text>
-        </TouchableOpacity>
+          {/* Burk Branding */}
+          <View style={styles.topInfo}>
+            <View style={styles.brandRow}>
+              <Text style={styles.brandBold}>burk</Text>
+              <Text style={styles.brandSmall}>Haustechnik</Text>
+            </View>
+            <Text style={styles.appTitle}>Materialtracker</Text>
+          </View>
 
-        {/* Divider */}
-        <View style={styles.dividerRow}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>{t('orEnterCode', currentLang)}</Text>
-          <View style={styles.dividerLine} />
-        </View>
+          {/* Title & Instructions */}
+          <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
+          <Text style={styles.subtitle}>{t('activationSubtitle', currentLang)}</Text>
 
-        {/* Manual Code Input */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.codeInput}
-            value={codeDraft}
-            onChangeText={(text) => {
-              setCodeDraft(text.toUpperCase());
-              setErrorMsg('');
-            }}
-            placeholder={t('codePlaceholder', currentLang)}
-            placeholderTextColor={COLORS.muted}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            editable={!isActivating}
-            maxLength={10}
-          />
+          {/* Error Alert */}
+          {errorMsg ? (
+            <View style={styles.errorBox}>
+              <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+            </View>
+          ) : null}
+
+          {/* Primary Action: QR Code Scanner Button */}
           <TouchableOpacity
-            style={[styles.activateBtn, (!codeDraft.trim() || isActivating) && styles.btnDisabled]}
-            onPress={handleManualSubmit}
-            disabled={!codeDraft.trim() || isActivating}
-            activeOpacity={0.7}
+            style={styles.primaryScanBtn}
+            onPress={handleOpenScanner}
+            disabled={isActivating}
+            activeOpacity={0.85}
           >
-            {isActivating ? (
-              <ActivityIndicator color={COLORS.ink} size="small" />
-            ) : (
-              <Text style={styles.activateBtnText}>{t('activateBtn', currentLang)}</Text>
-            )}
+            <CameraSilhouetteIcon size={22} color="#FFFFFF" />
+            <Text style={styles.primaryScanText}>{t('scanQrBtn', currentLang)}</Text>
           </TouchableOpacity>
-        </View>
 
-        {/* Footer info */}
-        <Text style={styles.footerVersion}>
-          {t('appVersionLabel', currentLang, { version: APP_VERSION })}
-        </Text>
-      </View>
+          {/* Divider */}
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>{t('orEnterCode', currentLang)}</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Manual Code Input - Placed comfortably in upper viewport */}
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.codeInput}
+              value={codeDraft}
+              onChangeText={(text) => {
+                setCodeDraft(text.toUpperCase());
+                setErrorMsg('');
+              }}
+              placeholder={t('codePlaceholder', currentLang)}
+              placeholderTextColor={COLORS.muted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              editable={!isActivating}
+              maxLength={10}
+            />
+            <TouchableOpacity
+              style={[styles.activateBtn, (!codeDraft.trim() || isActivating) && styles.btnDisabled]}
+              onPress={handleManualSubmit}
+              disabled={!codeDraft.trim() || isActivating}
+              activeOpacity={0.75}
+            >
+              {isActivating ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.activateBtnText}>{t('activateBtn', currentLang)}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Footer info */}
+          <View style={styles.footerContainer}>
+            <Text style={styles.footerVersion}>
+              {t('appVersionLabel', currentLang, { version: APP_VERSION })}
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* QR Code Scanner Camera Modal */}
       <Modal
@@ -207,6 +224,13 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
               <Text style={styles.scannerHint}>{t('scanHint', currentLang)}</Text>
             </View>
 
+            {/* Warning if non-invite QR code scanned */}
+            {scanWarning ? (
+              <View style={styles.scanWarningBox}>
+                <Text style={styles.scanWarningText}>⚠️ {scanWarning}</Text>
+              </View>
+            ) : null}
+
             {/* Target Reticle */}
             <View style={styles.reticleFrame}>
               <View style={[styles.corner, styles.topLeft]} />
@@ -229,7 +253,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       {/* Activating Loading Screen */}
       {isActivating ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={COLORS.amber} />
+          <ActivityIndicator size="large" color={COLORS.primary} />
           <Text style={styles.loadingText}>{t('activating', currentLang)}</Text>
         </View>
       ) : null}
@@ -240,40 +264,23 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.bg,
+    backgroundColor: '#FFFFFF',
   },
-  container: {
+  keyboardAvoid: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
-    justifyContent: 'center',
+    paddingTop: 36,
+    paddingBottom: 24,
     alignItems: 'center',
-  },
-  langBar: {
-    position: 'absolute',
-    top: 16,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  langChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#E2E8F0',
-  },
-  langChipActive: {
-    backgroundColor: COLORS.amber,
-  },
-  langText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.inkSoft,
-  },
-  langTextActive: {
-    color: COLORS.ink,
+    backgroundColor: '#FFFFFF',
   },
   topInfo: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   brandRow: {
     flexDirection: 'row',
@@ -284,7 +291,7 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '900',
     fontStyle: 'italic',
-    color: COLORS.amber,
+    color: COLORS.primary,
   },
   brandSmall: {
     fontSize: 11,
@@ -310,7 +317,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.muted,
     textAlign: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
     lineHeight: 20,
     paddingHorizontal: 16,
   },
@@ -321,7 +328,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 10,
-    marginBottom: 20,
+    marginBottom: 16,
     width: '100%',
   },
   errorText: {
@@ -331,53 +338,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryScanBtn: {
-    backgroundColor: COLORS.amber,
+    backgroundColor: COLORS.primary,
     width: '100%',
-    paddingVertical: 18,
-    borderRadius: 16,
+    paddingVertical: 16,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    shadowColor: COLORS.amber,
+    gap: 10,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryScanIcon: {
-    fontSize: 22,
+    elevation: 3,
   },
   primaryScanText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.ink,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 20,
     width: '100%',
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#CBD5E1',
+    backgroundColor: '#E2E8F0',
   },
   dividerText: {
     paddingHorizontal: 12,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: COLORS.muted,
-    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   inputContainer: {
     width: '100%',
     gap: 12,
   },
   codeInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
     borderColor: '#CBD5E1',
     borderRadius: 14,
     paddingHorizontal: 16,
@@ -389,7 +393,7 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   activateBtn: {
-    backgroundColor: '#E2E8F0',
+    backgroundColor: COLORS.ink,
     paddingVertical: 15,
     borderRadius: 14,
     alignItems: 'center',
@@ -398,14 +402,17 @@ const styles = StyleSheet.create({
   activateBtnText: {
     fontSize: 15,
     fontWeight: '700',
-    color: COLORS.ink,
+    color: '#FFFFFF',
   },
   btnDisabled: {
-    opacity: 0.5,
+    opacity: 0.4,
+  },
+  footerContainer: {
+    marginTop: 32,
+    paddingBottom: 8,
+    alignItems: 'center',
   },
   footerVersion: {
-    position: 'absolute',
-    bottom: 20,
     fontSize: 11,
     color: COLORS.muted,
   },
@@ -423,13 +430,13 @@ const styles = StyleSheet.create({
   },
   scannerHeader: {
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 16,
   },
   scannerTitle: {
-    color: COLORS.amber,
+    color: '#60A5FA',
     fontSize: 18,
     fontWeight: '800',
   },
@@ -437,6 +444,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     marginTop: 4,
+    textAlign: 'center',
+  },
+  scanWarningBox: {
+    backgroundColor: '#991B1B',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    maxWidth: '90%',
+  },
+  scanWarningText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
     textAlign: 'center',
   },
   reticleFrame: {
@@ -448,7 +468,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 32,
     height: 32,
-    borderColor: COLORS.amber,
+    borderColor: '#60A5FA',
   },
   topLeft: {
     top: 0,
@@ -475,26 +495,28 @@ const styles = StyleSheet.create({
     borderRightWidth: 4,
   },
   closeScannerBtn: {
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingHorizontal: 28,
-    paddingVertical: 14,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
   },
   closeScannerText: {
-    color: COLORS.ink,
+    color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
   },
   loadingText: {
-    marginTop: 14,
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.ink,
   },
 });

@@ -393,7 +393,8 @@ export const TRANSLATIONS = {
   // Device Activation & QR Onboarding
   activationTitle: { de: 'Geräte-Aktivierung', ro: 'Activare dispozitiv', pl: 'Aktywacja urządzenia', hr: 'Aktivacija uređaja' },
   activationSubtitle: { de: 'Scanne deinen Einladungs-QR-Code oder gib den 6-stelligen Code ein.', ro: 'Scanați codul QR de invitație sau introduceți codul din 6 cifre.', pl: 'Zeskanuj kod QR z zaproszenia lub wpisz 6-cyfrowy kod.', hr: 'Skenirajte QR kod pozivnice ili unesite 6-znamenkasti kod.' },
-  scanQrBtn: { de: '📷 Einladung scannen (QR-Code)', ro: '📷 Scanează invitația (cod QR)', pl: '📷 Zeskanuj zaproszenie (kod QR)', hr: '📷 Skeniraj pozivnicu (QR kod)' },
+  scanQrBtn: { de: 'Einladung scannen (QR-Code)', ro: 'Scanează invitația (cod QR)', pl: 'Zeskanuj zaproszenie (kod QR)', hr: 'Skeniraj pozivnicu (QR kod)' },
+  scanInvalidQr: { de: 'Kein gültiger Einladungs-Code erkannt.', ro: 'Cod de invitație invalid.', pl: 'Nieprawidłowy kod zaproszenia.', hr: 'Nevaljani kod pozivnice.' },
   orEnterCode: { de: 'Oder Code manuell eingeben', ro: 'Sau introduceți codul manual', pl: 'Lub wpisz kod ręcznie', hr: 'Ili ručno unesite kod' },
   codePlaceholder: { de: 'z. B. ABC-234', ro: 'de ex. ABC-234', pl: 'np. ABC-234', hr: 'npr. ABC-234' },
   activateBtn: { de: 'Jetzt aktivieren', ro: 'Activează acum', pl: 'Aktywuj teraz', hr: 'Aktiviraj sada' },

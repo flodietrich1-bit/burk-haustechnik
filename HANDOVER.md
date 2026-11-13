@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.31` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.32` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -231,6 +231,15 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.32)**
+  - **Ziel / Anlass:** Redesign Aktivierungs-Screen (reinweiß, Vektor-Kamerasilhouette, blau/weißer Button, Tastatur-Sichtbarkeit) & Härtung des QR-Scanners gegen Rate-Limits.
+  - **Änderungen:**
+    - `ActivationScreen.jsx`: Hintergrund reinweiß (`#FFFFFF`), Sprachauswahl oben entfernt, sauberer blauer Button (`COLORS.primary`) mit weißem Text und `react-native-svg` Vektor-Kamera-Silhouette. `KeyboardAvoidingView` + `ScrollView` mit oberer Platzierung verhindern, dass die iOS-Tastatur das Code-Eingabefeld verdeckt.
+    - `src/services/apiService.js`: `parseInviteInput` strikt gehärtet (nur noch echte Deep Links `tooltime://invite?token=...`, URLs mit Token, 32-64 base64url Tokens oder 5-8 stellige Codes; zufällige QR-Codes wie Metro/WiFi werden ignoriert und belasten den Server nicht mehr). `resetInstallationId()` hinzugefügt.
+    - `src/locales/i18n.js`: Emojis aus `scanQrBtn` entfernt, `scanInvalidQr` hinzugefügt.
+    - `src/constants/version.js`: Bump auf `v2.32`.
+  - **Verifikation:** `npx expo export` für iOS (816 Module) und Android (815 Module) fehlerfrei kompiliert.
 
 - **2026-11-13 (v2.31)**
   - **Ziel / Anlass:** Upgrade auf Expo SDK 58 (`^58.0.0`), React Native `0.88.1` & React `19.3.0` zur vollen Kompatibilität mit der aktuellen Expo Go iOS App.

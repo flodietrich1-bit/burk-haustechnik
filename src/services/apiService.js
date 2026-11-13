@@ -50,13 +50,19 @@ export async function getInstallationId() {
   }
 }
 
+export async function resetInstallationId() {
+  try {
+    await AsyncStorage.removeItem(INSTALLATION_ID_KEY);
+  } catch {}
+}
+
 /**
  * Parse an invitation token from either a QR code content or raw string
  * Supports:
  * - tooltime://invite?token=XYZ
  * - https://.../invite?token=XYZ
- * - Raw token
- * - 6-character short code (e.g. ABC234, AB-C234)
+ * - Raw 32-64 char base64url token
+ * - 5-8 character short code (e.g. ABC234, AB-C234)
  */
 export function parseInviteInput(scannedData) {
   if (!scannedData || typeof scannedData !== 'string') {
@@ -65,29 +71,36 @@ export function parseInviteInput(scannedData) {
 
   const clean = scannedData.trim();
 
-  // 1. Deep Link or Web URL with ?token=...
+  // 1. Deep Link or Web URL with ?token=... or &token=...
   if (clean.includes('token=')) {
     try {
-      const match = clean.match(/[?&]token=([^&]+)/);
+      const match = clean.match(/[?&]token=([A-Za-z0-9_-]+)/);
       if (match && match[1]) {
         return { qrToken: decodeURIComponent(match[1]), code: null };
       }
     } catch {}
   }
 
-  // 2. Short code format: e.g. "AB-C234" or "ABC234" (alphanumeric 5-8 chars)
+  // 2. Short code format: e.g. "AB-C234" or "ABC234" (alphanumeric 5-8 chars, no slashes or colons)
   const codeCandidate = clean.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-  if (codeCandidate.length >= 4 && codeCandidate.length <= 8 && !clean.includes('/')) {
+  if (
+    !clean.includes('/') &&
+    !clean.includes(':') &&
+    codeCandidate.length >= 5 &&
+    codeCandidate.length <= 8
+  ) {
     return { qrToken: null, code: codeCandidate };
   }
 
-  // 3. Fallback: treat as raw qrToken if long, or code if short
-  if (clean.length > 12) {
+  // 3. Raw qrToken: 32 to 64 character base64url string
+  if (/^[A-Za-z0-9_-]{32,64}$/.test(clean)) {
     return { qrToken: clean, code: null };
   }
 
-  return { qrToken: null, code: codeCandidate };
+  // Invalid invite format
+  return { qrToken: null, code: null };
 }
+
 
 /**
  * Redeem an invite code or qrToken via Express backend
