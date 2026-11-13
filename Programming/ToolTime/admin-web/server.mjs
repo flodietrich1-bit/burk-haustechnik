@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 
 const root = resolve('dist');
 const port = Number(process.env.PORT || 8080);
-const backendUrl = process.env.BACKEND_API_URL;
+const backendUrl = process.env.BACKEND_API_URL || 'https://tooltime-api-209459117942.europe-west4.run.app';
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
