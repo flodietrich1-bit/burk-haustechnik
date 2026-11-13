@@ -7,13 +7,13 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ActivityIndicator,
-  Modal,
   Alert,
   KeyboardAvoidingView,
   ScrollView,
   Platform,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Path } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
@@ -72,7 +72,6 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       console.warn('Activation error:', err);
       if (err.code === 'INVITE_RATE_LIMITED') {
         setErrorMsg(t('inviteRateLimited', currentLang));
-        // Reset installation ID so next attempt gets a fresh identifier
         await resetInstallationId();
       } else {
         setErrorMsg(t('inviteInvalid', currentLang));
@@ -100,6 +99,31 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     executeActivation({ code, qrToken });
   };
 
+  const handlePickFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const imageUri = result.assets[0].uri;
+      const scanned = await scanFromURLAsync(imageUri, ['qr']);
+      if (scanned && scanned.length > 0 && scanned[0]?.data) {
+        handleBarcodeScanned({ data: scanned[0].data });
+      } else {
+        Alert.alert(
+          t('scanInvalidQr', currentLang),
+          'In diesem Bild wurde kein Einladungs-QR-Code erkannt. Bitte das Foto der Einladungs-PDF prüfen.'
+        );
+      }
+    } catch (err) {
+      console.warn('Gallery scan error:', err);
+    }
+  };
+
   const handleManualSubmit = () => {
     if (isActivating) return;
     const clean = codeDraft.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -110,6 +134,85 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     executeActivation({ code: clean });
   };
 
+  // FULLSCREEN CAMERA SCANNER VIEW (Without React Native Modal to guarantee native video preview layer mounts cleanly on iOS)
+  if (scannerVisible) {
+    return (
+      <View style={styles.scannerRoot}>
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
+
+        <SafeAreaView style={styles.scannerOverlay}>
+          {/* Top Bar */}
+          <View style={styles.scannerTopRow}>
+            <TouchableOpacity
+              style={styles.scannerBackBtn}
+              onPress={() => setScannerVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.scannerBackText}>✕ Schließen</Text>
+            </TouchableOpacity>
+            <View style={styles.scannerTitlePill}>
+              <Text style={styles.scannerTitleText}>Burk Haustechnik</Text>
+            </View>
+            <View style={{ width: 80 }} />
+          </View>
+
+          {/* Status Hint or Warning Banner */}
+          {scanWarning ? (
+            <View style={styles.scanWarningBox}>
+              <Text style={styles.scanWarningText}>⚠️ {scanWarning}</Text>
+            </View>
+          ) : (
+            <View style={styles.scanHintBox}>
+              <Text style={styles.scanHintText}>{t('scanHint', currentLang)}</Text>
+            </View>
+          )}
+
+          {/* Central Target Reticle */}
+          <View style={styles.reticleFrame}>
+            <View style={[styles.corner, styles.topLeft]} />
+            <View style={[styles.corner, styles.topRight]} />
+            <View style={[styles.corner, styles.bottomLeft]} />
+            <View style={[styles.corner, styles.bottomRight]} />
+          </View>
+
+          {/* Bottom Actions */}
+          <View style={styles.scannerBottomRow}>
+            <TouchableOpacity
+              style={styles.scannerActionBtn}
+              onPress={handlePickFromGallery}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.scannerActionBtnText}>🖼️ Aus Fotos wählen</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.scannerActionBtn, styles.scannerActionBtnPrimary]}
+              onPress={() => setScannerVisible(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.scannerActionBtnPrimaryText}>Code manuell eingeben</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+
+        {isActivating ? (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.loadingTextWhite}>{t('activating', currentLang)}</Text>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  // STANDARD ACTIVATION SCREEN
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -199,56 +302,6 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* QR Code Scanner Camera Modal */}
-      <Modal
-        visible={scannerVisible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setScannerVisible(false)}
-      >
-        <SafeAreaView style={styles.cameraContainer}>
-          <CameraView
-            style={StyleSheet.absoluteFillObject}
-            facing="back"
-            barcodeScannerSettings={{
-              barcodeTypes: ['qr'],
-            }}
-            onBarcodeScanned={handleBarcodeScanned}
-          />
-
-          {/* Scanner Overlay UI */}
-          <View style={styles.overlay}>
-            <View style={styles.scannerHeader}>
-              <Text style={styles.scannerTitle}>Burk Haustechnik</Text>
-              <Text style={styles.scannerHint}>{t('scanHint', currentLang)}</Text>
-            </View>
-
-            {/* Warning if non-invite QR code scanned */}
-            {scanWarning ? (
-              <View style={styles.scanWarningBox}>
-                <Text style={styles.scanWarningText}>⚠️ {scanWarning}</Text>
-              </View>
-            ) : null}
-
-            {/* Target Reticle */}
-            <View style={styles.reticleFrame}>
-              <View style={[styles.corner, styles.topLeft]} />
-              <View style={[styles.corner, styles.topRight]} />
-              <View style={[styles.corner, styles.bottomLeft]} />
-              <View style={[styles.corner, styles.bottomRight]} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.closeScannerBtn}
-              onPress={() => setScannerVisible(false)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.closeScannerText}>{t('scanClose', currentLang)}</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
 
       {/* Activating Loading Screen */}
       {isActivating ? (
@@ -416,35 +469,62 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.muted,
   },
-  cameraContainer: {
+
+  // SCANNER VIEW STYLES
+  scannerRoot: {
     flex: 1,
     backgroundColor: '#000000',
   },
-  overlay: {
+  scannerOverlay: {
     flex: 1,
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 20,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
   },
-  scannerHeader: {
+  scannerTopRow: {
+    width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
+  },
+  scannerBackBtn: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  scannerBackText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  scannerTitlePill: {
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 16,
   },
-  scannerTitle: {
+  scannerTitleText: {
     color: '#60A5FA',
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
   },
-  scannerHint: {
+  scanHintBox: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    maxWidth: '85%',
+  },
+  scanHintText: {
     color: '#FFFFFF',
     fontSize: 13,
-    marginTop: 4,
     textAlign: 'center',
+    fontWeight: '500',
   },
   scanWarningBox: {
     backgroundColor: '#991B1B',
@@ -494,22 +574,37 @@ const styles = StyleSheet.create({
     borderBottomWidth: 4,
     borderRightWidth: 4,
   },
-  closeScannerBtn: {
+  scannerBottomRow: {
+    width: '100%',
+    gap: 12,
+    alignItems: 'center',
+  },
+  scannerActionBtn: {
     backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.4)',
   },
-  closeScannerText: {
+  scannerActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  scannerActionBtnPrimary: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  scannerActionBtnPrimaryText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: 'rgba(0,0,0,0.8)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 16,
@@ -518,5 +613,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: COLORS.ink,
+  },
+  loadingTextWhite: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
