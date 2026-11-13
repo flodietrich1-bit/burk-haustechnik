@@ -7,7 +7,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Kamera wird zum Scannen des Einladungs-QR-Codes benötigt."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -35,7 +38,13 @@
       "fallbackToCacheTimeout": 5000
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Kamera wird zum Scannen des Einladungs-QR-Codes benötigt."
+        }
+      ]
     ]
   }
 }

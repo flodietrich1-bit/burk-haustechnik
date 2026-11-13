@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -37,14 +37,18 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
   const [isActivating, setIsActivating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [scannerVisible, setScannerVisible] = useState(false);
-  const [scannedOnce, setScannedOnce] = useState(false);
   const [scanWarning, setScanWarning] = useState('');
+
+  // Synchronous lock to prevent duplicate frames from firing multiple activation requests
+  const isScanningRef = useRef(false);
 
   const [permission, requestPermission] = useCameraPermissions();
 
   const handleOpenScanner = async () => {
     setErrorMsg('');
     setScanWarning('');
+    isScanningRef.current = false;
+
     if (!permission?.granted) {
       const res = await requestPermission();
       if (!res?.granted) {
@@ -56,7 +60,6 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
         return;
       }
     }
-    setScannedOnce(false);
     setScannerVisible(true);
   };
 
@@ -70,6 +73,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       }
     } catch (err) {
       console.warn('Activation error:', err);
+      isScanningRef.current = false;
       if (err.code === 'INVITE_RATE_LIMITED') {
         setErrorMsg(t('inviteRateLimited', currentLang));
         await resetInstallationId();
@@ -82,18 +86,18 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
   };
 
   const handleBarcodeScanned = (scanningResult) => {
-    if (scannedOnce || isActivating) return;
+    if (isScanningRef.current || isActivating) return;
     const rawData = scanningResult?.data;
     if (!rawData) return;
 
     const { qrToken, code } = parseInviteInput(rawData);
     if (!qrToken && !code) {
-      // Do NOT close the scanner, do NOT hit backend to prevent rate-limiting!
       setScanWarning(t('scanInvalidQr', currentLang));
       return;
     }
 
-    setScannedOnce(true);
+    // Synchronous lock: prevent second/third frame from sending duplicate requests
+    isScanningRef.current = true;
     setScanWarning('');
     setScannerVisible(false);
     executeActivation({ code, qrToken });
@@ -116,7 +120,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       } else {
         Alert.alert(
           t('scanInvalidQr', currentLang),
-          'In diesem Bild wurde kein Einladungs-QR-Code erkannt. Bitte das Foto der Einladungs-PDF prüfen.'
+          'In diesem Bild wurde kein Einladungs-QR-Code erkannt. Bitte das Foto der Einladungs-PDF prüfen oder den Code manuell eingeben.'
         );
       }
     } catch (err) {
@@ -134,7 +138,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     executeActivation({ code: clean });
   };
 
-  // FULLSCREEN CAMERA SCANNER VIEW (Without React Native Modal to guarantee native video preview layer mounts cleanly on iOS)
+  // FULLSCREEN CAMERA SCANNER VIEW (Without Modal wrapper for 100% reliable iOS native camera preview)
   if (scannerVisible) {
     return (
       <View style={styles.scannerRoot}>
@@ -145,14 +149,22 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
             barcodeTypes: ['qr'],
           }}
           onBarcodeScanned={handleBarcodeScanned}
+          onMountError={(e) => {
+            console.warn('Camera mount error:', e);
+            Alert.alert('Kamera-Fehler', 'Kamera konnte nicht gestartet werden.');
+            setScannerVisible(false);
+          }}
         />
 
         <SafeAreaView style={styles.scannerOverlay}>
-          {/* Top Bar */}
+          {/* Top Navigation Row */}
           <View style={styles.scannerTopRow}>
             <TouchableOpacity
               style={styles.scannerBackBtn}
-              onPress={() => setScannerVisible(false)}
+              onPress={() => {
+                isScanningRef.current = false;
+                setScannerVisible(false);
+              }}
               activeOpacity={0.7}
             >
               <Text style={styles.scannerBackText}>✕ Schließen</Text>
@@ -174,7 +186,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
             </View>
           )}
 
-          {/* Central Target Reticle */}
+          {/* Central Reticle */}
           <View style={styles.reticleFrame}>
             <View style={[styles.corner, styles.topLeft]} />
             <View style={[styles.corner, styles.topRight]} />
@@ -194,7 +206,10 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
 
             <TouchableOpacity
               style={[styles.scannerActionBtn, styles.scannerActionBtnPrimary]}
-              onPress={() => setScannerVisible(false)}
+              onPress={() => {
+                isScanningRef.current = false;
+                setScannerVisible(false);
+              }}
               activeOpacity={0.8}
             >
               <Text style={styles.scannerActionBtnPrimaryText}>Code manuell eingeben</Text>
@@ -239,10 +254,20 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
           <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
           <Text style={styles.subtitle}>{t('activationSubtitle', currentLang)}</Text>
 
-          {/* Error Alert */}
+          {/* Error Alert with manual retry */}
           {errorMsg ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => {
+                  setErrorMsg('');
+                  resetInstallationId();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.retryBtnText}>Entsperren / Erneut versuchen</Text>
+              </TouchableOpacity>
             </View>
           ) : null}
 
@@ -264,21 +289,25 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Manual Code Input - Placed comfortably in upper viewport */}
+          {/* Manual Code Input - Formatted for 6-char short codes */}
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.codeInput}
               value={codeDraft}
               onChangeText={(text) => {
-                setCodeDraft(text.toUpperCase());
+                let formatted = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (formatted.length > 2) {
+                  formatted = `${formatted.slice(0, 2)}-${formatted.slice(2, 6)}`;
+                }
+                setCodeDraft(formatted);
                 setErrorMsg('');
               }}
-              placeholder={t('codePlaceholder', currentLang)}
+              placeholder="z. B. YC-89MN"
               placeholderTextColor={COLORS.muted}
               autoCapitalize="characters"
               autoCorrect={false}
               editable={!isActivating}
-              maxLength={10}
+              maxLength={7}
             />
             <TouchableOpacity
               style={[styles.activateBtn, (!codeDraft.trim() || isActivating) && styles.btnDisabled]}
@@ -380,15 +409,28 @@ const styles = StyleSheet.create({
     borderColor: '#F87171',
     borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     marginBottom: 16,
     width: '100%',
+    alignItems: 'center',
+    gap: 8,
   },
   errorText: {
     color: '#991B1B',
     fontSize: 13,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  retryBtn: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   primaryScanBtn: {
     backgroundColor: COLORS.primary,
@@ -439,11 +481,11 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: COLORS.ink,
     textAlign: 'center',
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
   activateBtn: {
     backgroundColor: COLORS.ink,

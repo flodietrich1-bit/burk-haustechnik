@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.33` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.34` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -232,14 +232,14 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 18. Last Updated
 
-- **2026-11-13 (v2.33)**
-  - **Ziel / Anlass:** Behebung des schwarzen Kamera-Screens auf iOS & vollständige Aufhebung der Server-Rate-Limit-Blockade.
+- **2026-11-13 (v2.34)**
+  - **Ziel / Anlass:** Beseitigung mehrfacher Frame-Doppel-Scans via useRef-Lock, Härtung der Rate-Limit-Schwellen auf dem Server & iOS-Kamera-Plugin-Konfiguration.
   - **Änderungen:**
-    - `ActivationScreen.jsx`: React Native `<Modal>`-Wrapper um `CameraView` entfernt und direkt im View-Tree als Fullscreen gerendert (verhindert iOS AVFoundation Presentation-Controller Layer Detachment / Black Screen). QR-Scan aus Fotos/Galerie (`scanFromURLAsync`) und direkter Wechsel zur manuellen Code-Eingabe hinzugefügt.
-    - `ToolTime/backend/server.js`: `app.set('trust proxy', 1)` gesetzt, damit Cloud Run Proxy-IPs nicht mehr global alle Nutzer sperren.
-    - Firestore `rateLimits`: Alle 23 gesperrten IP/Installations-Einträge via Admin-SDK gelöscht.
-    - `src/constants/version.js`: Bump auf `v2.33`.
-  - **Verifikation:** `npx expo export` für iOS (816 Module) und Android (815 Module) fehlerfrei; `/public/invites/redeem` antwortet wieder ohne Rate-Limit.
+    - `ActivationScreen.jsx`: `isScanningRef` (`useRef`) als synchroner Lock implementiert, um zu verhindern, dass aufeinanderfolgende Video-Frames bei 30fps mehrfache Aktivierungsanfragen senden. Auto-Formatierung für 6-stelligen Code (`YC-89MN`), direkter Button „Entsperren / Erneut versuchen“ bei Fehlern.
+    - `app.json`: `expo-camera`-Plugin und `NSCameraUsageDescription` in `ios.infoPlist` eingetragen, um native Kamera-Berechtigungen auf iOS abzusichern.
+    - `ToolTime/backend`: `rateLimitService.js` entspannt (10 Versuche bis 1 Min. Pause statt Sperre nach 3 Versuchen), Cloud Run mit `trust proxy: 1` aktualisiert.
+    - `src/constants/version.js`: Bump auf `v2.34`.
+  - **Verifikation:** `npx expo export` für iOS (816 Module) fehlerfrei; Backend auf Cloud Run aktualisiert; Firestore `rateLimits` bereinigt.
 
 - **2026-11-13 (v2.31)**
   - **Ziel / Anlass:** Upgrade auf Expo SDK 58 (`^58.0.0`), React Native `0.88.1` & React `19.3.0` zur vollen Kompatibilität mit der aktuellen Expo Go iOS App.
