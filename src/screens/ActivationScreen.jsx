@@ -129,6 +129,36 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     }
   };
 
+  // Fallback when the live camera preview stays black: use the system camera
+  // (same mechanism as PhotoCaptureScreen) and decode the QR code from the photo.
+  const handleTakePhotoScan = async () => {
+    try {
+      setScannerVisible(false);
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert(
+          t('cameraPermissionTitle', currentLang),
+          t('cameraPermissionMsg', currentLang),
+          [{ text: t('ok', currentLang) }]
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ allowsEditing: false, quality: 1 });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const scanned = await scanFromURLAsync(result.assets[0].uri, ['qr']);
+      if (scanned && scanned.length > 0 && scanned[0]?.data) {
+        handleBarcodeScanned({ data: scanned[0].data });
+      } else {
+        Alert.alert(
+          t('scanInvalidQr', currentLang),
+          'Auf dem Foto wurde kein Einladungs-QR-Code erkannt. Bitte näher herangehen oder den Code manuell eingeben.'
+        );
+      }
+    } catch (err) {
+      console.warn('Photo scan error:', err);
+    }
+  };
+
   const handleManualSubmit = () => {
     if (isActivating) return;
     const clean = codeDraft.trim().replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -199,6 +229,14 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
 
           {/* Bottom Actions */}
           <View style={styles.scannerBottomRow}>
+            <TouchableOpacity
+              style={styles.scannerActionBtn}
+              onPress={handleTakePhotoScan}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.scannerActionBtnText}>📸 Foto aufnehmen &amp; scannen</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.scannerActionBtn}
               onPress={handlePickFromGallery}
