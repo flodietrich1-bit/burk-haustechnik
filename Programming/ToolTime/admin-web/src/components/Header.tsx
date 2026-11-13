@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat, X
+  Plus, ShieldCheck, ChevronDown, Check, Bell, AlertTriangle, LogOut, KeyRound, HardHat, BriefcaseBusiness, X
 } from 'lucide-react';
 import type { TenantBranding } from '../types/branding';
 import { brandBackgroundColor, brandTextAccentColor, readableTextColor } from '../types/branding';
@@ -208,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Bell className="w-4 h-4" />
               {totalNotifications > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-600 rounded-full ring-2 ring-slate-800 animate-pulse" />
+                <span aria-hidden="true" className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.55)]" />
               )}
             </button>
 
@@ -358,6 +358,8 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}>
                   {currentUser.role === 'admin' ? (
                     <ShieldCheck className="w-4 h-4" />
+                  ) : currentUser.role === 'kaufmaennisch' ? (
+                    <BriefcaseBusiness className="w-4 h-4" />
                   ) : (
                     <HardHat className="w-4 h-4" />
                   )}
@@ -388,7 +390,7 @@ export const Header: React.FC<HeaderProps> = ({
                         ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
                         : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     }`}>
-                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : 'Projektleiter'}
+                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : currentUser.role === 'kaufmaennisch' ? 'Kaufmann' : currentUser.role === 'monteur' ? 'Monteur' : 'Bauleiter'}
                     </span>
                   </div>
 
