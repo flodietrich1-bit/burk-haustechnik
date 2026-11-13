@@ -124,11 +124,6 @@ export default function ProjectSelectScreen({
                       : t('projectSingle', currentLang)}
                   </Text>
                 </View>
-                {proj.calendarWeek ? (
-                  <View style={styles.kwBadge}>
-                    <Text style={styles.kwText}>{t('kw', currentLang)} {proj.calendarWeek}</Text>
-                  </View>
-                ) : null}
               </View>
 
               <Text style={styles.projectTitle}>{proj.name}</Text>
@@ -323,17 +318,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.amberDark,
-  },
-  kwBadge: {
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  kwText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.muted,
   },
   projectTitle: {
     fontSize: 17,

@@ -10,8 +10,8 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.38` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
-- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
+- App version `v2.39` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -55,7 +55,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 - Login: `ActivationScreen` → `activateDeviceWithInvite` (backend invite redemption and Firebase custom-token sign-in) → project select or direct entry. `PinLockScreen`/`authenticateByPin` remain as legacy code.
 - Booking flow: selecting a room restores room drafts (`draftQuantities`, `photos`, `draftUnclear`). Quantity steppers in `BookingScreen` change `sessionQuantities`; leaving the room (`handleLeaveRoomDraft`) or saving photos persists drafts into the room object, recomputes `pct` (`computeRoomPercentage`) and triggers a silent sync if online. "Complete room" (`handleCompleteRoom`) enqueues one booking per material delta (plus photo-doc booking if no deltas, unclear-item bookings with `status: 'pending_assignment'`, and a `room_completion` booking), updates local `installedQty`, marks the room `isCompleted`/100 %, and syncs.
 - Extra flows: `handleAddNachtrag` (Mehrbedarf → `enqueueAddendum`), `handleAddUnclearItem` (unplanned installed material → adds to local catalog + room + addendum of type `ausserplanmaessig`), `handleOverConsumptionAlert` (enqueue booking with `type: 'over_consumption_alert'`).
-- Offline-first: all of the above write to AsyncStorage first. `getLocalUnsyncedDelta(projectId)` finds pending bookings/addendums (`status === 'pending'`) and rooms with unsynced changes. `syncBookings` pushes those, then pulls positions and rooms changed since `lastSyncedAt` (per project), then stores a new `lastSyncedAt`. A NetInfo listener triggers silent sync on reconnect.
+- Offline-first: all of the above write to AsyncStorage first. `getLocalUnsyncedDelta(projectId)` finds pending bookings/addendums (`status === 'pending'`) and rooms with unsynced changes. `syncBookings` pushes those, then pulls positions and rooms changed since `lastSyncedAt` (per project), then stores a new `lastSyncedAt`. A NetInfo listener triggers silent sync on reconnect. Reopening a formerly completed room with zero photos writes an explicit unlocked status and cleared completion metadata locally, then pushes that state through the room delta sync.
 - Photos: compressed to < 1000 KB at capture, copied to `documentDirectory/proofs/`, and uploaded during sync via base64 `uploadString` to Storage path `projects/<projectId>/proofs/...`; fallbacks: alternate bucket names, then a low-res base64 data URI stored directly in Firestore.
 
 ## 6. Data Model / Database
@@ -70,7 +70,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
   - `monteurs/{id}` – monteur profile pushed by `syncMonteurToFirebase`.
 - Delta pull uses `where('updatedAt', '>', lastSyncedAt)` on ISO strings (falls back to full fetch + client filter on error).
 
-**Local (AsyncStorage keys)** [code]: `ttapp_selected_language`, `ttapp_cached_rooms_<pid>`, `ttapp_cached_materials_<pid>`, `ttapp_cached_project_<pid>`, `ttapp_last_synced_at_<pid>`, `ttapp_outbox_bookings`, `ttapp_outbox_addendums` (both global, not per project), `ttapp_active_monteur`, `ttapp_known_monteurs`, `ttapp_all_projects`, `ttapp_pin_failed_attempts`, `ttapp_pin_locked_until`, legacy unscoped `ttapp_cached_rooms/materials/project` (written only for `hallenbad-weingarten`). `UNCLEAR` and `USER_PROFILE` keys are declared but unused.
+**Local (AsyncStorage keys)** [code]: `ttapp_selected_language`, `ttapp_cached_rooms_<pid>`, `ttapp_cached_materials_<pid>`, `ttapp_cached_project_<pid>`, `ttapp_last_synced_at_<pid>`, `ttapp_outbox_bookings`, `ttapp_outbox_addendums` (both global, not per project), `ttapp_active_monteur`, `@ttapp:branding:<tenantId>`, `ttapp_known_monteurs`, `ttapp_all_projects`, `ttapp_pin_failed_attempts`, `ttapp_pin_locked_until`, legacy unscoped `ttapp_cached_rooms/materials/project` (written only for `hallenbad-weingarten`). `UNCLEAR` and `USER_PROFILE` keys are declared but unused.
 
 **Booking types** (all in the one `bookings` outbox): normal material booking, `photo_doc` (`itemOz: 'DOKU'`), `room_completion`, `over_consumption_alert`, and unclear items (`isUnclear: true`; the passed `status: 'pending_assignment'` is overwritten with `'pending'` by `enqueueBooking`, so they sync like normal bookings — see §13).
 
@@ -86,6 +86,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Firebase Firestore and Storage (see §6) [code].
 - Expo EAS Update (OTA) via `expo-updates` [code/config].
+- Public tenant branding endpoint (`/api/public/branding/{tenantId}`) supplies logo, name and colors to the app header; the response is cached in AsyncStorage for offline use [code].
 - Device: camera/gallery (`expo-image-picker`), file system, NetInfo.
 - Admin web app (`/home/oem/Programming/ToolTime/admin-web`, Vite app with Firebase App Hosting config; separate repo/branch `main`, own version in `src/version.ts`) shares the Firestore data. Its internals were not inspected beyond listing and the rules files.
 - No other third-party APIs found.
@@ -109,7 +110,7 @@ App distributed through Expo/EAS (project owner `vibe-factory-gmbh`), updates ch
 
 - Offline-first with outbox + delta sync; sync is idempotent-ish via deterministic IDs and `setDoc(..., {merge:true})`.
 - Per-project local caches (commit `56cd02a`); outbox stays global but is filtered per project at sync time (items without `projectId` are treated as belonging to any project).
-- Rooms are pushed even while in progress (percentage/draft quantities/photos) so admin sees progress; completed rooms become read-only locally (lock). Remote can unlock a room by setting `isCompleted:false` or `status:'in_progress'` (see `mapRemoteRoom`).
+- Rooms are pushed even while in progress (percentage/draft quantities/photos) so admin sees progress. Only explicit `isCompleted`/`status` marks a room complete; a calculated 100% alone does not lock it. Completion requires a locally saved photo and confirmation, then locks the room. A previously completed room with zero photos can be reopened in the app; its unlocked status and cleared completion fields are synced. Remote can also unlock a room by setting `isCompleted:false` or `status:'in_progress'` (see `mapRemoteRoom`).
 - Percentage = installed(+draft) / planned over `plannedItems` (capped per item), fallbacks to `room.materials`, then project materials with `assignedRoomNames` (`computeRoomPercentage`).
 - Stock rule: a Monteur cannot book more than delivered/available; over-consumption goes through an alert flow that enqueues a reorder alert. Planned = 0 for unplanned items (v2.11).
 - Fallback for photos never writes `file://` paths to Firestore; data-URI fallback is a deliberate last resort.
@@ -136,12 +137,13 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 14. Current Work / Open Tasks
 
-- v2.38 fixes the `getRoomFloor` runtime crash in room list and booking screen, and compacts the header with a small user icon and initials. Device rendering still needs manual confirmation in Expo Go.
+- v2.39 removes completion locking based solely on 100% progress, requires a saved photo and explicit confirmation, adds a recovery action for already completed zero-photo rooms, and loads tenant branding for a neutral header with a prominent project name. Device rendering, actual photo capture, and Firestore round trip still need manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.39: Explicit room completion only; photo guard in the UI and App handler; zero-photo completed rooms can be reopened with sync of cleared completion metadata. Header shows project and tenant branding from Admin, with KW and monteur initials removed.
 - 2026-11-13 v2.38: `getRoomFloor` is exported from `storageService.js` and resolves explicit `floor`/`level`, a floor prefix in room code, or `Sonstiges`; fixes `undefined is not a function` in `RoomListScreen` (and the same latent issue in `BookingScreen`). `Header` replaces the full monteur name with a compact user icon and initials next to the logo and trims vertical padding.
 - 2026-11-13 v2.37: Expo Go reload now has the missing `refreshData` helper; startup errors after an activation retain the local session and route to project selection rather than demanding a new one-time invite. `expo-doctor` 20/20 and iOS export passed; Expo Go device reload and live Firebase session restoration remain unverified.
 - 2026-10-14 v2.21: App-Vereinfachung für Monteure (Arbeit nicht blockieren):
@@ -213,7 +215,8 @@ Suspected / unverified: see "suspected" markers above.
 | Sync (Firestore/Storage/Plans) | `src/services/syncService.js` |
 | Local storage / outbox / % calc / Plans cache | `src/services/storageService.js` |
 | Login / PIN / seeds | `src/services/authService.js`, `src/screens/PinLockScreen.jsx` |
-| Booking UI | `src/screens/BookingScreen.jsx`, `src/components/booking/*` |
+| Booking UI / completion recovery | `src/screens/BookingScreen.jsx`, `src/components/booking/*` |
+| Tenant branding / header | `src/services/authService.js`, `src/components/Header.jsx` |
 | Room List & Floor Filter | `src/screens/RoomListScreen.jsx` |
 | Photos | `src/screens/PhotoCaptureScreen.jsx` |
 | Text/translation | `src/locales/i18n.js` |
@@ -233,6 +236,12 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.39)**
+  - **Anlass:** Screenshot zeigte gesperrten Raum bei 0 Fotos und noch offenen Materialien; Nutzer wünschte Admin-Logo/Farbwelt, neutralen Header und sichtbares Projekt statt KW/Initialen.
+  - **Ursache:** `BookingScreen` und Raumliste behandelten 100 % allein als Abschluss; die UI übersprang in diesem Fall die Foto-Prüfung und `App.handleCompleteRoom` prüfte Fotos gar nicht.
+  - **Änderungen:** Sperre nur bei explizitem Abschlussstatus; Foto-Pflicht in UI und App-Handler; vorhandenes Abschlussmodal zur bewussten Bestätigung aktiviert; für alte Null-Foto-Abschlüsse Wiederöffnung mit lokalem Delta und Remote-Sync ergänzt. Branding aus öffentlicher Tenant-API mit Offline-Cache im Header; KW und Monteur-Initialen entfernt, Projekttitel vergrößert. App-Anzeigeversion v2.39.
+  - **Verifikation:** `npx expo-doctor` 20/20, `npx expo export --platform ios` und `git diff --check` bestanden. Auf echtem Expo-Go-Gerät, Fotoaufnahme und Firestore-Schreibzugriff: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.38)**
   - **Anlass:** Screenshot zeigte `TypeError: undefined is not a function` in der Raumliste; Nutzer wünschte weniger Platzverbrauch im Header.

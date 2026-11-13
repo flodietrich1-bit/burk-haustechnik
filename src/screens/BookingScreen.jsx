@@ -41,6 +41,7 @@ export default function BookingScreen({
   onAddUnclearItem,
   onAddNachtrag,
   onCompleteRoom,
+  onReopenRoom,
   onOverConsumptionAlert,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,11 +68,10 @@ export default function BookingScreen({
     setActiveMaterialIds(getInitialMaterialIds());
   }, [room.id, materials.length]);
 
-  // Locked State: 100% completed rooms are strictly locked
+  // Progress alone never completes a room.
   const isRoomCompleted = Boolean(
     room.isCompleted ||
-    room.status === 'completed' ||
-    Number(room.pct) === 100
+    room.status === 'completed'
   );
   const isLocked = isRoomCompleted;
 
@@ -218,37 +218,6 @@ export default function BookingScreen({
       : [];
   const effectivePhotoCount = effectivePhotos.length;
 
-  // Calculate live room percentage (kann über 100 % gehen)
-  const calculateCurrentRoomPct = () => {
-    if (isLocked) return 100;
-    let totalPlanned = 0;
-    let totalInstalled = 0;
-    activeMaterialIds.forEach((matId) => {
-      const { mat, roomPlan } = resolveMat(matId, materials, room);
-      const isUnplannedMat = Boolean(
-        mat?.isUnplanned ||
-        roomPlan?.isUnplanned ||
-        unclearItems?.some((u) => u.materialId === matId || u.pos === mat?.pos)
-      );
-      if (isUnplannedMat) {
-        // Unplanned material has planned = 0, so it must NOT add to totalPlanned!
-        return;
-      }
-      const planned = roomPlan ? Number(roomPlan.plannedQty || 0) : 0;
-      const installedBefore = roomPlan
-        ? Number(roomPlan.installedQty || 0)
-        : Number(mat?.installedQty || 0);
-      const delta = Number(sessionQuantities[matId]) || 0;
-      totalPlanned += planned;
-      totalInstalled += installedBefore + delta;
-    });
-
-    if (totalPlanned > 0) {
-      return Math.round((totalInstalled / totalPlanned) * 100);
-    }
-    return room.pct !== undefined ? room.pct : 0;
-  };
-
   // Delta Summary calculation for Room Completion
   const deltaSummary = useMemo(() => {
     const summary = [];
@@ -295,7 +264,7 @@ export default function BookingScreen({
       handleLockedAction();
       return;
     }
-    if (effectivePhotoCount === 0 && !isRoomCompleted) {
+    if (effectivePhotoCount === 0) {
       Alert.alert(
         t('photosRequiredTitle', currentLang),
         t('photosRequiredMsg', currentLang),
@@ -312,21 +281,17 @@ export default function BookingScreen({
       return;
     }
 
-    const roomPct = calculateCurrentRoomPct();
-    Alert.alert(
-      t('confirmFinishRoom', currentLang),
-      t('confirmFinishRoomMsg', currentLang, { pct: roomPct }),
-      [
-        { text: t('cancel', currentLang), style: 'cancel' },
-        {
-          text: t('confirmFinishBtn', currentLang),
-          onPress: () => handleConfirmCompleteRoom(),
-        },
-      ]
-    );
+    setShowCompleteModal(true);
   };
 
   const handleConfirmCompleteRoom = () => {
+    if (isLocked || effectivePhotoCount === 0) {
+      setShowCompleteModal(false);
+      if (effectivePhotoCount === 0) {
+        Alert.alert(t('photosRequiredTitle', currentLang), t('photosRequiredMsg', currentLang));
+      }
+      return;
+    }
     if (onCompleteRoom) {
       onCompleteRoom(room.id, deltaSummary, sessionQuantities, effectivePhotos);
     }
@@ -367,7 +332,7 @@ export default function BookingScreen({
           <View style={{ flex: 1 }}>
             <Text style={styles.roomTitle}>{getRoomDisplayName(room, currentLang)}</Text>
             <Text style={styles.roomSubtitle}>
-              {t('bookHead', currentLang)} · {t('kw', currentLang)} 27 · {t('floorPrefix', currentLang, { floor })}
+              {t('bookHead', currentLang)} · {t('floorPrefix', currentLang, { floor })}
             </Text>
           </View>
         </View>
@@ -378,7 +343,16 @@ export default function BookingScreen({
             <Text style={styles.roomLockedIcon}>🔒</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.roomLockedTitle}>{t('roomLockedBanner', currentLang)}</Text>
-              <Text style={styles.roomLockedSub}>{t('roomLockedBannerSub', currentLang)}</Text>
+              <Text style={styles.roomLockedSub}>
+                {effectivePhotoCount === 0 && onReopenRoom
+                  ? t('reopenRoomExplanation', currentLang)
+                  : t('roomLockedBannerSub', currentLang)}
+              </Text>
+              {effectivePhotoCount === 0 && onReopenRoom && (
+                <TouchableOpacity style={styles.roomReopenButton} onPress={() => onReopenRoom(room.id)} activeOpacity={0.7}>
+                  <Text style={styles.roomReopenButtonText}>{t('reopenRoomMissingPhotos', currentLang)}</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -508,7 +482,7 @@ export default function BookingScreen({
             styles.monteurFertigBtn,
             isLocked
               ? styles.monteurFertigBtnDone
-              : effectivePhotoCount === 0 && !isRoomCompleted
+              : effectivePhotoCount === 0
               ? styles.monteurFertigBtnGrey
               : styles.monteurFertigBtnGreen,
             isRoomCompleted && styles.monteurFertigBtnDone,

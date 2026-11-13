@@ -406,6 +406,10 @@ export async function syncBookings({
             roomPayload.completedAt = room.completedAt || now;
             roomPayload.completedBy = monteur?.name || room.completedBy || 'Monteur';
             roomPayload.completionDelta = room.completionDelta || [];
+          } else if (room.completedAt === null) {
+            roomPayload.completedAt = null;
+            roomPayload.completedBy = null;
+            roomPayload.completionDelta = [];
           }
 
           if (room.draftQuantities) {

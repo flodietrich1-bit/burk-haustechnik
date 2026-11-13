@@ -3,10 +3,11 @@ import NetInfo from '@react-native-community/netinfo';
 import { signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { redeemInviteApi, fetchAssignedProjectsApi } from './apiService';
+import { redeemInviteApi, fetchAssignedProjectsApi, getApiBaseUrl } from './apiService';
 
 const USER_KEY = 'ttapp_active_monteur';
 const TENANT_KEY = 'ttapp_tenant_id';
+const BRANDING_CACHE_PREFIX = '@ttapp:branding:';
 const LOCKOUT_KEYS = {
   ATTEMPTS: 'ttapp_pin_failed_attempts',
   LOCKED_UNTIL: 'ttapp_pin_locked_until',
@@ -120,6 +121,50 @@ export async function getTenantId() {
     return await AsyncStorage.getItem(TENANT_KEY);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Load the tenant logo and colors configured in the admin, with an offline cache.
+ */
+export async function loadTenantBranding(tenantId) {
+  if (!tenantId) return null;
+  const cacheKey = `${BRANDING_CACHE_PREFIX}${tenantId}`;
+  try {
+    const apiBase = await getApiBaseUrl();
+    const response = await fetch(`${apiBase}/public/branding/${encodeURIComponent(tenantId)}`);
+    if (!response.ok) throw new Error(`BRANDING_${response.status}`);
+    const data = await response.json();
+    if (data.tenantId !== tenantId) throw new Error('BRANDING_TENANT_MISMATCH');
+    const apiOrigin = apiBase.replace(/\/api$/, '');
+    const logoUrl = data.logoUrl
+      ? (data.logoUrl.startsWith('http') ? data.logoUrl : `${apiOrigin}${data.logoUrl}`)
+      : null;
+    let logoMimeType = '';
+    if (logoUrl) {
+      try {
+        const logoResponse = await fetch(logoUrl, { method: 'HEAD' });
+        logoMimeType = logoResponse.headers.get('content-type') || '';
+      } catch {}
+    }
+    const branding = {
+      name: data.name || tenantId,
+      logoUrl,
+      logoMimeType,
+      logoZoom: Number(data.logoZoom) || 1,
+      primaryColor: /^#[0-9a-f]{6}$/i.test(data.primaryColor || '') ? data.primaryColor : null,
+      secondaryColor: /^#[0-9a-f]{6}$/i.test(data.secondaryColor || '') ? data.secondaryColor : null,
+    };
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(branding)).catch(() => {});
+    return branding;
+  } catch (error) {
+    console.warn('Could not load tenant branding:', error?.message);
+    try {
+      const cached = await AsyncStorage.getItem(cacheKey);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
   }
 }
 

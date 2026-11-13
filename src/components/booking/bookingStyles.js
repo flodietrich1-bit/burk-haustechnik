@@ -62,6 +62,19 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 16,
   },
+  roomReopenButton: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#92400E',
+  },
+  roomReopenButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   topActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',

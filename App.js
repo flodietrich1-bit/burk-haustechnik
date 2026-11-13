@@ -15,11 +15,13 @@ import {
   getActiveMonteur,
   setActiveProjectId,
   restoreSession,
+  loadTenantBranding,
   logoutDevice,
   getTenantId,
 } from './src/services/authService';
 import {
   getRooms,
+  updateRoom,
   saveRooms,
   getMaterials,
   saveMaterials,
@@ -57,6 +59,7 @@ export default function App() {
   // User & Localization
   const [monteur, setMonteur] = useState(null);
   const [currentLang, setCurrentLang] = useState('de');
+  const [tenantBranding, setTenantBranding] = useState(null);
 
   // Master Data & Project
   const [rooms, setRooms] = useState([]);
@@ -106,6 +109,7 @@ export default function App() {
 
         const activeMonteur = session.monteur;
         setMonteur(activeMonteur);
+        loadTenantBranding(session.tenantId).then(setTenantBranding);
         if (activeMonteur?.defaultLanguage) {
           setCurrentLang(activeMonteur.defaultLanguage);
           await setLanguage(activeMonteur.defaultLanguage);
@@ -241,6 +245,7 @@ export default function App() {
   // Handle successful device activation from ActivationScreen
   const handleActivationSuccess = async (activatedMonteur, assignedProjects = [], tenantId) => {
     setMonteur(activatedMonteur);
+    loadTenantBranding(tenantId).then(setTenantBranding);
     if (activatedMonteur?.defaultLanguage) {
       setCurrentLang(activatedMonteur.defaultLanguage);
       await setLanguage(activatedMonteur.defaultLanguage);
@@ -299,6 +304,7 @@ export default function App() {
           onPress: async () => {
             await logoutDevice();
             setMonteur(null);
+            setTenantBranding(null);
             setProject(null);
             setRooms([]);
             setMaterials([]);
@@ -769,6 +775,10 @@ export default function App() {
       const calWeek = project?.calendarWeek || 27;
       const summary = [];
       const effectivePhotos = Array.isArray(photos) && photos.length > 0 ? photos : (Array.isArray(selectedRoom?.photos) ? selectedRoom.photos : []);
+      if (selectedRoom?.id !== roomId || effectivePhotos.length === 0) {
+        Alert.alert(t('photosRequiredTitle', currentLang), t('photosRequiredMsg', currentLang));
+        return;
+      }
       const currentQuantities = quantities && typeof quantities === 'object' ? quantities : {};
       const currentMats = Array.isArray(materials) ? materials : [];
       const currentRooms = Array.isArray(rooms) ? rooms : [];
@@ -950,6 +960,51 @@ export default function App() {
         t('errorRoomCompleteFailed', currentLang, { msg: e?.message || e })
       );
     }
+  };
+
+  const handleReopenRoomWithoutPhotos = (roomId) => {
+    if (selectedRoom?.id !== roomId || (selectedRoom.photos || []).length > 0) return;
+    Alert.alert(
+      t('reopenRoomMissingPhotos', currentLang),
+      t('reopenRoomConfirm', currentLang),
+      [
+        { text: t('cancel', currentLang), style: 'cancel' },
+        {
+          text: t('reopenRoomMissingPhotos', currentLang),
+          onPress: async () => {
+            try {
+              const pId = project?.id;
+              if (!pId) return;
+              const reopened = {
+                ...selectedRoom,
+                isCompleted: false,
+                status: 'in_progress',
+                completedAt: null,
+                completedBy: null,
+                completionDelta: [],
+              };
+              reopened.pct = computeRoomPercentage(reopened, materials);
+              const updatedRooms = await updateRoom(reopened, pId);
+              const savedRoom = updatedRooms.find((r) => r.id === roomId);
+              if (!savedRoom) throw new Error('ROOM_REOPEN_SAVE_FAILED');
+              setRooms(updatedRooms);
+              setSelectedRoom(savedRoom);
+              const delta = await getLocalUnsyncedDelta(pId);
+              setPendingCount(delta.totalPendingCount);
+              const online = await checkOnlineStatus();
+              if (online) {
+                syncBookings({ silent: true, projectId: pId })
+                  .then(() => refreshData(pId))
+                  .catch((err) => console.warn('Sync after reopening room:', err));
+              }
+            } catch (error) {
+              console.warn('Could not reopen room:', error);
+              Alert.alert(t('errorTitle', currentLang), t('errorRoomCompleteFailed', currentLang, { msg: error?.message || error }));
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleOverConsumptionAlert = async (alertData) => {
@@ -1138,20 +1193,19 @@ export default function App() {
   // Main Authenticated App Flow
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.ink} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F7F8FA" />
 
       {/* Persistent Global Header */}
       <Header
-        projectName={project?.name || 'Hallenbad Weingarten'}
-        subTitle={`${project?.client || 'Stadt Weingarten'} · ${selectedRoom ? selectedRoom.name : 'UG'}`}
-        calendarWeek={project?.calendarWeek || 27}
+        projectName={project?.name || ''}
+        subTitle={[project?.projectNumber, selectedRoom?.name || project?.client].filter(Boolean).join(' · ')}
+        branding={tenantBranding}
         isOnline={isOnline}
         pendingCount={pendingCount}
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSyncPress={handleManualSync}
         isSyncing={isSyncing}
-        monteurName={monteur?.name || 'Monteur'}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
         onLockPress={handleHeaderLockPress}
       />
@@ -1188,6 +1242,7 @@ export default function App() {
             onAddUnclearItem={handleAddUnclearItem}
             onAddNachtrag={handleAddNachtrag}
             onCompleteRoom={handleCompleteRoom}
+            onReopenRoom={handleReopenRoomWithoutPhotos}
             onOverConsumptionAlert={handleOverConsumptionAlert}
           />
         )}

@@ -64,7 +64,7 @@ export default function RoomListScreen({
   const renderRoomCard = (room) => {
     const transName = currentLang !== 'de' && room.translations?.[currentLang];
     const pct = computeRoomPercentage(room, materials);
-    const isCompleted = room.isCompleted || pct === 100;
+    const isCompleted = room.isCompleted || room.status === 'completed';
     return (
       <TouchableOpacity
         key={room.id}

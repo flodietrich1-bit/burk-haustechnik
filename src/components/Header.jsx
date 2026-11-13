@@ -1,25 +1,27 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { SvgUri } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { LANGUAGES, t } from '../locales/i18n';
 
 export default function Header({
-  projectName = 'Hallenbad Weingarten',
-  subTitle = 'Burk Haustechnik · UG',
-  calendarWeek = 27,
+  projectName = '',
+  subTitle = '',
+  branding = null,
   isOnline = false,
   pendingCount = 0,
   currentLang = 'de',
   onSelectLang,
   onSyncPress,
   isSyncing = false,
-  monteurName = 'Monteur',
   onSwitchProject = null,
   onLockPress = null,
 }) {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+
+  useEffect(() => setLogoLoadFailed(false), [branding?.logoUrl]);
 
   useEffect(() => {
     if (isSyncing) {
@@ -48,10 +50,7 @@ export default function Header({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
-  const nameParts = String(monteurName || '').trim().split(/\s+/).filter(Boolean);
-  const initials = nameParts.length > 1
-    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase()
-    : (nameParts[0] || 'M').slice(0, 2).toUpperCase();
+  const isSvgLogo = branding?.logoMimeType?.includes('svg') || /\.svg(?:\?|$)/i.test(branding?.logoUrl || '');
 
   return (
     <View style={styles.wrapper}>
@@ -59,30 +58,25 @@ export default function Header({
       <View style={styles.topBar}>
         <View style={styles.leftInfo}>
           <View style={styles.logoRow}>
-            <Text style={styles.logoBold}>burk</Text>
-            <Text style={styles.logoSmall}>Haustechnik</Text>
+            {branding?.logoUrl && !logoLoadFailed ? (
+              isSvgLogo ? (
+                <View style={{ transform: [{ scale: branding.logoZoom || 1 }] }}>
+                  <SvgUri width={72} height={34} uri={branding.logoUrl} onError={() => setLogoLoadFailed(true)} />
+                </View>
+              ) : (
+                <Image source={{ uri: branding.logoUrl }} style={[styles.logoImage, { transform: [{ scale: branding.logoZoom || 1 }] }]} resizeMode="contain" onError={() => setLogoLoadFailed(true)} />
+              )
+            ) : (
+              <Text style={[styles.brandFallback, branding?.secondaryColor && { color: branding.secondaryColor }]} numberOfLines={2}>{branding?.name || ''}</Text>
+            )}
           </View>
-          <TouchableOpacity
-            style={styles.userBadge}
-            onPress={onLockPress}
-            disabled={!onLockPress}
-            accessibilityRole="button"
-            accessibilityLabel={monteurName}
-            activeOpacity={0.7}
-          >
-            <Svg width={13} height={13} viewBox="0 0 16 16" fill="none">
-              <Circle cx="8" cy="5" r="2.5" stroke="#D2DCE6" strokeWidth="1.5" />
-              <Path d="M2.5 14c.4-2.7 2.3-4 5.5-4s5.1 1.3 5.5 4" stroke="#D2DCE6" strokeWidth="1.5" strokeLinecap="round" />
-            </Svg>
-            <Text style={styles.userInitials}>{initials}</Text>
-          </TouchableOpacity>
           <TouchableOpacity
             style={styles.projectTexts}
             onPress={onSwitchProject}
             disabled={!onSwitchProject}
             activeOpacity={0.7}
           >
-            <Text style={styles.projectTitle} numberOfLines={1}>
+            <Text style={styles.projectTitle} numberOfLines={2}>
               {projectName} {onSwitchProject ? '▾' : ''}
             </Text>
             <Text style={styles.projectSub} numberOfLines={1}>
@@ -92,19 +86,17 @@ export default function Header({
         </View>
 
         <View style={styles.rightBadges}>
-          <View style={styles.kwBadge}>
-            <Text style={styles.kwText}>{t('kw', currentLang)} {calendarWeek}</Text>
-          </View>
-
           {/* Sync Button */}
           <TouchableOpacity
             style={[
               styles.syncButton,
               pendingCount > 0 ? styles.syncButtonPending : styles.syncButtonIdle,
               isSyncing && styles.syncButtonSyncing,
+              !isSyncing && branding?.primaryColor && { backgroundColor: branding.primaryColor },
             ]}
             onPress={onSyncPress}
             disabled={isSyncing}
+            accessibilityLabel={t('syncBtn', currentLang)}
             activeOpacity={0.7}
           >
             <Animated.Text
@@ -115,15 +107,17 @@ export default function Header({
             >
               {isSyncing ? '⟳' : '⇅'}
             </Animated.Text>
-            <Text style={styles.syncText}>
-              {isSyncing ? t('syncing', currentLang) : t('syncBtn', currentLang)}
-            </Text>
             {pendingCount > 0 && !isSyncing && (
               <View style={styles.syncRedBadge}>
                 <Text style={styles.syncRedBadgeText}>{pendingCount}</Text>
               </View>
             )}
           </TouchableOpacity>
+          {onLockPress && (
+            <TouchableOpacity style={styles.menuButton} onPress={onLockPress} accessibilityLabel={t('logoutDeviceTitle', currentLang)}>
+              <Text style={styles.menuText}>⋯</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -163,7 +157,7 @@ export default function Header({
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: COLORS.ink,
+    backgroundColor: '#F7F8FA',
     borderBottomWidth: 1,
     borderBottomColor: COLORS.line,
   },
@@ -171,7 +165,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 7,
     gap: 8,
@@ -180,81 +174,55 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 8,
+    gap: 10,
   },
   logoRow: {
-    alignItems: 'flex-start',
-  },
-  logoBold: {
-    fontSize: 22,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    color: COLORS.amber,
-    letterSpacing: -0.5,
-  },
-  logoSmall: {
-    fontSize: 8,
-    letterSpacing: 1.2,
-    color: '#8A9096',
-    fontWeight: '700',
-    marginTop: -2,
-    textTransform: 'uppercase',
-  },
-  userBadge: {
-    flexDirection: 'row',
+    width: 72,
+    height: 36,
     alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: COLORS.ink2,
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  userInitials: {
-    color: '#D2DCE6',
+  logoImage: {
+    width: 72,
+    height: 34,
+  },
+  brandFallback: {
+    color: COLORS.ink,
     fontSize: 10,
     fontWeight: '800',
+    textAlign: 'center',
   },
   projectTexts: {
     flex: 1,
   },
   projectTitle: {
-    color: '#FFFFFF',
+    color: COLORS.ink,
     fontWeight: '700',
     fontSize: 15,
   },
   projectSub: {
-    color: COLORS.textSecondary,
+    color: COLORS.muted,
     fontSize: 11.5,
     marginTop: 1,
   },
   rightBadges: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  kwBadge: {
-    backgroundColor: COLORS.ink2,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#37495E',
-  },
-  kwText: {
-    color: '#D2DCE6',
-    fontWeight: '700',
-    fontSize: 11,
+    gap: 5,
   },
   syncButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    width: 34,
+    height: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
     borderRadius: 16,
   },
   syncButtonPending: {
-    backgroundColor: '#37495E',
+    backgroundColor: COLORS.amber,
     borderWidth: 1.5,
     borderColor: '#EF4444',
   },
@@ -275,7 +243,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   syncButtonIdle: {
-    backgroundColor: '#37495E',
+    backgroundColor: COLORS.amber,
   },
   syncButtonSyncing: {
     backgroundColor: '#1D6FA4',
@@ -285,10 +253,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
   },
-  syncText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 12,
+  menuButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 16,
+    backgroundColor: '#E8ECF0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: {
+    color: COLORS.ink,
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: -5,
   },
   subBar: {
     flexDirection: 'row',
@@ -298,7 +275,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderTopWidth: 1,
-    borderTopColor: '#28384C',
+    borderTopColor: COLORS.line,
   },
   statusGroup: {
     flexDirection: 'row',
