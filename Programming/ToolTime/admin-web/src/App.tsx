@@ -76,6 +76,12 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   const [projectPromptShake, setProjectPromptShake] = useState(0);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [isDeletingProject, setIsDeletingProject] = useState<boolean>(false);
+  const [focusedAddendumId, setFocusedAddendumId] = useState<string | null>(null);
+
+  const handleNavigateToAddendum = (addendumId: string) => {
+    setFocusedAddendumId(addendumId);
+    setActiveTab('addendums');
+  };
 
   // 1. Listen to all projects & users
   useEffect(() => {
@@ -210,7 +216,22 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
     }
   };
 
-  const openAddendumsCount = addendums.filter(a => a.status === 'pending').length;
+  // Addendums to confirm / process:
+  // - Kaufmaennisch: Nachträge, die der Bauleiter angefragt hat (status === 'requested' || 'needs_discussion')
+  // - Admin: Angefragte Nachträge zur Bestätigung bzw. offene Nachträge
+  // - Bauleiter: Offene Nachträge von Monteuren (pending) + Klärungsbedarf (needs_discussion)
+  const openAddendumsCount = useMemo(() => {
+    const requested = addendums.filter(a => a.status === 'requested' || a.status === 'needs_discussion').length;
+    const pending = addendums.filter(a => a.status === 'pending').length;
+
+    if (currentUser?.role === 'kaufmaennisch') {
+      return requested;
+    }
+    if (currentUser?.role === 'admin') {
+      return requested > 0 ? requested : pending;
+    }
+    return pending + addendums.filter(a => a.status === 'needs_discussion').length;
+  }, [addendums, currentUser?.role]);
   
   // Reorders and deviation count (distinct positions with genuine deviation or active alert)
   const reordersCount = useMemo(() => {
@@ -298,12 +319,14 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
         activeProject={activeProject}
         currentUser={currentUser}
         alerts={alerts}
+        addendums={addendums}
         onSelectProject={handleSelectProject}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
         onLogout={() => {
           onLogout();
         }}
+        onNavigateToAddendum={handleNavigateToAddendum}
       />
 
       {/* Main Layout */}
@@ -413,7 +436,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                     positions={positions}
                     bookings={bookings}
                     currentUser={currentUser}
-                    focusedItemId={deepLink.get('item')}
+                    focusedItemId={focusedAddendumId || deepLink.get('item')}
                   />
                 )}
 

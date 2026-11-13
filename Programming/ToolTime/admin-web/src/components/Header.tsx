@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type { TenantBranding } from '../types/branding';
 import { brandBackgroundColor, brandTextAccentColor, readableTextColor } from '../types/branding';
-import type { Project, Alert, User } from '../types';
+import type { Project, Alert, User, Addendum } from '../types';
 import { updateAlertStatus } from '../services/firestoreService';
 
 interface HeaderProps {
@@ -13,10 +13,12 @@ interface HeaderProps {
   activeProject: Project | null;
   currentUser: User | null;
   alerts?: Alert[];
+  addendums?: Addendum[];
   onSelectProject: (projectId: string) => void;
   onOpenNewProject: () => void;
   onOpenChangePassword?: () => void;
   onLogout?: () => void;
+  onNavigateToAddendum?: (addendumId: string) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,10 +27,12 @@ export const Header: React.FC<HeaderProps> = ({
   activeProject,
   currentUser,
   alerts = [],
+  addendums = [],
   onSelectProject,
   onOpenNewProject,
   onOpenChangePassword,
-  onLogout
+  onLogout,
+  onNavigateToAddendum
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [isAlertsOpen, setIsAlertsOpen] = useState<boolean>(false);
@@ -38,6 +42,12 @@ export const Header: React.FC<HeaderProps> = ({
   const profileRef = useRef<HTMLDivElement>(null);
 
   const openAlerts = alerts.filter(a => a.status === 'open');
+  const isCommercialOrAdmin = currentUser?.role === 'kaufmaennisch' || currentUser?.role === 'admin';
+  const requestedAddendums = addendums.filter(
+    a => a.status === 'requested' || a.status === 'needs_discussion'
+  );
+  const relevantRequests = isCommercialOrAdmin ? requestedAddendums : [];
+  const totalNotifications = openAlerts.length + relevantRequests.length;
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -192,13 +202,17 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="relative" ref={alertsRef}>
             <button
               onClick={() => setIsAlertsOpen(!isAlertsOpen)}
-              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
-              title="Material-Überschreitungen & Alerts"
+              className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+              title={
+                relevantRequests.length > 0
+                  ? `${relevantRequests.length} offene Materialanfrage(n) & ${openAlerts.length} Alert(s)`
+                  : 'Material-Überschreitungen & Alerts'
+              }
             >
               <Bell className="w-4 h-4" />
-              {openAlerts.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[10px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse shadow-sm">
-                  {openAlerts.length}
+              {totalNotifications > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[10px] min-w-4 h-4 px-1 rounded-full flex items-center justify-center animate-pulse shadow-sm">
+                  {totalNotifications}
                 </span>
               )}
             </button>
@@ -209,17 +223,17 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center justify-between pb-2.5 mb-2.5 border-b border-slate-800 gap-2">
                   <div className="flex items-center space-x-2 min-w-0">
                     <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span className="text-xs font-bold text-white uppercase tracking-wider truncate" title="Akute Warnungen & Nachbestellungen">
-                      Akute Warnungen & Nachbestellungen
+                    <span className="text-xs font-bold text-white uppercase tracking-wider truncate" title="Mitteilungen & Anfragen">
+                      Mitteilungen & Anfragen
                     </span>
                   </div>
                   <div className="flex items-center space-x-2 shrink-0">
                     <span className="text-[11px] font-bold bg-red-600 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 shadow-sm leading-none flex items-center justify-center">
-                      {openAlerts.length} offen
+                      {totalNotifications} offen
                     </span>
                     <button
                       onClick={() => setIsAlertsOpen(false)}
-                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                       title="Flyout schließen"
                       aria-label="Schließen"
                     >
@@ -228,56 +242,107 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 </div>
 
-                {openAlerts.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-slate-400">
-                    Keine offenen Überschreitungsmeldungen.
-                  </div>
-                ) : (
-                  <div className="max-h-72 overflow-y-auto space-y-2 py-1">
-                    {openAlerts.map(alert => (
-                      <div 
-                        key={alert.id}
-                        className="bg-slate-800/90 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 space-y-1.5 text-xs transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-white truncate">
-                            {alert.roomName}
-                          </span>
-                          <div className="flex items-center space-x-2 shrink-0">
-                            <span className="font-mono text-[#3B82C4] font-bold">
-                              Pos. {alert.materialPos}
+                <div className="max-h-80 overflow-y-auto space-y-3 py-1">
+                  {/* SECTION 1: Material Requests from Bauleiter (relevant for commercial & admin) */}
+                  {relevantRequests.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center justify-between px-1">
+                        <span>📦 Materialanfragen Bauleitung ({relevantRequests.length})</span>
+                        <span className="text-[9px] bg-purple-500/20 text-purple-200 px-1.5 py-0.5 rounded font-semibold">kfm. Prüfung</span>
+                      </div>
+                      {relevantRequests.map(item => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setIsAlertsOpen(false);
+                            onNavigateToAddendum?.(item.id);
+                          }}
+                          className="bg-slate-800/95 hover:bg-slate-800 p-2.5 rounded-xl border border-purple-500/30 hover:border-purple-400 transition-all text-xs cursor-pointer space-y-1.5 group"
+                          title="Zu diesem Nachtrag wechseln"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-white truncate group-hover:text-purple-300 transition-colors">
+                              {item.title}
                             </span>
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                const pId = activeProject?.id || alert.projectId;
-                                if (pId) {
-                                  await updateAlertStatus(pId, alert.id, 'acknowledged', 'Im Header quittiert');
-                                }
-                              }}
-                              className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700/80 transition-colors"
-                              title="Diesen Alert schließen / quittieren"
-                              aria-label="Alert schließen"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
+                            <span className="text-purple-300 font-bold font-mono text-[11px] shrink-0 bg-purple-900/40 px-1.5 py-0.5 rounded">
+                              +{item.reorderedQty || item.quantity} {item.qu || 'Stk'}
+                            </span>
+                          </div>
+                          <div className="text-slate-300 text-[11px] truncate">
+                            {item.roomName ? `Raum: ${item.roomName}` : 'Projektweit'} · {item.description || item.note || 'Materialanfrage'}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 text-[10px] border-t border-slate-700/50">
+                            <span className="text-slate-400">
+                              Erfasst von: <strong className="text-slate-200">{item.requestedBy || 'Bauleiter'}</strong>
+                            </span>
+                            <span className="text-purple-400 font-semibold group-hover:underline flex items-center gap-1">
+                              Prüfen & Freigeben →
+                            </span>
                           </div>
                         </div>
-                        <div className="text-slate-300 text-[11px] truncate">
-                          {alert.materialName}
+                      ))}
+                    </div>
+                  )}
+
+                  {/* SECTION 2: Room Material Alerts */}
+                  {openAlerts.length > 0 && (
+                    <div className="space-y-1.5">
+                      {relevantRequests.length > 0 && (
+                        <div className="text-[10px] font-bold text-amber-300 uppercase tracking-wider px-1 pt-1">
+                          ⚠️ Akute Warnungen & Alerts ({openAlerts.length})
                         </div>
-                        <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-700/40">
-                          <span className="text-red-400 font-bold">
-                            +{alert.exceededBy} {alert.qu} Mehrbedarf
-                          </span>
-                          <span className="text-slate-400">
-                            {alert.monteurName}
-                          </span>
+                      )}
+                      {openAlerts.map(alert => (
+                        <div 
+                          key={alert.id}
+                          className="bg-slate-800/90 hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 space-y-1.5 text-xs transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-white truncate">
+                              {alert.roomName}
+                            </span>
+                            <div className="flex items-center space-x-2 shrink-0">
+                              <span className="font-mono text-[#3B82C4] font-bold">
+                                Pos. {alert.materialPos}
+                              </span>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const pId = activeProject?.id || alert.projectId;
+                                  if (pId) {
+                                    await updateAlertStatus(pId, alert.id, 'acknowledged', 'Im Header quittiert');
+                                  }
+                                }}
+                                className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700/80 transition-colors cursor-pointer"
+                                title="Diesen Alert schließen / quittieren"
+                                aria-label="Alert schließen"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="text-slate-300 text-[11px] truncate">
+                            {alert.materialName}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-700/40">
+                            <span className="text-red-400 font-bold">
+                              +{alert.exceededBy} {alert.qu} Mehrbedarf
+                            </span>
+                            <span className="text-slate-400">
+                              {alert.monteurName}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                  )}
+
+                  {totalNotifications === 0 && (
+                    <div className="py-6 text-center text-xs text-slate-400">
+                      Keine offenen Überschreitungsmeldungen oder Anfragen.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

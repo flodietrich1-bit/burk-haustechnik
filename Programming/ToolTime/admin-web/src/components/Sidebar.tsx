@@ -93,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Nachträge',
       icon: AlertCircle,
       badge: openAddendumsCount > 0 ? String(openAddendumsCount) : undefined,
-      badgeColor: 'bg-amber-500 text-white'
+      badgeColor: 'bg-red-600 text-white'
     },
     {
       id: 'reorders' as TabType,
@@ -159,8 +159,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className={`px-2 py-0.2 rounded-full text-[10px] font-bold ${
-                    item.badgeColor || (isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-white')
+                  <span className={`px-2 py-0.5 text-[10px] font-bold shadow-xs ${
+                    item.id === 'addendums'
+                      ? 'rounded-md bg-red-600 text-white'
+                      : item.badgeColor
+                      ? `rounded-full ${item.badgeColor}`
+                      : (isActive ? 'rounded-full bg-white/20 text-white' : 'rounded-full bg-slate-800 text-white')
                   }`}>
                     {item.badge}
                   </span>
