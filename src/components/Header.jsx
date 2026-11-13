@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { LANGUAGES, t } from '../locales/i18n';
 
@@ -47,6 +48,11 @@ export default function Header({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
+  const nameParts = String(monteurName || '').trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase()
+    : (nameParts[0] || 'M').slice(0, 2).toUpperCase();
+
   return (
     <View style={styles.wrapper}>
       {/* Top Brand & Project Bar */}
@@ -56,6 +62,20 @@ export default function Header({
             <Text style={styles.logoBold}>burk</Text>
             <Text style={styles.logoSmall}>Haustechnik</Text>
           </View>
+          <TouchableOpacity
+            style={styles.userBadge}
+            onPress={onLockPress}
+            disabled={!onLockPress}
+            accessibilityRole="button"
+            accessibilityLabel={monteurName}
+            activeOpacity={0.7}
+          >
+            <Svg width={13} height={13} viewBox="0 0 16 16" fill="none">
+              <Circle cx="8" cy="5" r="2.5" stroke="#D2DCE6" strokeWidth="1.5" />
+              <Path d="M2.5 14c.4-2.7 2.3-4 5.5-4s5.1 1.3 5.5 4" stroke="#D2DCE6" strokeWidth="1.5" strokeLinecap="round" />
+            </Svg>
+            <Text style={styles.userInitials}>{initials}</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.projectTexts}
             onPress={onSwitchProject}
@@ -107,7 +127,7 @@ export default function Header({
         </View>
       </View>
 
-      {/* Sub Bar: Status, Monteur & Languages */}
+      {/* Sub Bar: Status & Languages */}
       <View style={styles.subBar}>
         {/* Online / Offline Status Badge */}
         <View style={styles.statusGroup}>
@@ -115,20 +135,6 @@ export default function Header({
           <Text style={styles.statusLabel}>
             {isOnline ? t('online', currentLang) : t('offline', currentLang)}
           </Text>
-          {monteurName ? (
-            <TouchableOpacity
-              onPress={onLockPress}
-              disabled={!onLockPress}
-              activeOpacity={0.7}
-              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              style={{ flexDirection: 'row', alignItems: 'center' }}
-            >
-              <Text style={styles.monteurText} numberOfLines={1}>
-                · {monteurName}
-              </Text>
-              {onLockPress && <Text style={{ fontSize: 10, color: COLORS.muted }}> 🔒</Text>}
-            </TouchableOpacity>
-          ) : null}
         </View>
 
         {/* Language Switcher Chips */}
@@ -166,15 +172,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: 8,
+    paddingBottom: 7,
     gap: 8,
   },
   leftInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    gap: 12,
+    gap: 8,
   },
   logoRow: {
     alignItems: 'flex-start',
@@ -193,6 +199,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: -2,
     textTransform: 'uppercase',
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: COLORS.ink2,
+  },
+  userInitials: {
+    color: '#D2DCE6',
+    fontSize: 10,
+    fontWeight: '800',
   },
   projectTexts: {
     flex: 1,
@@ -230,7 +250,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 5,
     borderRadius: 16,
   },
   syncButtonPending: {
@@ -301,11 +321,6 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
     color: COLORS.inkSoft,
-  },
-  monteurText: {
-    fontSize: 11.5,
-    color: COLORS.muted,
-    fontWeight: '600',
   },
   langChips: {
     flexDirection: 'row',

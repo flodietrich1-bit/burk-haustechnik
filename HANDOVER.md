@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.37` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.38` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with live percentages, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername (optionale Begründung), photo capture (camera/gallery, compress < 1000 KB), room completion (locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup.
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
@@ -136,12 +136,13 @@ Suspected / unverified: see "suspected" markers above.
 
 ## 14. Current Work / Open Tasks
 
-- v2.37 reload fix on branch `Monteur` includes the missing `refreshData` helper and startup error recovery. Device reload still needs manual confirmation in Expo Go.
+- v2.38 fixes the `getRoomFloor` runtime crash in room list and booking screen, and compacts the header with a small user icon and initials. Device rendering still needs manual confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-13 v2.38: `getRoomFloor` is exported from `storageService.js` and resolves explicit `floor`/`level`, a floor prefix in room code, or `Sonstiges`; fixes `undefined is not a function` in `RoomListScreen` (and the same latent issue in `BookingScreen`). `Header` replaces the full monteur name with a compact user icon and initials next to the logo and trims vertical padding.
 - 2026-11-13 v2.37: Expo Go reload now has the missing `refreshData` helper; startup errors after an activation retain the local session and route to project selection rather than demanding a new one-time invite. `expo-doctor` 20/20 and iOS export passed; Expo Go device reload and live Firebase session restoration remain unverified.
 - 2026-10-14 v2.21: App-Vereinfachung für Monteure (Arbeit nicht blockieren):
   - `NachtragModal.jsx`: Segmented-Control-Tabs (`📦 Material` und `⏱ Arbeitszeit`) komplett entfernt. Nachträge erfassen ab sofort ausschließlich Material ("mehr Zeit benötigt" entfernt, da Zeitrisiko beim Unternehmer/Nachkalkulation liegt und nicht ins Aufmaß gehört).
@@ -232,6 +233,12 @@ Suspected / unverified: see "suspected" markers above.
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-13 (v2.38)**
+  - **Anlass:** Screenshot zeigte `TypeError: undefined is not a function` in der Raumliste; Nutzer wünschte weniger Platzverbrauch im Header.
+  - **Ursache:** `RoomListScreen.jsx` und `BookingScreen.jsx` importierten `getRoomFloor`, das `storageService.js` nicht exportierte.
+  - **Änderungen:** Gemeinsame Geschossfunktion ergänzt; Header zeigt Nutzer-Symbol und aus Vor-/Nachname gebildete Initialen neben dem burk-Logo statt ausgeschriebenem Monteurnamen, mit kleinerer vertikaler Höhe. App-Anzeigeversion v2.38.
+  - **Verifikation:** gezielte Laufzeitprüfungen für Geschossfunktion, `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden. Darstellung und Navigation auf echtem Gerät: Unknown / needs confirmation.
 
 - **2026-11-13 (v2.37)**
   - **Anlass:** Normaler Expo Go Reload führte trotz vorhandener Geräteaktivierung zum Aktivierungsbildschirm.

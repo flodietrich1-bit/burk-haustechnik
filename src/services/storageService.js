@@ -133,6 +133,14 @@ export async function getRooms(projectId) {
   return [];
 }
 
+export function getRoomFloor(room) {
+  const floor = String(room?.floor || room?.level || '').trim();
+  if (['UG', 'EG', 'OG', 'DG', 'Strangschema'].includes(floor)) return floor;
+
+  const codeFloor = String(room?.code || '').trim().toUpperCase().match(/^(UG|EG|OG|DG)(?:\b|[-_ ])/);
+  return codeFloor?.[1] || 'Sonstiges';
+}
+
 export function computeRoomPercentage(room, materials = []) {
   if (!room) return 0;
   if (room.isCompleted) {
