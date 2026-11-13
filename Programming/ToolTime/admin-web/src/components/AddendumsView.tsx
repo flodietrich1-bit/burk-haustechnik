@@ -1058,7 +1058,7 @@ Bauleitung`;
                       }`}>
                         {isApproved 
                           ? (item.approvalType === 'reordered' 
-                              ? `Freigegeben (Nachbestellt: ${item.reorderedQty || item.quantity})` 
+                              ? `Freigegeben (Bestellung bestätigt: ${item.reorderedQty || item.quantity})`
                               : (cat === 'unclear' ? 'Geprüft & Hinweis geschlossen' : 'Freigegeben (Lagerbestand)')) 
                           : isRejected ? 'Abgelehnt' : needsDiscussion ? 'Rücksprache erforderlich'
                           : isRequested ? (item.requestedTo ? `Angefragt bei ${item.requestedTo}` : 'Angefragt')
@@ -1273,9 +1273,10 @@ Bauleitung`;
                     </label>
                     {commercialError && commercialErrorItemId === item.id && <p role="alert" className="text-xs text-red-700">{commercialError}</p>}
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" disabled={!!commercialBusy} onClick={() => void handleCommercialDecision(item, 'approved')} className="rounded-xl bg-[#2FA36B] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Bestellt / Freigeben</button>
+                      <button type="button" disabled={!!commercialBusy} onClick={() => void handleCommercialDecision(item, 'approved')} className="rounded-xl bg-[#2FA36B] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">Bestellung bestätigen</button>
                       <button type="button" disabled={!!commercialBusy || !commercialNote[item.id]?.trim()} onClick={() => void handleCommercialDecision(item, 'needs_discussion')} className="rounded-xl border border-orange-300 bg-orange-50 px-4 py-2 text-xs font-bold text-orange-900 disabled:opacity-50">Rücksprache erforderlich</button>
                     </div>
+                    <p className="text-xs text-slate-500">Bestätigt der Bauleitung, dass die Bestellung beim Lieferanten aufgegeben wurde, und schließt die Anfrage ab.</p>
                   </div>
                 )}
                 {isPending && canManageAddendums && (

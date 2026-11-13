@@ -7,7 +7,7 @@ type Role = 'admin' | 'bauleiter' | 'kaufmaennisch' | 'monteur';
 interface Member { id: string; displayName?: string; email?: string; phone?: string; defaultLanguage?: 'de' | 'ro' | 'pl' | 'hr'; role: Role; status: string; assignedProjectIds?: string[]; }
 interface Invitation { id: string; displayName: string; email?: string; role: Role; status: string; emailSent?: boolean; emailError?: string | null; }
 interface InvitationResult { inviteId: string; shortCode: string; qrDataUrl: string; webInviteUrl?: string; pdfBase64: string; emailSent: boolean; emailError?: string | null; }
-const roleLabels: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'Kaufmännisch', monteur: 'Monteur' };
+const roleLabels: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'Kaufmann', monteur: 'Monteur' };
 
 export function TenantMembersView({ tenantId, projects }: { tenantId: string; projects: Project[] }) {
   const [members, setMembers] = useState<Member[]>([]);
