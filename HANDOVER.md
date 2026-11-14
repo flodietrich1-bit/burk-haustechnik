@@ -10,8 +10,9 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.44` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.45` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header now places a tappable online/offline icon in the top right; it spins during manual and background syncs. The room back link sits in the fixed language row; no logout control is shown in the main app or project selection.
+- The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -99,7 +100,7 @@ No README, no tests, no CI config, no `.env` files in the repo.
 
 - Only scripts: `start`, `android`, `ios`, `web` [config].
 - No tests, ESLint, Prettier, TypeScript or CI [verified by file listing].
-- Current smoke checks: `npx expo-doctor` 20/20 and `npx expo export --platform ios` passed on 2026-11-14 for v2.44. Metro is running on port 8081; no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
+- Current smoke checks: `npx expo-doctor` 20/20, `npx expo export --platform ios` and `git diff --check` passed on 2026-11-14 for v2.45. Metro was restarted with `npm start -- --host lan` on port 8081 (`exp://172.20.10.2:8081`); no device was attached. Web export is unavailable because `web` is not configured in `app.json` platforms.
 - Release/OTA publish procedure: `AGENTS.md` requires `npx eas-cli update --branch preview --environment preview --message "<APP_VERSION> - <Beschreibung>" --non-interactive` whenever `Monteur` is pushed. Expo Go development reloads use Metro rather than EAS Update.
 
 ## 11. Deployment
@@ -133,16 +134,17 @@ Confirmed from code:
 11. `expo-image-picker` uses `MediaTypeOptions` (check against SDK 57 docs; deprecated in newer SDKs — suspected).
 12. Possible mismatch between app writes and local Firestore rules: rules only match `projects/{id}`, `positions`, `rooms`, `bookings`, `addendums`, `users`; no explicit match for `projects/*/bookings`, `projects/*/addendums`, `projects/*/monteurs`, or root `monteurs`, which would be denied if those rules are deployed as-is (**suspected**; deployed rules unknown).
 
-Suspected / unverified: see "suspected" markers above. The prior unplanned-reason validation discrepancy is fixed in v2.43; device behavior remains unverified. Full-screen room completion modal, room-list/header layout including v2.44 status/sync icon, and v2.42 unplanned-card ordering in Expo Go on a real device: Unknown / needs confirmation.
+Suspected / unverified: see "suspected" markers above. The prior unplanned-reason validation discrepancy is fixed in v2.43; device behavior remains unverified. Full-screen room completion modal, room-list/header layout including v2.44 status/sync icon and v2.45 KPI-card removal, and v2.42 unplanned-card ordering in Expo Go on a real device: Unknown / needs confirmation.
 
 ## 14. Current Work / Open Tasks
 
-- v2.44 simplifies the common header: no three-dot menu or logout controls; online/offline icon launches manual sync and spins during any App.js sync; the room back link moved into the fixed row beside language selection. Reconnect and periodic sync use the active project ID and an active-sync ref to avoid restarting the NetInfo listener/timer on each indicator change. Device behavior still needs confirmation in Expo Go.
+- v2.45 removes the “Wöchentliches Aufmaß” KPI card from the room overview. Device layout still needs confirmation in Expo Go.
 - No documented backlog. Open tasks: Unknown / needs confirmation (ask the owner). Do not invent requirements.
 
 ## 15. Recent Relevant Changes
 
 [git] Latest first:
+- 2026-11-14 v2.45: Removed the complete weekly-measurement card and its percentage/value calculations and styles from `RoomListScreen`; floor filters and room cards now start the overview. Removed the unused room-list project-switch prop; switching via the common header remains. App display version v2.45. Expo Doctor 20/20, iOS export and diff check passed; device layout unverified.
 - 2026-11-14 v2.44: Removed three-dot/logout UI in the common header and logout controls in project selection. Replaced top-right sync button with tappable connectivity icon, showing a rotating sync icon for manual and background syncs. Moved room back link from scroll content into the common header's language row. Reconnect and periodic sync are keyed to the active project and guarded by an active-sync ref, avoiding listener/timer restarts on indicator changes. App display version v2.44. Expo Doctor 20/20, iOS export and diff check passed; device UI not yet verified.
 - 2026-11-13 v2.43: The unplanned-install form enforces its already indicated reason requirement in `handleSave`, marks the field as required/invalid, and stores only the entered reason. Supersedes the optional-reason behavior of v2.21 for this form; Mehrbedarf reason stays optional.
 - 2026-11-13 v2.42: Booking screen builds its visible list from newest unplanned entries and room material flags before standard active cards; adding an unplanned entry clears search. Fixes the card disappearing while remaining searchable after a catalog update.
@@ -222,7 +224,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 | Login / PIN / seeds | `src/services/authService.js`, `src/screens/PinLockScreen.jsx` |
 | Booking UI / unplanned card ordering / completion recovery / full-screen modal | `src/screens/BookingScreen.jsx`, `src/components/booking/CompleteRoomModal.jsx`, `src/components/booking/UnplannedInstallModal.jsx`, `src/components/booking/completeRoomStyles.js`, `src/components/booking/bookingStyles.js` |
 | Tenant branding / header / room back link | `src/services/authService.js`, `src/components/Header.jsx` |
-| Room List & Floor Filter / capped ring | `src/screens/RoomListScreen.jsx`, `src/components/ProgressRing.jsx` |
+| Room List & Floor Filter / capped ring / KPI-card removal | `src/screens/RoomListScreen.jsx`, `src/components/ProgressRing.jsx` |
 | Photos | `src/screens/PhotoCaptureScreen.jsx` |
 | Text/translation | `src/locales/i18n.js` |
 | Version/theme | `src/constants/version.js`, `src/constants/theme.js` |
@@ -241,6 +243,11 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-14 (v2.45)**
+  - **Anlass:** Die Kachel „Wöchentliches Aufmaß“ mit Prozent, verbautem und geliefertem Wert soll von der ersten Seite verschwinden.
+  - **Änderungen:** Kachel inklusive Berechnungen und Styles aus `RoomListScreen` entfernt; ungenutzte Projektwechsel-Prop dort entfernt. Projektwechsel über den gemeinsamen Header bleibt verfügbar. App-Anzeigeversion v2.45.
+  - **Verifikation:** `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden; Metro mit Expo Go auf Port 8081 gestartet. Darstellung auf echtem Gerät: Unknown / needs confirmation.
 
 - **2026-11-14 (v2.44)**
   - **Anlass:** Drei-Punkte-Menü und Abmeldung sollen entfallen; Online/Offline oben rechts als manueller Sync-Auslöser; drehendes Sync-Symbol während Sync; „‹ Räume“ in die bisherige Statuszeile.

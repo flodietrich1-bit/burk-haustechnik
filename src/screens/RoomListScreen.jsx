@@ -21,18 +21,8 @@ export default function RoomListScreen({
   project = {},
   currentLang = 'de',
   onSelectRoom,
-  onSwitchProject = null,
 }) {
   const [selectedFloor, setSelectedFloor] = useState('Alle');
-
-  // Calculate total project stats
-  const totalDeliveredVal = materials.reduce((acc, m) => acc + (m.deliveredQty * m.unitPrice), 0);
-  const totalInstalledVal = materials.reduce((acc, m) => acc + (m.installedQty * m.unitPrice), 0);
-  const totalProg = totalDeliveredVal > 0 ? Math.round((totalInstalledVal / totalDeliveredVal) * 100) : 0;
-
-  const formatEuro = (val) => {
-    return Math.round(val).toLocaleString('de-DE') + ' €';
-  };
 
   // Group rooms by floor
   const { floorCounts, groupedRooms, filteredRooms } = useMemo(() => {
@@ -110,41 +100,7 @@ export default function RoomListScreen({
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Project Banner Card */}
-        <View style={styles.projCard}>
-          <View style={styles.projHeader}>
-            <View style={styles.projTitleRow}>
-              <Text style={styles.p1}>{t('projTitle', currentLang)}</Text>
-              <View style={styles.badgeOverall}>
-                <Text style={styles.badgeText}>{totalProg}%</Text>
-              </View>
-            </View>
-            {onSwitchProject && (
-              <TouchableOpacity
-                style={styles.switchProjectBtn}
-                onPress={onSwitchProject}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.switchProjectText}>🔄 {t('switchProject', currentLang)}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Quick KPI stats */}
-          <View style={styles.kpiRow}>
-            <View style={styles.kpiItem}>
-              <Text style={styles.kpiLabel}>{t('installedValue', currentLang)}</Text>
-              <Text style={styles.kpiValue}>{formatEuro(totalInstalledVal)}</Text>
-            </View>
-            <View style={styles.kpiDivider} />
-            <View style={styles.kpiItem}>
-              <Text style={styles.kpiLabel}>{t('deliveredValue', currentLang)}</Text>
-              <Text style={styles.kpiValue}>{formatEuro(totalDeliveredVal)}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* 2. Horizontal Floor Filter Pills Bar */}
+        {/* Horizontal Floor Filter Pills Bar */}
         <View style={styles.filterSection}>
           <Text style={styles.sectTitle}>{t('roomsSect', currentLang)}</Text>
           <ScrollView
@@ -177,7 +133,7 @@ export default function RoomListScreen({
           </ScrollView>
         </View>
 
-        {/* 3. Rooms List grouped or filtered */}
+        {/* Rooms List grouped or filtered */}
         <View style={styles.roomList}>
           {selectedFloor === 'Alle' ? (
             // Grouped by Floor
@@ -224,86 +180,6 @@ const styles = StyleSheet.create({
   content: {
     padding: 12,
     paddingBottom: 28,
-  },
-  projCard: {
-    backgroundColor: COLORS.ink2,
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 10,
-  },
-  projHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  projTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 1,
-  },
-  p1: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 15,
-  },
-  badgeOverall: {
-    backgroundColor: COLORS.amber,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 11,
-  },
-  kpiRow: {
-    flexDirection: 'row',
-    backgroundColor: '#1E2D3E',
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  kpiItem: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-  },
-  kpiDivider: {
-    width: 1,
-    height: 16,
-    backgroundColor: '#34475D',
-  },
-  kpiLabel: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  kpiValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  switchProjectBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  switchProjectText: {
-    color: '#93C5FD',
-    fontSize: 11,
-    fontWeight: '700',
   },
   filterSection: {
     marginBottom: 10,

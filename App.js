@@ -1189,7 +1189,6 @@ export default function App() {
             project={project}
             currentLang={currentLang}
             onSelectRoom={handleSelectRoom}
-            onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
           />
         )}
 
