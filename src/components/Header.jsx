@@ -14,7 +14,7 @@ export default function Header({
   onSyncPress,
   isSyncing = false,
   onSwitchProject = null,
-  onLockPress = null,
+  onBackToRooms = null,
 }) {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
@@ -85,46 +85,41 @@ export default function Header({
         </View>
 
         <View style={styles.rightBadges}>
-          {/* Sync Button */}
+          {/* Network status doubles as the manual sync action. */}
           <TouchableOpacity
             style={[
               styles.syncButton,
-              branding?.primaryColor && { backgroundColor: branding.primaryColor },
+              { backgroundColor: isSyncing ? COLORS.amber : isOnline ? COLORS.green : COLORS.muted },
             ]}
             onPress={onSyncPress}
             disabled={isSyncing}
-            accessibilityLabel={t('syncBtn', currentLang)}
+            accessibilityLabel={`${isOnline ? t('online', currentLang) : t('offline', currentLang)} · ${t('syncBtn', currentLang)}`}
             activeOpacity={0.7}
           >
-            <Animated.View style={isSyncing ? { transform: [{ rotate: spinInterpolate }] } : undefined}>
-              <Svg width={21} height={21} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5"
-                  stroke="#FFFFFF"
-                  strokeWidth={2.2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+            {isSyncing ? (
+              <Animated.View style={{ transform: [{ rotate: spinInterpolate }] }}>
+                <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                  <Path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 4v5h5M4 13a8.1 8.1 0 0 0 15.5 2M20 20v-5h-5" stroke="#FFFFFF" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </Animated.View>
+            ) : (
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                <Path d="M3 9a14 14 0 0 1 18 0M6 13a9 9 0 0 1 12 0M9.5 17a4 4 0 0 1 5 0" stroke="#FFFFFF" strokeWidth={2.1} strokeLinecap="round" />
+                <Path d="M12 20h.01" stroke="#FFFFFF" strokeWidth={3} strokeLinecap="round" />
+                {!isOnline && <Path d="M3 3l18 18" stroke="#FFFFFF" strokeWidth={2.1} strokeLinecap="round" />}
               </Svg>
-            </Animated.View>
+            )}
           </TouchableOpacity>
-          {onLockPress && (
-            <TouchableOpacity style={styles.menuButton} onPress={onLockPress} accessibilityLabel={t('logoutDeviceTitle', currentLang)}>
-              <Text style={styles.menuText}>⋯</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </View>
 
-      {/* Sub Bar: Status & Languages */}
+      {/* Sub Bar: Room navigation & Languages */}
       <View style={styles.subBar}>
-        {/* Online / Offline Status Badge */}
-        <View style={styles.statusGroup}>
-          <View style={[styles.statusDot, isOnline ? styles.dotOnline : styles.dotOffline]} />
-          <Text style={styles.statusLabel}>
-            {isOnline ? t('online', currentLang) : t('offline', currentLang)}
-          </Text>
-        </View>
+        {onBackToRooms && (
+          <TouchableOpacity style={styles.backButton} onPress={onBackToRooms} accessibilityLabel={t('back', currentLang)}>
+            <Text style={styles.backText}>‹ {t('back', currentLang)}</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Language Switcher Chips */}
         <View style={styles.langChips}>
@@ -214,20 +209,6 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     backgroundColor: COLORS.amber,
   },
-  menuButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 16,
-    backgroundColor: '#E8ECF0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuText: {
-    color: COLORS.ink,
-    fontSize: 22,
-    fontWeight: '700',
-    marginTop: -5,
-  },
   subBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -238,31 +219,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.line,
   },
-  statusGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
+  backButton: {
+    paddingVertical: 4,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotOnline: {
-    backgroundColor: COLORS.green,
-  },
-  dotOffline: {
-    backgroundColor: COLORS.muted,
-  },
-  statusLabel: {
-    fontSize: 11.5,
+  backText: {
+    fontSize: 13,
     fontWeight: '700',
-    color: COLORS.inkSoft,
+    color: COLORS.muted,
   },
   langChips: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginLeft: 'auto',
     gap: 4,
   },
   globeIcon: {

@@ -16,7 +16,6 @@ import {
   setActiveProjectId,
   restoreSession,
   loadTenantBranding,
-  logoutDevice,
   getTenantId,
 } from './src/services/authService';
 import {
@@ -33,7 +32,7 @@ import {
   computeRoomPercentage,
   getCachedPlans,
 } from './src/services/storageService';
-import { syncBookings, checkOnlineStatus, subscribeToRoomLive } from './src/services/syncService';
+import { syncBookings as runSyncBookings, checkOnlineStatus, subscribeToRoomLive } from './src/services/syncService';
 import { t } from './src/locales/i18n';
 
 // Components
@@ -72,7 +71,20 @@ export default function App() {
   // Network State
   const [isOnline, setIsOnline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const activeSyncsRef = useRef(0);
   const [syncProgress, setSyncProgress] = useState({ visible: false, text: '', progress: 0 });
+
+  // Reflect manual and background syncs in the same header indicator.
+  const syncBookings = useCallback(async (options) => {
+    activeSyncsRef.current += 1;
+    setIsSyncing(true);
+    try {
+      return await runSyncBookings(options);
+    } finally {
+      activeSyncsRef.current -= 1;
+      if (activeSyncsRef.current === 0) setIsSyncing(false);
+    }
+  }, []);
 
   // Active Booking Session State
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -177,12 +189,13 @@ export default function App() {
       setIsOnline(online);
 
       // If reconnected and in main app with pending delta, trigger background sync
-      if (online && appPhase === 'app') {
-        const delta = await getLocalUnsyncedDelta();
-        if (delta.hasLocalDelta && !isSyncing) {
-          syncBookings({ silent: true }).then((res) => {
+      const pId = project?.id;
+      if (online && appPhase === 'app' && pId && activeSyncsRef.current === 0) {
+        const delta = await getLocalUnsyncedDelta(pId);
+        if (delta.hasLocalDelta && activeSyncsRef.current === 0) {
+          syncBookings({ silent: true, projectId: pId }).then((res) => {
             if (res.success) {
-              refreshData();
+              refreshData(pId);
             }
           });
         }
@@ -190,7 +203,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [appPhase, isSyncing]);
+  }, [appPhase, project?.id, syncBookings]);
 
   // 2b. Periodic Silent Background Sync (every 60 seconds)
   useEffect(() => {
@@ -200,8 +213,8 @@ export default function App() {
       try {
         const online = await checkOnlineStatus();
         setIsOnline(online);
-        if (online && !isSyncing) {
-          const pId = project?.id || DEFAULT_PROJECT_ID;
+        if (online && project?.id && activeSyncsRef.current === 0) {
+          const pId = project.id;
           const res = await syncBookings({ silent: true, projectId: pId });
           if (res && res.success) {
             await refreshData(pId);
@@ -213,7 +226,7 @@ export default function App() {
     }, 60000);
 
     return () => clearInterval(syncInterval);
-  }, [appPhase, isSyncing, project?.id]);
+  }, [appPhase, project?.id, syncBookings]);
 
   const refreshData = async (targetProjectId) => {
     const pId = targetProjectId || project?.id;
@@ -290,45 +303,6 @@ export default function App() {
         setSyncProgress({ visible: false, text: '', progress: 0 });
       }
     }
-  };
-
-  const handleLogoutDevice = () => {
-    Alert.alert(
-      t('logoutDeviceTitle', currentLang),
-      t('logoutDeviceConfirm', currentLang),
-      [
-        { text: t('cancel', currentLang), style: 'cancel' },
-        {
-          text: t('logoutDeviceBtn', currentLang),
-          style: 'destructive',
-          onPress: async () => {
-            await logoutDevice();
-            setMonteur(null);
-            setTenantBranding(null);
-            setProject(null);
-            setRooms([]);
-            setMaterials([]);
-            setAvailableProjects([]);
-            setSelectedRoom(null);
-            setAppPhase('activation');
-          },
-        },
-      ]
-    );
-  };
-
-  const handleHeaderLockPress = () => {
-    Alert.alert(
-      monteur?.name || 'Monteur',
-      t('monteur', currentLang),
-      [
-        ...(availableProjects.length > 1
-          ? [{ text: t('switchProject', currentLang) || 'Bauvorhaben wechseln', onPress: handleSwitchProject }]
-          : []),
-        { text: t('logoutDeviceTitle', currentLang), style: 'destructive', onPress: handleLogoutDevice },
-        { text: t('cancel', currentLang), style: 'cancel' },
-      ]
-    );
   };
 
   // 3. PIN Unlock, Sync & Multi-Project Routing
@@ -449,16 +423,13 @@ export default function App() {
 
   // 6. Manual Sync Button
   const handleManualSync = async () => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    try {
-      const pId = project?.id;
-      const res = await syncBookings({ silent: false, projectId: pId });
-      if (res.success) {
-        await refreshData(pId);
-      }
-    } finally {
-      setIsSyncing(false);
+    if (activeSyncsRef.current > 0) return;
+    const pId = project?.id;
+    const res = await syncBookings({ silent: false, projectId: pId, currentLang });
+    if (res.reason === 'offline') setIsOnline(false);
+    if (res.success) {
+      setIsOnline(true);
+      await refreshData(pId);
     }
   };
 
@@ -1185,7 +1156,6 @@ export default function App() {
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSelectProject={handleSelectProject}
-        onLogout={handleLogoutDevice}
       />
     );
   }
@@ -1206,7 +1176,7 @@ export default function App() {
         onSyncPress={handleManualSync}
         isSyncing={isSyncing}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
-        onLockPress={handleHeaderLockPress}
+        onBackToRooms={currentScreen === 'book' ? handleLeaveRoomDraft : null}
       />
 
       {/* Screen Router */}
@@ -1236,7 +1206,6 @@ export default function App() {
             onQuantityChange={handleQuantityChange}
             photoCount={sessionPhotos.length || (selectedRoom.photos?.length || 0)}
             onGoToPhotos={() => setCurrentScreen('photos')}
-            onBack={handleLeaveRoomDraft}
             unclearItems={unclearItems}
             onAddUnclearItem={handleAddUnclearItem}
             onAddNachtrag={handleAddNachtrag}

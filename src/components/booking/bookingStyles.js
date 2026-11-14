@@ -10,14 +10,6 @@ export const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 160,
   },
-  backButton: {
-    marginBottom: 8,
-  },
-  backText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.muted,
-  },
   headerRowClean: {
     flexDirection: 'row',
     alignItems: 'center',

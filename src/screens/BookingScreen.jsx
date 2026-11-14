@@ -36,7 +36,6 @@ export default function BookingScreen({
   onQuantityChange,
   photoCount = 0,
   onGoToPhotos,
-  onBack,
   unclearItems = [],
   onAddUnclearItem,
   onAddNachtrag,
@@ -329,11 +328,6 @@ export default function BookingScreen({
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Back Button */}
-        <TouchableOpacity style={styles.backButton} onPress={onBack}>
-          <Text style={styles.backText}>‹ {t('back', currentLang)}</Text>
-        </TouchableOpacity>
-
         {/* Room Header */}
         <View style={styles.headerRowClean}>
           <View style={{ flex: 1 }}>

@@ -18,7 +18,6 @@ export default function ProjectSelectScreen({
   onSelectProject,
   currentLang = 'de',
   onSelectLang,
-  onLogout,
 }) {
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -70,16 +69,6 @@ export default function ProjectSelectScreen({
                 {projects.length} {projects.length === 1 ? t('projectSingle', currentLang) : t('projectPlural', currentLang)}
               </Text>
             </View>
-            {onLogout && (
-              <TouchableOpacity
-                style={styles.headerLogoutBtn}
-                onPress={onLogout}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.headerLogoutText}>🔒</Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       </View>
@@ -98,15 +87,6 @@ export default function ProjectSelectScreen({
             <Text style={styles.emptyStateSub}>
               {t('noProjectsSub', currentLang)}
             </Text>
-            {onLogout && (
-              <TouchableOpacity
-                style={styles.emptyStateLogoutBtn}
-                onPress={onLogout}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.emptyStateLogoutText}>🔒 {t('backToPin', currentLang)}</Text>
-              </TouchableOpacity>
-            )}
           </View>
         ) : (
           projects.map((proj) => (
@@ -423,28 +403,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  headerLogoutBtn: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  headerLogoutText: {
-    fontSize: 13,
-  },
-  emptyStateLogoutBtn: {
-    marginTop: 20,
-    backgroundColor: COLORS.ink,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 14,
-  },
-  emptyStateLogoutText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 13,
   },
 });
