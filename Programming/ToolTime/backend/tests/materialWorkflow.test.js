@@ -101,6 +101,28 @@ test('material request sends one branded email and commercial approval updates a
     assert.equal(unplanned.body.createdByRole, 'monteur');
     assert.equal(unplanned.body.roomName, 'Bad EG');
     assert.equal((await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/${unplanned.body.id}`).get()).get('status'), 'pending');
+    const unplannedDiscussion = await post(`${path}/addendums/${unplanned.body.id}/unplanned-discussion`, buyerToken, { note: 'Bitte Einbauort abstimmen' });
+    assert.equal(unplannedDiscussion.status, 200, JSON.stringify(unplannedDiscussion.body));
+    assert.equal((await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/${unplanned.body.id}`).get()).get('commercialNote'), 'Bitte Einbauort abstimmen');
+    await adminDb.doc(`tenants/${tenantId}/members/${sender.uid}`).update({ role: 'bauleiter' });
+    const unplannedReply = await post(`${path}/addendums/${unplanned.body.id}/unplanned-discussion`, senderToken, { note: 'Im Bad EG montiert' });
+    assert.equal(unplannedReply.status, 200, JSON.stringify(unplannedReply.body));
+    const discussedItem = await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/${unplanned.body.id}`).get();
+    assert.equal(discussedItem.get('status'), 'pending');
+    assert.deepEqual(discussedItem.get('discussionHistory').map(entry => entry.note), ['Bitte Einbauort abstimmen', 'Im Bad EG montiert']);
+    await adminDb.doc(`tenants/${tenantId}/members/${sender.uid}`).update({ role: 'admin' });
+    await adminDb.doc(`tenants/${tenantId}/projects/project-1/aufmasse/auf-1`).set({
+      aufmassNumber: 'AUF-2026-001', projectName: 'Projekt Test', dateFrom: '2026-11-01', dateTo: '2026-11-14',
+      createdBy: 'Bauleiter Test', summaryItems: [], roomsData: [], totalPeriodVolume: 0,
+    });
+    const sendAufmass = await post(`${path}/aufmasse/auf-1/send`, senderToken, { recipientRole: 'kaufmaennisch', excelFilename: 'Aufmass_AUF-2026-001.xlsx', excelBase64: Buffer.from('PK\x03\x04test').toString('base64') });
+    assert.equal(sendAufmass.status, 200, JSON.stringify(sendAufmass.body));
+    assert.equal(sendAufmass.body.recipientEmail, buyerEmail);
+    const aufmassMail = sent.at(-1).body;
+    assert.deepEqual(aufmassMail.to, [buyerEmail]);
+    assert.deepEqual(aufmassMail.attachments.map(attachment => attachment.filename), ['Aufmass_AUF-2026-001.pdf', 'Aufmass_AUF-2026-001.xlsx']);
+    assert.ok(Buffer.from(aufmassMail.attachments[0].content, 'base64').subarray(0, 4).equals(Buffer.from('%PDF')));
+    assert.ok(Buffer.from(aufmassMail.attachments[1].content, 'base64').subarray(0, 4).equals(Buffer.from('PK\x03\x04')));
     await adminDb.doc(`tenants/${tenantId}/projects/project-1/addendums/add-2`).set({ title: 'Rohr aus Lager', type: 'material', quantity: 3, qu: 'm', status: 'pending' });
     const stockApproval = await post(`${path}/addendums/add-2/commercial-decision`, senderToken, { decision: 'approved', fulfillment: 'in_stock' });
     assert.equal(stockApproval.status, 200, JSON.stringify(stockApproval.body));

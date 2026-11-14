@@ -222,6 +222,8 @@ export function calculateAufmassSnapshot(
 
       // Total installed in room up to dateTo
       const totalInstalledToDate = getMaterialActualQty(m, room, bookingsUpToDate);
+      const linkedAddendum = pos?.addendumId ? addendums.find(a => a.id === pos.addendumId) : undefined;
+      const isUnplanned = Boolean(pos?.isAddendum && linkedAddendum && (linkedAddendum.isUnclear || ['unklar', 'ausserplanmaessig', 'außerplanmäßig', 'anders', 'unplanned'].includes(linkedAddendum.type || '')));
 
       // SKIP if nothing was ever installed for this material in this room
       if (totalInstalledToDate <= 0) {
@@ -247,6 +249,20 @@ export function calculateAufmassSnapshot(
 
       // Period Delta = what was installed within this Aufmaß period
       const installedInPeriod = Math.max(0, totalInstalledToDate - installedBeforePeriod);
+
+      if (isUnplanned) {
+        const { reasonText, causedBy } = determineCauseAndOriginator(linkedAddendum?.note || linkedAddendum?.description || 'Außerplanmäßig verbaut', m.posNr, room.id);
+        specialPositions.push({
+          positionId: m.positionId || pos!.id,
+          posNr: m.posNr || pos!.posNr,
+          shortText: m.shortText || pos!.shortText,
+          group: m.group || 'Sonderposten', qu, unitPrice,
+          plannedQty: 0, installedInPeriod, totalInstalledToDate,
+          isOverconsumption: false, excessQty: totalInstalledToDate,
+          reason: reasonText, causedBy, isExtraPosition: true, specialType: 'zusatzmaterial',
+        });
+        return;
+      }
 
       // Check for overconsumption
       if (totalInstalledToDate <= planned) {
@@ -362,26 +378,31 @@ export function calculateAufmassSnapshot(
 
     // 2. Extra Addendums for this room (approved or pending)
     addendums.forEach(a => {
-      if (a.roomId === room.id && a.type === 'material') {
+      if (a.roomId === room.id && (a.type === 'material' || a.isUnclear || ['unklar', 'ausserplanmaessig', 'außerplanmäßig', 'anders', 'unplanned'].includes(a.type || ''))
+        && (!a.createdAt || new Date(a.createdAt).getTime() <= toDateEndTimestamp)) {
         const aKey = a.itemOz || a.materialId;
-        const isPlanned = aKey && plannedPosKeys.has(aKey);
-        if (!isPlanned) {
+        const isUnplannedAddendum = Boolean(a.isUnclear || ['unklar', 'ausserplanmaessig', 'außerplanmäßig', 'anders', 'unplanned'].includes(a.type || ''));
+        const isPlanned = (aKey && plannedPosKeys.has(aKey)) || positions.some(p => p.addendumId === a.id && plannedPosKeys.has(p.id));
+        const linkedPosition = positions.find(p => p.addendumId === a.id);
+        const alreadyMeasured = linkedPosition && [...plannedPositions, ...specialPositions].some(p => p.positionId === linkedPosition.id);
+        if (!isPlanned || (isUnplannedAddendum && !alreadyMeasured)) {
           const rawQty = typeof a.quantity === 'number' ? a.quantity : parseFloat(String(a.quantity).replace(',', '.')) || 1;
           if (rawQty > 0) {
-            const alreadyAdded = specialPositions.find(p => p.shortText.toLowerCase() === a.title.toLowerCase());
+            const alreadyAdded = specialPositions.find(p => p.positionId === a.materialId || p.shortText.toLowerCase() === a.title.toLowerCase());
             if (!alreadyAdded) {
-              const rawNote = a.note || (a.status === 'approved' ? 'Freigegebener Mehrbedarf' : 'Erfasster Mehrbedarf');
+              const rawNote = a.note || a.description || (a.status === 'approved' ? 'Freigegebener Mehrbedarf' : 'Erfasster Mehrbedarf');
               const { reasonText, causedBy } = determineCauseAndOriginator(rawNote, a.itemOz, room.id);
 
+              const previousQty = previousAufmass?.roomsData?.find(r => r.roomId === room.id)?.positions?.find(p => p.positionId === (linkedPosition?.id || a.materialId || `addendum_${a.id}`))?.totalInstalledToDate || 0;
               specialPositions.push({
-                positionId: a.materialId || `addendum_${a.id}`,
-                posNr: a.itemOz || 'Sonder-Mat',
+                positionId: linkedPosition?.id || a.materialId || `addendum_${a.id}`,
+                posNr: linkedPosition?.posNr || a.itemOz || 'Sonder-Mat',
                 shortText: a.title,
                 group: 'Sonderbedarf / Mehrbedarf',
                 qu: a.qu || 'Stk',
                 unitPrice: a.unitPrice || 0,
                 plannedQty: 0,
-                installedInPeriod: rawQty,
+                installedInPeriod: Math.max(0, rawQty - previousQty),
                 totalInstalledToDate: rawQty,
                 isOverconsumption: true,
                 excessQty: rawQty,
@@ -453,7 +474,7 @@ export function calculateAufmassSnapshot(
           group: p.group || '',
           qu: p.qu || 'Stk',
           unitPrice: p.unitPrice || 0,
-          plannedQty: pos ? Number(pos.qty) || 0 : p.plannedQty || 0,
+          plannedQty: p.isExtraPosition && pos?.isAddendum ? 0 : pos ? Number(pos.qty) || 0 : p.plannedQty || 0,
           totalInstalledUpToDate: 0,
           periodInstalledQty: 0,
           totalCost: 0,

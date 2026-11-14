@@ -312,7 +312,7 @@ export function exportRoomVobAufmassToExcel(
  * Sheet 1: Gesamtübersicht (only installed period totals with wide columns)
  * Sheet 2: Räume (separated into 'Planmäßig verbaut' and 'Sonderposten' with cause & reason)
  */
-export function exportAufmassToExcel(aufmass: AufmassDocument) {
+export function exportAufmassToExcel(aufmass: AufmassDocument, download = true): { filename: string; content: Uint8Array } {
   const wb = XLSX.utils.book_new();
 
   // -------------------------------------------------------------
@@ -503,11 +503,30 @@ export function exportAufmassToExcel(aufmass: AufmassDocument) {
   // Append sheets
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Gesamtübersicht');
   XLSX.utils.book_append_sheet(wb, wsRooms, 'Räume');
+  const specialRows = aufmass.roomsData.flatMap(room => (room.specialPositions || []).map(position => ({
+    'Raum': room.roomName,
+    'Pos-Nr': position.posNr,
+    'Sonderposten': position.shortText,
+    'Verbaut': position.totalInstalledToDate,
+    'Einheit': position.qu,
+    'Begründung': position.reason || 'Außerplanmäßig verbaut',
+    'Verursacher': position.causedBy || '-',
+  })));
+  if (specialRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(specialRows), 'Sonderposten');
 
   // Trigger file download
   const cleanProject = aufmass.projectName.replace(/[^a-zA-Z0-9_-]/g, '_');
   const filename = `Aufmass_${aufmass.aufmassNumber}_${cleanProject}_${aufmass.dateTo}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  const content = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array;
+  if (download) {
+    const url = URL.createObjectURL(new Blob([content as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  return { filename, content };
 }
 
 /**

@@ -267,6 +267,7 @@ export interface Addendum {
   commercialApprovedBy?: string;
   commercialApprovedAt?: string;
   commercialNote?: string;
+  discussionHistory?: { author: string; role: string; note: string; at: string }[];
   isNewMaterial?: boolean;
   createdByRole?: 'bauleiter' | 'monteur' | 'admin' | string;
   deviationSource?: 'gaeb_vs_dwg' | 'monteur' | 'manual' | string;

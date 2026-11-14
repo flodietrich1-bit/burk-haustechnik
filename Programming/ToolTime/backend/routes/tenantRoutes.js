@@ -6,6 +6,7 @@ import { authenticateFirebaseUser, requireSuperadmin, requireTenantRole } from '
 import { createInvite } from '../services/inviteService.js';
 import { prepareInvitationDelivery } from '../services/invitationDeliveryService.js';
 import { sendEmail } from '../services/emailService.js';
+import { generateAufmassPdf } from '../aufmassPdfService.js';
 import { ensurePublicSlug, publicSlugForName } from '../services/publicTenantService.js';
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -106,6 +107,65 @@ tenantRouter.get('/:tenantId/material-events', requireTenantRole('admin'), async
     return bookings.docs.map(booking => ({ id: booking.id, ...booking.data(), projectId: project.id, projectName: project.get('name') || project.id }));
   }));
   res.json(events.flat().sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || ''))).slice(0, 200));
+});
+
+tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', requireTenantRole('admin', 'bauleiter', 'kaufmaennisch'), async (req, res) => {
+  const { tenantId, projectId, aufmassId } = req.params;
+  const { recipientRole, excelFilename, excelBase64 } = req.body || {};
+  if (!['admin', 'kaufmaennisch'].includes(recipientRole) || typeof excelBase64 !== 'string' || excelBase64.length > 10_000_000
+    || !/^[A-Za-z0-9+/]+={0,2}$/.test(excelBase64) || typeof excelFilename !== 'string' || !/^Aufmass_[\w.-]+\.xlsx$/.test(excelFilename)) {
+    return res.status(400).json({ code: 'AUFMASS_SEND_INVALID' });
+  }
+  const excel = Buffer.from(excelBase64, 'base64');
+  if (excel.length < 4 || excel.subarray(0, 4).toString('hex') !== '504b0304') return res.status(400).json({ code: 'EXCEL_INVALID' });
+  const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
+  const project = await projectRef.get();
+  if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
+  const assigned = req.tenantMember?.assignedProjectIds?.includes(projectId);
+  const email = String(req.auth.email || '').toLowerCase();
+  const role = req.tenantMember?.role;
+  const projectEmails = role === 'bauleiter' ? [project.get('projectManagerEmail'), project.get('deputyProjectManagerEmail')]
+    : [project.get('commercialManagerEmail'), project.get('deputyCommercialManagerEmail')];
+  const projectIds = role === 'bauleiter' ? [project.get('projectManagerId'), project.get('deputyProjectManagerId')]
+    : [project.get('commercialManagerId'), project.get('deputyCommercialManagerId')];
+  if (role !== 'admin' && req.auth.platformRole !== 'superadmin' && !assigned && !projectIds.includes(req.auth.uid)
+    && !projectEmails.some(value => value && String(value).toLowerCase() === email)) return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
+  const snapshot = await projectRef.collection('aufmasse').doc(aufmassId).get();
+  if (!snapshot.exists) return res.status(404).json({ code: 'AUFMASS_NOT_FOUND' });
+  const aufmass = snapshot.data();
+  let recipient;
+  if (recipientRole === 'kaufmaennisch') {
+    const address = String(project.get('commercialManagerEmail') || '').toLowerCase();
+    if (address) {
+      const member = project.get('commercialManagerId')
+        ? await adminDb.doc(`tenants/${tenantId}/members/${project.get('commercialManagerId')}`).get()
+        : (await adminDb.collection(`tenants/${tenantId}/members`).where('email', '==', address).limit(1).get()).docs[0];
+      if (member?.exists && member.get('status') === 'active' && member.get('role') === 'kaufmaennisch' && String(member.get('email')).toLowerCase() === address) recipient = member.data();
+    }
+  } else {
+    const admins = await adminDb.collection(`tenants/${tenantId}/members`).where('role', '==', 'admin').get();
+    recipient = admins.docs.find(member => member.get('status') === 'active' && /^\S+@\S+\.\S+$/.test(member.get('email') || ''))?.data();
+  }
+  if (!recipient) return res.status(409).json({ code: 'AUFMASS_RECIPIENT_MISSING' });
+  const pdf = await generateAufmassPdf(aufmass);
+  const filenameStem = `Aufmass_${String(aufmass.aufmassNumber || aufmassId).replace(/[^\w.-]/g, '_')}`;
+  const dateFrom = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
+  const dateTo = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
+  const subject = `Aufmaß ${aufmass.aufmassNumber} – ${aufmass.projectName}`;
+  const body = `Hallo ${String(recipient.displayName || recipient.email).split(' ')[0]},\n\nanbei das Aufmaß ${aufmass.aufmassNumber} für ${aufmass.projectName} (${dateFrom} bis ${dateTo}) als PDF und Excel-Datei.\n\nBitte prüfen und die Abrechnung veranlassen.\n\nViele Grüße\n${req.tenantMember?.displayName || req.auth.email || 'Bauleitung'}`;
+  let delivery;
+  try {
+    delivery = await sendEmail({ to: recipient.email, subject, text: body, attachments: [
+      { filename: `${filenameStem}.pdf`, content: pdf },
+      { filename: excelFilename, content: excel },
+    ] });
+  } catch (error) {
+    console.error('Aufmass email failed:', error);
+    return res.status(502).json({ code: 'EMAIL_SEND_FAILED' });
+  }
+  if (!delivery.sent) return res.status(503).json({ code: 'EMAIL_NOT_CONFIGURED' });
+  await projectRef.collection('aufmassDeliveries').add({ aufmassId, recipientRole, recipientEmail: recipient.email, sentAt: new Date().toISOString(), sentBy: req.auth.uid, messageId: delivery.messageId });
+  res.json({ sent: true, recipientEmail: recipient.email, messageId: delivery.messageId });
 });
 
 tenantRouter.patch('/:tenantId', requireTenantRole('admin'), async (req, res) => {
@@ -257,6 +317,39 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commerci
     if (error.message === 'ADDENDUM_NOT_REQUESTED') return res.status(409).json({ code: error.message });
     throw error;
   }
+});
+
+tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/unplanned-discussion', requireTenantRole('admin', 'kaufmaennisch', 'bauleiter'), async (req, res) => {
+  const { tenantId, projectId, addendumId } = req.params;
+  const note = String(req.body?.note || '').trim();
+  if (!note || note.length > 2000) return res.status(400).json({ code: 'DISCUSSION_NOTE_INVALID' });
+  const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
+  const project = await projectRef.get();
+  if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
+  const email = String(req.auth.email || '').toLowerCase();
+  const member = req.tenantMember;
+  const isBauleiter = member?.role === 'bauleiter';
+  const matchingIds = isBauleiter ? [project.get('projectManagerId'), project.get('deputyProjectManagerId')]
+    : [project.get('commercialManagerId'), project.get('deputyCommercialManagerId')];
+  const matchingEmails = isBauleiter ? [project.get('projectManagerEmail'), project.get('deputyProjectManagerEmail')]
+    : [project.get('commercialManagerEmail'), project.get('deputyCommercialManagerEmail')];
+  if (member?.role !== 'admin' && req.auth.platformRole !== 'superadmin' && !member?.assignedProjectIds?.includes(projectId)
+    && !matchingIds.includes(req.auth.uid)
+    && !matchingEmails.some(value => value && String(value).toLowerCase() === email)) return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
+  const itemRef = projectRef.collection('addendums').doc(addendumId);
+  const item = await itemRef.get();
+  if (!item.exists) return res.status(404).json({ code: 'ADDENDUM_NOT_FOUND' });
+  if (!['unklar', 'ausserplanmaessig', 'außerplanmäßig', 'anders', 'unplanned'].includes(item.get('type')) && !item.get('isUnclear')) return res.status(400).json({ code: 'ADDENDUM_NOT_UNPLANNED' });
+  if (isBauleiter ? item.get('status') !== 'needs_discussion' : item.get('status') !== 'pending') return res.status(409).json({ code: 'ADDENDUM_NOT_PENDING' });
+  const now = new Date().toISOString();
+  const author = member?.displayName || req.auth.email;
+  await itemRef.update({
+    status: isBauleiter ? 'pending' : 'needs_discussion',
+    ...(isBauleiter ? {} : { commercialNote: note }),
+    discussionHistory: FieldValue.arrayUnion({ author, role: isBauleiter ? 'bauleiter' : 'kaufmaennisch', note, at: now }),
+    updatedAt: now,
+  });
+  res.json({ success: true });
 });
 
 tenantRouter.post('/:tenantId/projects/:projectId/addendums/unplanned', requireTenantRole('monteur'), async (req, res) => {

@@ -39,6 +39,8 @@ import {
   getAufmassRoomPercent
 } from '../services/aufmassService';
 import { exportAufmassToExcel, downloadAufmassPdf } from '../services/excelExporter';
+import { api } from '../services/apiClient';
+import { getActiveTenantId } from '../services/firestoreService';
 
 interface AufmassViewProps {
   projectId: string;
@@ -86,15 +88,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [editCausedBy, setEditCausedBy] = useState('Monteur');
   const [isSavingReason, setIsSavingReason] = useState(false);
 
-  // Email Sent Status Modal State
-  const [emailSentModal, setEmailSentModal] = useState<{
-    aufmass: AufmassDocument;
-    managerEmail: string;
-    managerFirstName: string;
-    subject: string;
-    body: string;
-    mailtoUrl: string;
-  } | null>(null);
+  const [emailSentModal, setEmailSentModal] = useState<{ aufmass: AufmassDocument; recipientRole: 'kaufmaennisch' | 'admin'; sending: boolean; error: string; sentTo?: string } | null>(null);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -103,6 +97,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [creatorName, setCreatorName] = useState<string>(currentUser?.name || 'Florian Burk');
   const [notes, setNotes] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // 1. Listen to Aufmasse from Firestore (neueste Stichtage zuerst)
   useEffect(() => {
@@ -220,73 +215,63 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
     await downloadAufmassPdf(aufmass);
   };
 
-  // Send Aufmaß to commercial manager via Email with prefilled text and auto-download of Excel & PDF
-  const handleSendAufmassEmail = async (aufmass: AufmassDocument, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-
-    // 1. Prepare Email Metadata
-    const managerFirstName = (project?.commercialManager || 'Andreas').trim().split(/\s+/)[0];
-    const managerEmail = project?.commercialManagerEmail || 'andreas@burk-haustechnik.de';
-    const pName = project?.name || 'Bauvorhaben';
-    const dateFromStr = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
-    const dateToStr = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
-
-    const totalPositionsCount = aufmass.summaryItems.length;
-    const roomsCount = aufmass.roomsData.length;
-    const specialCount = aufmass.roomsData.reduce((acc, r) => acc + (r.specialPositions?.length || 0), 0);
-
-    const subject = `Aufmaß ${aufmass.aufmassNumber} (${pName}) – Zeitraum ${dateFromStr} bis ${dateToStr}`;
-
-    const body = `Hallo ${managerFirstName},
-
-anbei erhältst du das Aufmaß zur kaufmännischen Abrechnung und Prüfung:
-
-• Bauvorhaben: ${pName}
-• Aufmaß-Nummer: ${aufmass.aufmassNumber}
-• Abrechnungszeitraum: ${dateFromStr} bis ${dateToStr}
-• Erfasst von: ${aufmass.createdBy || 'Bauleitung'}
-• Verbaute Positionen: ${totalPositionsCount}
-• Bearbeitete Räume: ${roomsCount}
-${specialCount > 0 ? `• Davon Sonderposten: ${specialCount}\n` : ''}${aufmass.notes ? `• Bemerkung: ${aufmass.notes}\n` : ''}
-Beide Dateien (Excel-Report und PDF-Aufmaß) sind an diese E-Mail angehängt.
-
-Bitte prüfe das Aufmaß und veranlasse die Abrechnung / Abschlagsrechnung.
-
-Viele Grüße,
-${aufmass.createdBy || 'Bauleitung'}`;
-
-    const mailtoUrl = `mailto:${encodeURIComponent(managerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-    // 2. OPEN EMAIL PROGRAM IMMEDIATELY USING NATIVE LINK
-    const mailLink = document.createElement('a');
-    mailLink.href = mailtoUrl;
-    document.body.appendChild(mailLink);
-    mailLink.click();
-    document.body.removeChild(mailLink);
-
-    // 3. Download both PDF and Excel files automatically
+  const handleRefreshAufmass = async (aufmass: AufmassDocument) => {
+    setIsRefreshing(true);
     try {
-      await downloadAufmassPdf(aufmass);
-    } catch (err) {
-      console.warn('PDF download error:', err);
+      const previous = aufmasse.filter(item => item.id !== aufmass.id && item.dateTo < aufmass.dateTo)
+        .sort((left, right) => right.dateTo.localeCompare(left.dateTo))[0] || null;
+      const recalculated = calculateAufmassSnapshot(project, positions, rooms, bookings, alerts, addendums,
+        aufmass.dateFrom, aufmass.dateTo, aufmass.createdBy, aufmass.notes || '', previous);
+      const oldRooms = new Map(aufmass.roomsData.map(room => [room.roomId, room]));
+      recalculated.roomsData.forEach(room => {
+        const oldRoom = oldRooms.get(room.roomId);
+        room.positions.forEach(position => {
+          const old = oldRoom?.positions.find(item => item.positionId === position.positionId);
+          if (old?.reason) position.reason = old.reason;
+          if (old?.causedBy) position.causedBy = old.causedBy;
+        });
+        room.specialPositions?.forEach(position => {
+          const matching = room.positions.find(item => item.positionId === position.positionId);
+          if (matching) { position.reason = matching.reason; position.causedBy = matching.causedBy; }
+        });
+      });
+      const updated = { ...recalculated, id: aufmass.id, aufmassNumber: aufmass.aufmassNumber, createdAt: aufmass.createdAt };
+      await saveAufmassDocument(projectId, updated);
+      setSelectedAufmass(updated);
+    } catch (error: any) {
+      alert(`Aufmaß konnte nicht aktualisiert werden: ${error?.message || error}`);
+    } finally {
+      setIsRefreshing(false);
     }
-    setTimeout(() => {
-      try {
-        exportAufmassToExcel(aufmass);
-      } catch (err) {
-        console.warn('Excel export error:', err);
-      }
-    }, 250);
+  };
 
-    // 4. Open status & guidance modal
-    setEmailSentModal({
-      aufmass,
-      managerEmail,
-      managerFirstName,
-      subject,
-      body,
-      mailtoUrl
-    });
+  const handleSendAufmassEmail = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEmailSentModal({ aufmass, recipientRole: 'kaufmaennisch', sending: false, error: '' });
+  };
+
+  const confirmSendAufmassEmail = async () => {
+    if (!emailSentModal || emailSentModal.sending) return;
+    const { aufmass, recipientRole } = emailSentModal;
+    setEmailSentModal(prev => prev ? { ...prev, sending: true, error: '' } : null);
+    try {
+      const excel = exportAufmassToExcel(aufmass, false);
+      let binary = '';
+      for (let offset = 0; offset < excel.content.length; offset += 8192) {
+        binary += String.fromCharCode(...excel.content.subarray(offset, offset + 8192));
+      }
+      const result = await api<{ sent: boolean; recipientEmail: string }>(`/tenants/${getActiveTenantId()}/projects/${projectId}/aufmasse/${aufmass.id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ recipientRole, excelFilename: excel.filename, excelBase64: btoa(binary) }),
+      });
+      setEmailSentModal(prev => prev ? { ...prev, sending: false, sentTo: result.recipientEmail } : null);
+    } catch (error: any) {
+      const message = error?.code === 'AUFMASS_RECIPIENT_MISSING' ? 'Für diese Rolle ist kein aktiver Empfänger hinterlegt.'
+        : error?.code === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist nicht eingerichtet.'
+        : error?.code === 'EMAIL_SEND_FAILED' ? 'Der Versand ist fehlgeschlagen. Bitte später erneut versuchen.'
+        : `Versand fehlgeschlagen: ${error?.message || error}`;
+      setEmailSentModal(prev => prev ? { ...prev, sending: false, error: message } : null);
+    }
   };
 
   // Open modal to edit reason and originator for a special position
@@ -462,6 +447,7 @@ ${aufmass.createdBy || 'Bauleitung'}`;
 
           {/* Action Buttons Top Right: Send, Excel, PDF, Discard */}
           <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={isRefreshing} onClick={() => void handleRefreshAufmass(selectedAufmass)} className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-bold text-amber-900 disabled:opacity-50" title="Aufmaß mit aktuellen Buchungen und Sonderposten neu berechnen">{isRefreshing ? 'Wird aktualisiert…' : 'Aufmaß aktualisieren'}</button>
             <button
               onClick={() => handleSendAufmassEmail(selectedAufmass)}
               className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
@@ -1621,97 +1607,27 @@ ${aufmass.createdBy || 'Bauleitung'}`;
         </div>
       )}
 
-      {/* Modal: E-Mail verschickt & Dateien heruntergeladen */}
+      {/* Aufmaß mit PDF und Excel per Resend versenden */}
       {emailSentModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center space-x-3 text-[#3B82C4]">
-              <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#3B82C4]">
-                <Mail className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">Aufmaß per E-Mail versenden</h3>
-                <p className="text-xs text-slate-500">
-                  Empfänger: <strong>{emailSentModal.managerFirstName} ({emailSentModal.managerEmail})</strong>
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2.5 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3.5">
-              <div className="flex items-center space-x-2 text-emerald-700 font-bold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>E-Mail-Programm aufgerufen & Dateien bereitgestellt:</span>
-              </div>
-              <ul className="pl-6 list-disc space-y-1 text-slate-600">
-                <li><span className="font-semibold text-slate-800">Excel-Datei (.xlsx)</span> im Download-Ordner</li>
-                <li><span className="font-semibold text-slate-800">PDF-Aufmaß (.pdf)</span> im Download-Ordner</li>
-              </ul>
-              <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-200">
-                💡 <strong>Hinweis zum Anhang:</strong> Aus Sicherheitsgründen dürfen Web-Browser Dateien nicht direkt in Desktop-Mailprogramme einfügen. Ziehe die beiden heruntergeladenen Dateien einfach kurz per Drag & Drop in die geöffnete E-Mail.
-              </p>
-              <div className="flex items-center space-x-2 pt-1 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => downloadAufmassPdf(emailSentModal.aufmass)}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 shadow-2xs transition-colors cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5 text-[#3B82C4]" />
-                  <span>PDF herunterladen</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => exportAufmassToExcel(emailSentModal.aufmass)}
-                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 shadow-2xs transition-colors cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Excel herunterladen</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                Vorbereiteter E-Mail-Text:
-              </span>
-              <pre className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-[10.5px] text-slate-800 whitespace-pre-wrap font-sans max-h-36 overflow-y-auto leading-relaxed">
-                {emailSentModal.body}
-              </pre>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(emailSentModal.body);
-                  alert('E-Mail-Text in Zwischenablage kopiert!');
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                Text kopieren
-              </button>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const mailLink = document.createElement('a');
-                    mailLink.href = emailSentModal.mailtoUrl;
-                    document.body.appendChild(mailLink);
-                    mailLink.click();
-                    document.body.removeChild(mailLink);
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-[#3B82C4] bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-all cursor-pointer"
-                >
-                  E-Mail erneut öffnen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEmailSentModal(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#1C2A3B] hover:bg-slate-900 text-white shadow-xs transition-all cursor-pointer"
-                >
-                  Fertig
-                </button>
-              </div>
+            <h3 className="flex items-center gap-2 font-bold text-slate-900"><Mail className="w-5 h-5 text-[#3B82C4]" />Aufmaß per E-Mail versenden</h3>
+            {emailSentModal.sentTo ? (
+              <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800"><CheckCircle2 className="inline w-4 h-4 mr-2" />Aufmaß mit PDF und Excel an {emailSentModal.sentTo} gesendet.</p>
+            ) : (
+              <>
+                <p className="text-sm text-slate-600">{emailSentModal.aufmass.aufmassNumber} · PDF und Excel werden automatisch angehängt.</p>
+                <label className="block text-sm font-semibold text-slate-700" htmlFor="aufmass-recipient">Empfänger</label>
+                <select id="aufmass-recipient" value={emailSentModal.recipientRole} onChange={e => setEmailSentModal(prev => prev ? { ...prev, recipientRole: e.target.value as 'kaufmaennisch' | 'admin', error: '' } : null)} className="w-full rounded-xl border border-slate-300 p-3 text-sm">
+                  <option value="kaufmaennisch">Kaufmann ({project?.commercialManagerEmail || 'keine E-Mail hinterlegt'})</option>
+                  <option value="admin">Administrator</option>
+                </select>
+                {emailSentModal.error && <p role="alert" className="text-sm text-red-700">{emailSentModal.error}</p>}
+              </>
+            )}
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button type="button" disabled={emailSentModal.sending} onClick={() => setEmailSentModal(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm">{emailSentModal.sentTo ? 'Schließen' : 'Abbrechen'}</button>
+              {!emailSentModal.sentTo && <button type="button" disabled={emailSentModal.sending} onClick={() => void confirmSendAufmassEmail()} className="rounded-xl bg-[#3B82C4] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{emailSentModal.sending ? 'Wird gesendet…' : 'Jetzt senden'}</button>}
             </div>
           </div>
         </div>

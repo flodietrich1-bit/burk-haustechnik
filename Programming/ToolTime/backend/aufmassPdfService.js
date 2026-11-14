@@ -238,6 +238,23 @@ export async function generateAufmassPdf(aufmass) {
         });
         tableY = rY;
       }
+      const allSpecial = (aufmass.roomsData || []).flatMap(room => (room.specialPositions || []).map(position => ({ room, position })));
+      if (allSpecial.length > 0) {
+        doc.addPage();
+        doc.font('Helvetica-Bold').fontSize(13).fillColor('#991B1B').text('Sonderposten – außerplanmäßig verbaut', 40, 40);
+        let specialY = 72;
+        for (const { room, position } of allSpecial) {
+          const explanation = String(position.reason || 'Außerplanmäßig verbaut');
+          const text = `${position.posNr || 'Sonder'} · ${position.shortText || 'Material'} · ${position.totalInstalledToDate || 0} ${position.qu || 'Stk'}\nRaum: ${room.roomName || room.roomCode || '-'} · Verursacher: ${position.causedBy || '-'}\nBegründung: ${explanation}`;
+          doc.font('Helvetica').fontSize(9);
+          const height = doc.heightOfString(text, { width: 490 }) + 20;
+          if (specialY + height > 770) { doc.addPage(); specialY = 40; }
+          doc.roundedRect(40, specialY, 515, height, 5).fill('#FEF2F2');
+          doc.fillColor('#334155').text(text, 52, specialY + 10, { width: 490 });
+          specialY += height + 10;
+        }
+        tableY = specialY;
+      }
       if (tableY > 680) {
         doc.addPage();
         tableY = 60;

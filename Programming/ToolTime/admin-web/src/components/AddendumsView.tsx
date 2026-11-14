@@ -144,6 +144,26 @@ export const AddendumsView: React.FC<AddendumsViewProps> = ({
   const [commercialBusy, setCommercialBusy] = useState<string | null>(null);
   const [commercialError, setCommercialError] = useState('');
   const [commercialErrorItemId, setCommercialErrorItemId] = useState<string | null>(null);
+  const [unplannedDiscussion, setUnplannedDiscussion] = useState<Addendum | null>(null);
+  const [unplannedDiscussionNote, setUnplannedDiscussionNote] = useState('');
+  const [unplannedDiscussionBusy, setUnplannedDiscussionBusy] = useState(false);
+  const [unplannedDiscussionError, setUnplannedDiscussionError] = useState('');
+
+  const submitUnplannedDiscussion = async () => {
+    if (!unplannedDiscussion || !unplannedDiscussionNote.trim()) return;
+    setUnplannedDiscussionBusy(true);
+    setUnplannedDiscussionError('');
+    try {
+      await api(`/tenants/${getActiveTenantId()}/projects/${projectId}/addendums/${unplannedDiscussion.id}/unplanned-discussion`, {
+        method: 'POST', body: JSON.stringify({ note: unplannedDiscussionNote.trim() }),
+      });
+      setUnplannedDiscussion(null);
+    } catch (error: any) {
+      setUnplannedDiscussionError(error?.message || 'Rücksprache konnte nicht gespeichert werden.');
+    } finally {
+      setUnplannedDiscussionBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!focusedItemId) return;
@@ -967,8 +987,10 @@ Bauleitung`;
                 )}
 
                 {/* Entscheidungen zum Materialbedarf */}
-                {(isRequested || needsDiscussion) && item.commercialNote && <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">Rücksprache: {item.commercialNote}</p>}
-                {needsDiscussion && canManageAddendums && <button type="button" onClick={() => handleOpenReorderModal(item)} className="self-start rounded-xl bg-[#3B82C4] px-4 py-2 text-xs font-bold text-white">Anfrage überarbeitet erneut senden</button>}
+                {cat === 'unclear' && (item.discussionHistory?.length || 0) > 0 && <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">{item.discussionHistory?.map((entry, index) => <p key={`${entry.at}-${index}`}><strong>{entry.author}</strong> · {new Date(entry.at).toLocaleString('de-DE')}: {entry.note}</p>)}</div>}
+                {cat !== 'unclear' && (isRequested || needsDiscussion) && item.commercialNote && <p className="rounded-xl border border-orange-200 bg-orange-50 p-3 text-xs text-orange-900">Rücksprache: {item.commercialNote}</p>}
+                {cat === 'unclear' && ((isPending && currentUser.role === 'kaufmaennisch' && canCommercialDecide) || (needsDiscussion && currentUser.role === 'bauleiter')) && <button type="button" onClick={() => { setUnplannedDiscussion(item); setUnplannedDiscussionNote(''); setUnplannedDiscussionError(''); }} className="self-start rounded-xl bg-[#3B82C4] px-4 py-2 text-xs font-bold text-white">{currentUser.role === 'bauleiter' ? 'Antwort an Kaufmann senden' : 'Rücksprache mit Bauleiter'}</button>}
+                {cat === 'material' && needsDiscussion && canManageAddendums && <button type="button" onClick={() => handleOpenReorderModal(item)} className="self-start rounded-xl bg-[#3B82C4] px-4 py-2 text-xs font-bold text-white">Anfrage überarbeitet erneut senden</button>}
                 {cat === 'material' && (isRequested || needsDiscussion || (isPending && currentUser.role === 'admin')) && canCommercialDecide && (
                   <div className="space-y-2 border-t border-slate-100 pt-3">
                     {commercialError && commercialErrorItemId === item.id && <p role="alert" className="text-xs text-red-700">{commercialError}</p>}
@@ -992,6 +1014,18 @@ Bauleitung`;
               </div>
             );
           })}
+        </div>
+      )}
+
+      {unplannedDiscussion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="font-bold text-slate-900">Rücksprache: {unplannedDiscussion.title}</h3>
+            <p className="text-sm text-slate-600">Die Notiz wird dem Bauleiter am Sonderposten angezeigt.</p>
+            <textarea value={unplannedDiscussionNote} onChange={event => setUnplannedDiscussionNote(event.target.value)} maxLength={2000} rows={4} className="w-full rounded-xl border border-slate-300 p-3 text-sm" placeholder="Was soll der Bauleiter prüfen?" />
+            {unplannedDiscussionError && <p role="alert" className="text-sm text-red-700">{unplannedDiscussionError}</p>}
+            <div className="flex justify-end gap-2"><button type="button" onClick={() => setUnplannedDiscussion(null)} className="rounded-xl border px-4 py-2 text-sm">Abbrechen</button><button type="button" disabled={unplannedDiscussionBusy || !unplannedDiscussionNote.trim()} onClick={() => void submitUnplannedDiscussion()} className="rounded-xl bg-[#3B82C4] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Rücksprache senden</button></div>
+          </div>
         </div>
       )}
 
