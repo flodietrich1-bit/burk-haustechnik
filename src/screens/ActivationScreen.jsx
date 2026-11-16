@@ -34,6 +34,23 @@ function CameraSilhouetteIcon({ size = 22, color = '#FFFFFF' }) {
   );
 }
 
+/**
+ * Clean vector back chevron icon
+ */
+function ChevronLeftIcon({ size = 16, color = COLORS.ink }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M15 19l-7-7 7-7"
+        stroke={color}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export default function ActivationScreen({
   onActivationSuccess,
   currentLang = 'de',
@@ -503,7 +520,8 @@ export default function ActivationScreen({
               }}
               activeOpacity={0.7}
             >
-              <Text style={styles.backBtnText}>‹ {t('back', currentLang) || 'Zurück'}</Text>
+              <ChevronLeftIcon size={16} color={COLORS.ink} />
+              <Text style={styles.backBtnText}>{t('backShort', currentLang)}</Text>
             </TouchableOpacity>
           ) : (
             <View style={{ width: 60 }} />
@@ -736,8 +754,11 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   backBtnPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 14,
     backgroundColor: '#EDF2F7',
   },

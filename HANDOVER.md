@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.48` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.49` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung).
 - The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -243,6 +243,13 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-16 (v2.49)**
+  - **Ziel / Anlass:** Beseitigung der falschen Beschriftung „‹ Räume“ auf dem manuellen Aktivierungs-Screen und Bereitstellung eines sauberen Zurück-Buttons mit Vektor-Chevron-Icon und lokalisiertem Text „Zurück“ (`backShort`).
+  - **Änderungen:**
+    - `ActivationScreen.jsx`: `ChevronLeftIcon` SVG-Komponente hinzugefügt; Button-Text von `back` („Räume“) auf `backShort` („Zurück“) umgestellt; `backBtnPill`-Styling mit `flexDirection: 'row'`, `alignItems: 'center'` und `gap: 4` verfeinert.
+    - `src/constants/version.js`: Bump auf `v2.49`.
+  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
 
 - **2026-11-16 (v2.48)**
   - **Ziel / Anlass:** Redesign des Aktivierungs-Screens: Vertikal zentriertes, elegantes Layout; Burk-Logo (aus Admin-Panel) oder P12-Aufmaß-Vektorlogo als Standard-Fallback; 2 klare Buttons („Einladung scannen (QR-Code)“ / „Code manuell eingeben“); Vollbild-Eingabemodus für manuellen Code ohne Scan-Button und mit direktem „Jetzt aktivieren“.
