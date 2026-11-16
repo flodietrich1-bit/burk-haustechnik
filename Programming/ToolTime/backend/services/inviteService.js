@@ -206,6 +206,7 @@ export async function redeemInvite({ code, qrToken, installationId, password, we
     batch.set(adminDb.doc(`users/${user.uid}`), {
       email: inviteData.emailNormalized || null,
       displayName: inviteData.displayName,
+      defaultLanguage: inviteData.defaultLanguage || 'de',
       tenantIds: FieldValue.arrayUnion(tenantId),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });

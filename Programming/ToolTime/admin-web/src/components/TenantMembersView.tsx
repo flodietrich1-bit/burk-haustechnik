@@ -17,6 +17,7 @@ interface Invitation {
   displayName: string;
   email?: string;
   role: Role;
+  defaultLanguage?: 'de' | 'ro' | 'pl' | 'hr';
   status: string;
   emailSent?: boolean;
   emailError?: string | null;
@@ -42,6 +43,7 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
   const [editStatus, setEditStatus] = useState<string>('active');
   const [editLanguage, setEditLanguage] = useState<'de' | 'ro' | 'pl' | 'hr'>('de');
   const [editProjectIds, setEditProjectIds] = useState<string[]>([]);
+  const [inviteLanguage, setInviteLanguage] = useState<'de' | 'ro' | 'pl' | 'hr'>('de');
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [role, setRole] = useState<Role>('bauleiter');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [result, setResult] = useState<InvitationResult | null>(null);
@@ -62,6 +64,7 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
     setName('');
     setEmail('');
     setRole('bauleiter');
+    setInviteLanguage('de');
     if (projects.length === 1) {
       setSelectedProjectId(projects[0].id);
     } else {
@@ -76,6 +79,7 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
     setName('');
     setEmail('');
     setSelectedProjectId('');
+    setInviteLanguage('de');
     setError('');
     setNotice('');
   }
@@ -89,6 +93,7 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
           displayName: name.trim(),
           email: email.trim() || undefined,
           role,
+          defaultLanguage: role === 'monteur' ? inviteLanguage : undefined,
           assignedProjectIds: selectedProjectId ? [selectedProjectId] : [],
           projectId: selectedProjectId || undefined,
         }),
@@ -558,8 +563,13 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
                     <span className="text-xs text-slate-500">{invitation.email || 'Ohne E-Mail'}</span>
                   </td>
                   <td className="py-3 px-3 text-xs font-medium text-slate-700">
-                    <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
                       {roleLabels[invitation.role]}
+                      {invitation.defaultLanguage && (
+                        <span title={`App-Sprache: ${languages.find(l => l.code === invitation.defaultLanguage)?.label}`}>
+                          {languages.find(l => l.code === invitation.defaultLanguage)?.flag}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="py-3 px-3 text-xs text-slate-600">
@@ -642,6 +652,22 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
       {result ? <div className="mt-6 space-y-4"><div className="flex flex-wrap items-center gap-4 rounded-xl bg-slate-50 p-4"><img src={result.qrDataUrl} alt="Einladungs-QR-Code" className="h-32 w-32 rounded-lg bg-white"/><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{result.emailSent ? `Einladung an ${resultEmail} versendet` : result.emailError ? 'Einladung erstellt, E-Mail nicht versendet.' : 'Einladung erstellt.'}</p>{resultRole === 'monteur' && <div className="mt-2 flex items-center gap-2"><input aria-label="Aktivierungscode" readOnly value={result.shortCode} onFocus={event => event.currentTarget.select()} className="min-w-0 flex-1 bg-transparent font-mono text-xl font-bold"/><button type="button" onClick={() => void copy(result.shortCode, 'Code')} aria-label="Code kopieren"><Copy className="h-4 w-4"/></button></div>}</div></div>{resultRole !== 'monteur' && <div><label htmlFor="member-invite-link" className="text-sm font-semibold">Aktivierungslink</label><div className="mt-2 flex items-center gap-2"><input id="member-invite-link" readOnly value={result.webInviteUrl || ''} onFocus={event => event.currentTarget.select()} className="min-w-0 flex-1 rounded-lg border border-slate-200 p-2 text-xs"/><button type="button" onClick={() => void copy(result.webInviteUrl || '', 'Link')} aria-label="Link kopieren" className="rounded-lg bg-slate-100 p-2"><Copy className="h-4 w-4"/></button></div></div>}{result.emailError && resultEmail && <button type="button" disabled={busy} onClick={() => void resend({ id: result.inviteId, displayName: name, email: resultEmail, role: resultRole, status: 'pending' })} className="w-full rounded-xl bg-[var(--tenant-primary-surface)] p-3 font-semibold text-[var(--tenant-primary-text)] disabled:opacity-50 cursor-pointer">{busy ? 'Wird gesendet …' : 'Erneut einladen'}</button>}{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}{notice && <p role="status" className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}<button type="button" onClick={downloadPdf} className="text-sm font-semibold text-[var(--tenant-secondary)] hover:underline cursor-pointer">Einladungs-PDF herunterladen</button></div>
       : <form onSubmit={invite} className="mt-6 space-y-5">
           <label className="block text-sm font-semibold">Rolle<select value={role} onChange={event => setRole(event.target.value as Role)} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 cursor-pointer">{Object.entries(roleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+          {role === 'monteur' && (
+            <label className="block text-sm font-semibold">
+              App-Sprache für Monteur
+              <select
+                value={inviteLanguage}
+                onChange={event => setInviteLanguage(event.target.value as 'de' | 'ro' | 'pl' | 'hr')}
+                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm cursor-pointer"
+              >
+                {languages.map(l => (
+                  <option key={l.code} value={l.code}>
+                    {l.flag} {l.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           {projects.length > 0 && (
             <label className="block text-sm font-semibold">Projektzuweisung
               <select

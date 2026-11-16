@@ -17,7 +17,7 @@ const languages: Array<{ code: 'de' | 'ro' | 'pl' | 'hr'; label: string; flag: s
   { code: 'hr', label: 'Kroatisch (Hrvatski)', flag: '🇭🇷' },
 ];
 interface Project { id: string; name: string; }
-interface Invite { id: string; displayName: string; email?: string; role: Role; status: string; emailSent?: boolean; emailError?: string | null; expiresAt?: string; assignedProjectIds?: string[]; projectId?: string | null; projectName?: string | null; }
+interface Invite { id: string; displayName: string; email?: string; role: Role; defaultLanguage?: 'de' | 'ro' | 'pl' | 'hr'; status: string; emailSent?: boolean; emailError?: string | null; expiresAt?: string; assignedProjectIds?: string[]; projectId?: string | null; projectName?: string | null; }
 interface InviteResult { inviteId: string; qrToken: string; shortCode: string; qrDataUrl: string; webInviteUrl?: string; pdfBase64: string; emailSent: boolean; emailError?: string | null; }
 
 const roles: Array<{ id: Role; label: string; help: string }> = [
@@ -37,6 +37,7 @@ export function TenantDetailPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [inviteRole, setInviteRole] = useState<Role | null>(null); const [result, setResult] = useState<InviteResult | null>(null); const [inviteNotice, setInviteNotice] = useState('');
+  const [inviteLanguage, setInviteLanguage] = useState<'de' | 'ro' | 'pl' | 'hr'>('de');
   const [displayName, setName] = useState(''); const [email, setEmail] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
   const [company, setCompany] = useState<Company>({}); const [primaryColor, setPrimaryColor] = useState('#7E3FE6'); const [secondaryColor, setSecondaryColor] = useState('#1F1A4D'); const [logoZoom, setLogoZoom] = useState(1); const [logoFile, setLogoFile] = useState<File | null>(null); const [logoPreview, setLogoPreview] = useState(''); const [savedLogoUrl, setSavedLogoUrl] = useState(''); const [logoLoadError, setLogoLoadError] = useState(false);
   const [editCompany, setEditCompany] = useState(false);
@@ -176,13 +177,14 @@ export function TenantDetailPage() {
     setInviteRole(hasAdmin ? role : 'admin');
     setName(name);
     setEmail(contactEmail);
+    setInviteLanguage('de');
     if (projects.length === 1) setSelectedProjectId(projects[0].id);
     else setSelectedProjectId('');
     setResult(null);
     setInviteNotice('');
     setError('');
   }
-  function closeInvite() { setInviteRole(null); setResult(null); setName(''); setEmail(''); setSelectedProjectId(''); setInviteNotice(''); setError(''); }
+  function closeInvite() { setInviteRole(null); setResult(null); setName(''); setEmail(''); setSelectedProjectId(''); setInviteLanguage('de'); setInviteNotice(''); setError(''); }
   async function invite(event: FormEvent) {
     event.preventDefault(); if (!inviteRole) return; setBusy(true); setError('');
     try {
@@ -192,6 +194,7 @@ export function TenantDetailPage() {
           displayName,
           email: email || undefined,
           role: inviteRole,
+          defaultLanguage: inviteRole === 'monteur' ? inviteLanguage : undefined,
           assignedProjectIds: selectedProjectId ? [selectedProjectId] : [],
           projectId: selectedProjectId || undefined,
         }),
@@ -300,6 +303,22 @@ export function TenantDetailPage() {
             {roles.map(role=><option key={role.id} value={role.id} disabled={!hasAdmin && role.id!=='admin'}>{roleNames[role.id]}</option>)}
           </select>
         </label>
+        {inviteRole === 'monteur' && (
+          <label className="block text-sm font-semibold text-[#1F1A4D]">
+            App-Sprache für Monteur
+            <select
+              value={inviteLanguage}
+              onChange={e => setInviteLanguage(e.target.value as 'de' | 'ro' | 'pl' | 'hr')}
+              className="mt-2 w-full rounded-xl border border-[#E8E2F0] bg-white px-4 py-3 text-sm cursor-pointer"
+            >
+              {languages.map(l => (
+                <option key={l.code} value={l.code}>
+                  {l.flag} {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {projects.length > 0 && (
           <label className="block text-sm font-semibold text-[#1F1A4D]">Projektzuweisung
             <select
@@ -357,8 +376,13 @@ export function TenantDetailPage() {
                       <span className="text-xs text-[#6B6481]">{item.email || 'ohne E-Mail'}</span>
                     </td>
                     <td>
-                      <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
                         {roleNames[item.role]}
+                        {item.defaultLanguage && (
+                          <span title={`App-Sprache: ${languages.find(l => l.code === item.defaultLanguage)?.label}`}>
+                            {languages.find(l => l.code === item.defaultLanguage)?.flag}
+                          </span>
+                        )}
                       </span>
                     </td>
                     <td className="text-xs text-[#6B6481]">

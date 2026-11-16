@@ -588,6 +588,9 @@ tenantRouter.post('/:tenantId/invites', requireTenantRole('admin'), async (req, 
   if (!req.body?.displayName || !allowedRoles.has(req.body?.role) || (req.body.role !== 'monteur' && !req.body.email)) {
     return res.status(400).json({ code: 'INVITE_INPUT_INVALID' });
   }
+  if (req.body?.defaultLanguage && !['de', 'ro', 'pl', 'hr'].includes(req.body.defaultLanguage)) {
+    return res.status(400).json({ code: 'MEMBER_LANGUAGE_INVALID' });
+  }
   if (req.body.role !== 'admin') {
     const tenantRef = adminDb.doc(`tenants/${req.params.tenantId}`);
     const [admins, adminInvites] = await Promise.all([
