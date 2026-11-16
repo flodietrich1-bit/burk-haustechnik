@@ -434,6 +434,31 @@ tenantRouter.patch('/:tenantId/members/:uid', requireTenantRole('admin'), async 
     const displayName = String(req.body.displayName).trim();
     if (!displayName || displayName.length > 120) return res.status(400).json({ code: 'MEMBER_NAME_INVALID' });
     update.displayName = displayName;
+    try {
+      await adminAuth.updateUser(req.params.uid, { displayName });
+    } catch {}
+    try {
+      await adminDb.doc(`users/${req.params.uid}`).set({ displayName, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    } catch {}
+  }
+  if (req.body?.email !== undefined) {
+    const rawEmail = String(req.body.email).trim().toLowerCase();
+    if (rawEmail) {
+      if (!/^\S+@\S+\.\S+$/.test(rawEmail) || rawEmail.length > 200) return res.status(400).json({ code: 'MEMBER_EMAIL_INVALID' });
+      const existing = await memberRef.parent.where('email', '==', rawEmail).get();
+      if (existing.docs.some(doc => doc.id !== req.params.uid)) return res.status(409).json({ code: 'EMAIL_ALREADY_IN_USE' });
+      update.email = rawEmail;
+      try {
+        await adminAuth.updateUser(req.params.uid, { email: rawEmail });
+      } catch (authErr) {
+        if (authErr?.code === 'auth/email-already-exists') return res.status(409).json({ code: 'EMAIL_ALREADY_IN_USE' });
+      }
+      try {
+        await adminDb.doc(`users/${req.params.uid}`).set({ email: rawEmail, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      } catch {}
+    } else {
+      update.email = null;
+    }
   }
   if (req.body?.role) {
     if (!['admin', 'bauleiter', 'kaufmaennisch', 'monteur'].includes(req.body.role)) return res.status(400).json({ code: 'ROLE_INVALID' });
@@ -457,6 +482,9 @@ tenantRouter.patch('/:tenantId/members/:uid', requireTenantRole('admin'), async 
   if (req.body?.defaultLanguage !== undefined) {
     if (!['de', 'ro', 'pl', 'hr'].includes(req.body.defaultLanguage)) return res.status(400).json({ code: 'MEMBER_LANGUAGE_INVALID' });
     update.defaultLanguage = req.body.defaultLanguage;
+    try {
+      await adminDb.doc(`users/${req.params.uid}`).set({ defaultLanguage: req.body.defaultLanguage, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    } catch {}
   }
   if (current.get('role') === 'admin' && current.get('status') === 'active' && ((update.role && update.role !== 'admin') || update.status === 'inactive')) {
     const admins = await memberRef.parent.where('role', '==', 'admin').get();
