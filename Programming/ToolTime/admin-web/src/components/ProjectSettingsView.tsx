@@ -30,8 +30,14 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
   onDeleteProject 
 }) => {
   const [form, setForm] = useState<Partial<Project>>({});
+  const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  const isDirty = useMemo(() => {
+    if (!savedSnapshot) return false;
+    return JSON.stringify(form) !== savedSnapshot;
+  }, [form, savedSnapshot]);
 
   const isBauleiter = currentUser?.role !== 'admin'; // Nicht-Admins (Projektleiter): Stammdaten, Projektleiter & Kaufmann gesperrt
 
@@ -61,13 +67,17 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
         (project.deputyCommercialManager && u.name.toLowerCase() === project.deputyCommercialManager.toLowerCase())
       )?.id || '';
 
-      setForm({
+      const initialData: Partial<Project> = {
         ...project,
         projectManagerId: pmId || project.projectManagerId || '',
         deputyProjectManagerId: depPmId || project.deputyProjectManagerId || '',
         commercialManagerId: cmId || project.commercialManagerId || '',
-        deputyCommercialManagerId: depCmId || project.deputyCommercialManagerId || ''
-      });
+        deputyCommercialManagerId: depCmId || project.deputyCommercialManagerId || '',
+        assignedMonteurIds: project.assignedMonteurIds || []
+      };
+      setForm(initialData);
+      setSavedSnapshot(JSON.stringify(initialData));
+      setIsSaved(false);
     }
   }, [project, users]);
 
@@ -176,6 +186,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isDirty || isSaving) return;
     setIsSaving(true);
     try {
       // Nur Admin/Owner darf Stammdaten, Projektleiter & Kaufmann/Kauffrau ändern.
@@ -184,8 +195,8 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
         ? { assignedMonteurIds: form.assignedMonteurIds || [] }
         : form;
       await updateProjectDetails(project.id, payload);
+      setSavedSnapshot(JSON.stringify(form));
       setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
     } finally {
       setIsSaving(false);
     }
@@ -209,10 +220,10 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
           </div>
         </div>
 
-        {isSaved && (
+        {isSaved && !isDirty && (
           <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl animate-in fade-in">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Erfolgreich gespeichert!</span>
+            <span>Projekt gespeichert</span>
           </div>
         )}
       </div>
@@ -550,14 +561,39 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
         </div>
 
         {/* Submit Bar */}
-        <div className="flex justify-end pt-2">
+        <div className="flex items-center justify-end gap-3 pt-2">
+          {isSaved && !isDirty && (
+            <span className="flex items-center space-x-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl">
+              <Check className="w-4 h-4 text-emerald-600" />
+              <span>Projekt gespeichert</span>
+            </span>
+          )}
           <button
             type="submit"
-            disabled={isSaving}
-            className="flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-6 py-2.5 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+            disabled={!isDirty || isSaving}
+            className={`flex items-center space-x-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              isSaving
+                ? 'bg-slate-300 text-slate-600 cursor-wait'
+                : isSaved && !isDirty
+                ? 'bg-emerald-600 text-white shadow-sm cursor-default'
+                : isDirty
+                ? 'bg-[#3B82C4] hover:bg-[#2B6EB0] text-white shadow-md shadow-blue-500/20 hover:scale-[1.02] active:scale-[0.98] cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+            }`}
           >
-            <Save className="w-4 h-4" />
-            <span>{isSaving ? 'Speichere...' : 'Projekteinstellungen speichern'}</span>
+            {isSaving ? (
+              <span>Speichere...</span>
+            ) : isSaved && !isDirty ? (
+              <>
+                <Check className="w-4 h-4" />
+                <span>Projekt gespeichert</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                <span>Projekteinstellungen speichern</span>
+              </>
+            )}
           </button>
         </div>
       </form>

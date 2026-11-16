@@ -231,92 +231,146 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
       <div className="mt-4 space-y-4">{members.map(member => {
         const assigned = projects.filter(project => member.assignedProjectIds?.includes(project.id));
         const available = projects.filter(project => !member.assignedProjectIds?.includes(project.id));
-        const langObj = languages.find(l => l.code === (member.defaultLanguage || 'de'));
 
-        return <div key={member.id} className="rounded-2xl border border-slate-200 p-5 shadow-xs bg-white">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
+        return (
+          <div key={member.id} className="rounded-2xl border border-slate-200 p-4 shadow-2xs bg-white space-y-3">
+            {/* Top Line: Name, Status, Role, Language Dropdown (Monteur only), Actions */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-bold text-slate-900 text-base">{member.displayName || member.email || member.id}</h3>
-                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${member.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{member.status === 'active' ? 'Aktiv' : 'Inaktiv'}</span>
-                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">{roleLabels[member.role]}</span>
-                <span className="rounded-full bg-purple-50 border border-purple-200 px-2.5 py-0.5 text-xs font-bold text-purple-800 flex items-center gap-1">
-                  <span>{langObj?.flag || '🇩🇪'}</span>
-                  <span>{langObj?.label || 'Deutsch'}</span>
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${member.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
+                  {member.status === 'active' ? 'Aktiv' : 'Inaktiv'}
                 </span>
-              </div>
-              <div className="mt-2.5 space-y-1.5 text-sm text-slate-600">
-                <p className="flex items-center gap-1.5">
-                  <Mail className="h-4 w-4 text-slate-400 shrink-0" />
-                  {member.email ? <a href={`mailto:${member.email}`} className="text-[#3B82C4] hover:underline font-medium">{member.email}</a> : <span className="text-slate-400 italic">Keine E-Mail hinterlegt</span>}
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <Phone className="h-4 w-4 text-slate-400 shrink-0" />
-                  {member.phone ? <a href={`tel:${member.phone}`} className="text-slate-700 hover:underline">{member.phone}</a> : <span className="text-slate-400 italic">Keine Telefonnummer</span>}
-                </p>
+                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                  {roleLabels[member.role]}
+                </span>
+
+                {/* Dropdown for language ONLY when member is Monteur */}
+                {member.role === 'monteur' && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-900" title="Standard-Sprache der Monteur-App">
+                    <Globe className="h-3 w-3 text-purple-600 shrink-0" />
+                    <select
+                      value={member.defaultLanguage || 'de'}
+                      disabled={busy}
+                      onChange={event => void updateMember(member, { defaultLanguage: event.target.value as Member['defaultLanguage'] })}
+                      className="bg-transparent border-none text-xs font-semibold text-purple-900 cursor-pointer focus:outline-hidden pr-0.5"
+                    >
+                      {languages.map(l => (
+                        <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
+                      ))}
+                    </select>
+                  </span>
+                )}
               </div>
 
-              {/* Quick Language Selector */}
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                <label className="font-semibold flex items-center gap-1.5 text-slate-700">
-                  <Globe className="w-3.5 h-3.5 text-[#3B82C4]" />
-                  <span>App-Sprache:</span>
-                  <select
-                    value={member.defaultLanguage || 'de'}
-                    disabled={busy}
-                    onChange={event => void updateMember(member, { defaultLanguage: event.target.value as Member['defaultLanguage'] })}
-                    className="ml-1 rounded-lg border border-slate-300 bg-white px-2 py-1 cursor-pointer font-medium text-slate-800"
-                    title="Standard-Sprache der Monteur-App"
-                  >
-                    {languages.map(l => (
-                      <option key={l.code} value={l.code}>{l.flag} {l.label}</option>
-                    ))}
-                  </select>
-                </label>
-                {member.role === 'monteur' && <span className="text-slate-400">PIN wird in der Monteur-App verwaltet</span>}
+              {/* Actions: Bearbeiten, Rolle, Deaktivieren, Löschen */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => openEditModal(member)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  title="Benutzerdaten bearbeiten"
+                >
+                  <Pencil className="h-3.5 w-3.5 text-[#3B82C4]" />
+                  <span>Bearbeiten</span>
+                </button>
+                <select
+                  aria-label={`Rolle von ${member.displayName || member.id}`}
+                  disabled={busy}
+                  value={member.role}
+                  onChange={event => void updateMember(member, { role: event.target.value as Role })}
+                  className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs cursor-pointer"
+                >
+                  {Object.entries(roleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                <button
+                  disabled={busy}
+                  onClick={() => void updateMember(member, { status: member.status === 'active' ? 'inactive' : 'active' })}
+                  className="rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-medium hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                >
+                  {member.status === 'active' ? 'Deaktivieren' : 'Aktivieren'}
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => void deleteMember(member)}
+                  className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Löschen</span>
+                </button>
               </div>
             </div>
 
-            {/* Actions: Bearbeiten, Deaktivieren, Löschen */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => openEditModal(member)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
-                title="Benutzerdaten bearbeiten"
-              >
-                <Pencil className="h-4 w-4 text-[#3B82C4]" />
-                <span>Bearbeiten</span>
-              </button>
-              <select
-                aria-label={`Rolle von ${member.displayName || member.id}`}
-                disabled={busy}
-                value={member.role}
-                onChange={event => void updateMember(member, { role: event.target.value as Role })}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm cursor-pointer"
-              >
-                {Object.entries(roleLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-              </select>
-              <button
-                disabled={busy}
-                onClick={() => void updateMember(member, { status: member.status === 'active' ? 'inactive' : 'active' })}
-                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 cursor-pointer disabled:opacity-50"
-              >
-                {member.status === 'active' ? 'Deaktivieren' : 'Aktivieren'}
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => void deleteMember(member)}
-                className="inline-flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 cursor-pointer disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Löschen</span>
-              </button>
+            {/* Second Line: E-Mail & Phone in one line, and right next to it: Assigned Projects */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600 pt-1.5 border-t border-slate-100">
+              <div className="flex items-center gap-1.5">
+                <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                {member.email ? (
+                  <a href={`mailto:${member.email}`} className="text-[#3B82C4] hover:underline font-medium">
+                    {member.email}
+                  </a>
+                ) : (
+                  <span className="text-slate-400 italic">Keine E-Mail</span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                {member.phone ? (
+                  <a href={`tel:${member.phone}`} className="text-slate-700 hover:underline">
+                    {member.phone}
+                  </a>
+                ) : (
+                  <span className="text-slate-400 italic">Keine Telefonnummer</span>
+                )}
+              </div>
+
+              {/* Zugeordnete Projekte direkt daneben */}
+              <div className="flex flex-wrap items-center gap-1.5 sm:border-l sm:border-slate-200 sm:pl-4">
+                <span className="font-semibold text-slate-500">Projekte:</span>
+                {member.role === 'admin' ? (
+                  <span className="text-slate-400 italic">Alle Projekte (Admin)</span>
+                ) : (
+                  <>
+                    {assigned.map(project => (
+                      <span
+                        key={project.id}
+                        className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-900"
+                      >
+                        🏢 {project.name}
+                        <button
+                          type="button"
+                          aria-label={`${project.name} entfernen`}
+                          disabled={busy}
+                          onClick={() =>
+                            void updateMember(member, {
+                              assignedProjectIds: (member.assignedProjectIds || []).filter(id => id !== project.id),
+                            })
+                          }
+                          className="rounded text-blue-700 hover:text-red-700 cursor-pointer ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    {available.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setProjectMember(member)}
+                        className="rounded-md border border-dashed border-blue-300 px-2 py-0.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer"
+                      >
+                        + Projekt zuordnen
+                      </button>
+                    ) : (
+                      assigned.length === 0 && <span className="text-slate-400 italic">Keinem Projekt zugeordnet</span>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
-          {member.role === 'admin' ? <p className="mt-4 border-t border-slate-100 pt-4 text-xs text-slate-500">Administratoren haben Zugriff auf alle Projekte.</p> : <div className="mt-4 border-t border-slate-100 pt-4"><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Zugeordnete Projekte</p><div className="flex flex-wrap gap-2">{assigned.map(project => <span key={project.id} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-900">🏢 {project.name}<button type="button" aria-label={`${project.name} entfernen`} disabled={busy} onClick={() => void updateMember(member, { assignedProjectIds: (member.assignedProjectIds || []).filter(id => id !== project.id) })} className="rounded text-blue-700 hover:text-red-700 cursor-pointer">×</button></span>)}{available.length > 0 ? <button type="button" onClick={() => setProjectMember(member)} className="rounded-lg border border-dashed border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer">+ Projekt zuordnen</button> : <span className="px-2 py-2 text-xs text-slate-400">Allen Projekten zugeordnet</span>}</div></div>}
-        </div>;
+        );
       })}{members.length === 0 && <p className="text-sm text-slate-500">Noch keine aktiven Mitglieder.</p>}</div>
     </section>
 
@@ -444,26 +498,28 @@ export function TenantMembersView({ tenantId, projects }: { tenantId: string; pr
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                <Globe className="inline-block h-3.5 w-3.5 mr-1 text-[#3B82C4]" />
-                Standard-App-Sprache (Monteur-App)
-              </label>
-              <select
-                value={editLanguage}
-                onChange={e => setEditLanguage(e.target.value as 'de' | 'ro' | 'pl' | 'hr')}
-                className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium bg-white focus:border-[#3B82C4] focus:outline-hidden cursor-pointer"
-              >
-                {languages.map(l => (
-                  <option key={l.code} value={l.code}>
-                    {l.flag} {l.label}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-slate-400">
-                Die Monteur-App wird bei diesem Benutzer automatisch mit dieser Sprache geladen.
-              </p>
-            </div>
+            {editRole === 'monteur' && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
+                  <Globe className="inline-block h-3.5 w-3.5 mr-1 text-[#3B82C4]" />
+                  Standard-App-Sprache (Monteur-App)
+                </label>
+                <select
+                  value={editLanguage}
+                  onChange={e => setEditLanguage(e.target.value as 'de' | 'ro' | 'pl' | 'hr')}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm font-medium bg-white focus:border-[#3B82C4] focus:outline-hidden cursor-pointer"
+                >
+                  {languages.map(l => (
+                    <option key={l.code} value={l.code}>
+                      {l.flag} {l.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Die Monteur-App wird bei diesem Benutzer automatisch mit dieser Sprache geladen.
+                </p>
+              </div>
+            )}
 
             {editRole !== 'admin' && projects.length > 0 && (
               <div>
