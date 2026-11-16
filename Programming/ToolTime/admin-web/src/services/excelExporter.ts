@@ -193,7 +193,7 @@ export function exportMaterialReportToExcel(
     'Titel': a.title,
     'Menge': a.quantity,
     'Erfasst von': (a.createdByRole === 'bauleiter' || (a.requestedBy && /bauleiter|projektleiter|portal/i.test(a.requestedBy)))
-      ? (a.requestedBy && !/^(bauleiter|projektleiter)$/i.test(a.requestedBy.trim()) ? a.requestedBy : 'Bauleiter (Portal)')
+      ? (a.requestedBy && !/^(bauleiter|projektleiter)$/i.test(a.requestedBy.trim()) ? a.requestedBy : 'Projektleiter (Portal)')
       : (a.requestedBy || 'Monteur'),
     'Begründung': a.note || a.description || '-',
     'Datum': a.createdAt ? new Date(a.createdAt).toLocaleString('de-DE') : '-'

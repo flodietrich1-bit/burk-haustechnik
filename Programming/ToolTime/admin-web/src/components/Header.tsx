@@ -46,6 +46,14 @@ export const Header: React.FC<HeaderProps> = ({
   const relevantRequests = addendums.filter(a => currentUser && isAddendumTodoForRole(a, currentUser.role));
   const totalNotifications = openAlerts.length + relevantRequests.length;
 
+  const isProjektleiter = currentUser?.role === 'bauleiter';
+  const approvedAddendums = addendums.filter(a => a.status === 'approved' && (a.commercialApprovedAt || a.approvalType));
+  const hasApprovedNotification = isProjektleiter && approvedAddendums.length > 0;
+
+  const isBurk = (branding?.name || '').toLowerCase().includes('burk')
+    || (typeof window !== 'undefined' && window.location.pathname.toLowerCase().includes('burk'));
+  const effectiveLogo = branding?.logoUrl || (isBurk ? '/burk-haustechnik-logo.svg' : '');
+
   // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -68,8 +76,29 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-[1920px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
         
         <div className="flex min-w-0 items-center gap-3 shrink-0">
-          {branding?.logoUrl ? <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1"><img src={branding.logoUrl} alt={`${branding.name} Logo`} className="max-h-full max-w-full object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/></div> : <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold" style={{ backgroundColor: brandBackgroundColor(branding?.primaryColor || '#7437D9'), color: readableTextColor(branding?.primaryColor || '#7437D9') }}>{(branding?.name || 'F').charAt(0)}</div>}
-          <span className="max-w-44 truncate text-base font-semibold sm:max-w-64" style={{ color: brandTextAccentColor(branding?.secondaryColor || '#1F1A4D') }}>{branding?.name || 'Firma'}</span>
+          {effectiveLogo ? (
+            <div className="flex h-11 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 max-w-[160px]">
+              <img
+                src={effectiveLogo}
+                alt={`${branding?.name || 'Burk Haustechnik'} Logo`}
+                className="h-9 w-auto max-w-full object-contain"
+                style={{ transform: `scale(${branding?.logoZoom || 1})` }}
+              />
+            </div>
+          ) : (
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-bold"
+              style={{
+                backgroundColor: brandBackgroundColor(branding?.primaryColor || '#7437D9'),
+                color: readableTextColor(branding?.primaryColor || '#7437D9')
+              }}
+            >
+              {(branding?.name || 'F').charAt(0)}
+            </div>
+          )}
+          <span className="max-w-44 truncate text-base font-semibold sm:max-w-64" style={{ color: brandTextAccentColor(branding?.secondaryColor || '#1F1A4D') }}>
+            {branding?.name || 'Firma'}
+          </span>
         </div>
 
         {/* Center / Action Group: Projektname (links) + Button Neues Projekt (rechts) */}
@@ -201,15 +230,19 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => setIsAlertsOpen(!isAlertsOpen)}
               className="relative p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
               title={
-                relevantRequests.length > 0
+                totalNotifications > 0
                   ? `${relevantRequests.length} offene Nachträge & ${openAlerts.length} Alert(s)`
+                  : hasApprovedNotification
+                  ? `${approvedAddendums.length} freigegebene Mengenmehrung(en)`
                   : 'Material-Überschreitungen & Alerts'
               }
             >
               <Bell className="w-4 h-4" />
-              {totalNotifications > 0 && (
+              {totalNotifications > 0 ? (
                 <span aria-hidden="true" className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_6px_2px_rgba(239,68,68,0.55)]" />
-              )}
+              ) : hasApprovedNotification ? (
+                <span aria-hidden="true" className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_2px_rgba(16,185,129,0.7)] animate-pulse" />
+              ) : null}
             </button>
 
             {/* Alerts Dropdown Flyout */}
@@ -223,9 +256,15 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center space-x-2 shrink-0">
-                    <span className="text-[11px] font-bold bg-red-600 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 shadow-sm leading-none flex items-center justify-center">
-                      {totalNotifications} offen
-                    </span>
+                    {totalNotifications > 0 ? (
+                      <span className="text-[11px] font-bold bg-red-600 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 shadow-sm leading-none flex items-center justify-center">
+                        {totalNotifications} offen
+                      </span>
+                    ) : hasApprovedNotification ? (
+                      <span className="text-[11px] font-bold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full whitespace-nowrap shrink-0 shadow-sm leading-none flex items-center justify-center">
+                        {approvedAddendums.length} freigegeben
+                      </span>
+                    ) : null}
                     <button
                       onClick={() => setIsAlertsOpen(false)}
                       className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
@@ -238,7 +277,51 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="max-h-80 overflow-y-auto space-y-3 py-1">
-                  {/* SECTION 1: Material Requests from Bauleiter (relevant for commercial & admin) */}
+                  {/* SECTION: Approved Addendums for Projektleiter */}
+                  {approvedAddendums.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider flex items-center justify-between px-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                          Freigegebene Mengenmehrungen ({approvedAddendums.length})
+                        </span>
+                      </div>
+                      {approvedAddendums.map(item => (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            setIsAlertsOpen(false);
+                            onNavigateToAddendum?.(item.id);
+                          }}
+                          className="bg-emerald-950/40 hover:bg-emerald-950/70 p-2.5 rounded-xl border border-emerald-500/40 hover:border-emerald-400 transition-all text-xs cursor-pointer space-y-1.5 group"
+                          title="Zu diesem freigegebenen Nachtrag wechseln"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-emerald-200 truncate group-hover:text-white transition-colors">
+                              {item.title}
+                            </span>
+                            <span className="text-emerald-300 font-bold font-mono text-[11px] shrink-0 bg-emerald-900/60 px-1.5 py-0.5 rounded border border-emerald-700/50">
+                              +{item.reorderedQty || item.quantity} {item.qu || 'm'}
+                            </span>
+                          </div>
+                          <div className="text-emerald-100/90 text-[11px]">
+                            Mengenmehrung {item.title} freigegeben +{item.reorderedQty || item.quantity} {item.qu || 'm'}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 text-[10px] border-t border-emerald-800/60">
+                            <span className="text-emerald-400">
+                              {item.commercialApprovedBy ? `Freigegeben durch ${item.commercialApprovedBy}` : 'Freigegeben'}
+                              {item.commercialApprovedAt ? ` am ${new Date(item.commercialApprovedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}` : ''}
+                            </span>
+                            <span className="text-emerald-300 font-semibold group-hover:underline flex items-center gap-1">
+                              Nachtrag ansehen →
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* SECTION 1: Material Requests from Projektleiter (relevant for commercial & admin) */}
                   {relevantRequests.length > 0 && (
                     <div className="space-y-1.5">
                       <div className="text-[10px] font-bold text-purple-300 uppercase tracking-wider flex items-center justify-between px-1">
@@ -267,7 +350,7 @@ export const Header: React.FC<HeaderProps> = ({
                           </div>
                           <div className="flex items-center justify-between pt-1 text-[10px] border-t border-slate-700/50">
                             <span className="text-slate-400">
-                              Erfasst von: <strong className="text-slate-200">{item.requestedBy || 'Bauleiter'}</strong>
+                              Erfasst von: <strong className="text-slate-200">{item.requestedBy?.replace(/Bauleiter/i, 'Projektleiter') || 'Projektleiter'}</strong>
                             </span>
                             <span className="text-purple-400 font-semibold group-hover:underline flex items-center gap-1">
                               Nachtrag öffnen →
@@ -331,7 +414,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   )}
 
-                  {totalNotifications === 0 && (
+                  {totalNotifications === 0 && approvedAddendums.length === 0 && (
                     <div className="py-6 text-center text-xs text-slate-400">
                       Keine offenen Überschreitungsmeldungen oder Anfragen.
                     </div>
@@ -390,7 +473,7 @@ export const Header: React.FC<HeaderProps> = ({
                         ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
                         : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     }`}>
-                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : currentUser.role === 'kaufmaennisch' ? 'Kaufmann' : currentUser.role === 'monteur' ? 'Monteur' : 'Bauleiter'}
+                      {currentUser.role === 'admin' ? 'Eigentümer / Administrator' : currentUser.role === 'kaufmaennisch' ? 'Kaufmann' : currentUser.role === 'monteur' ? 'Monteur' : 'Projektleiter'}
                     </span>
                   </div>
 

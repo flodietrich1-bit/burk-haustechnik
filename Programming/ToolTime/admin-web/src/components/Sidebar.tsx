@@ -245,7 +245,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
         <div className="flex items-center justify-between">
           <div className="bg-white/95 px-2 py-0.5 rounded-lg flex items-center shadow-xs">
-            {branding?.logoUrl ? <img src={branding.logoUrl} alt={`${branding.name} Logo`} className="h-7 max-w-32 object-contain" style={{ transform: `scale(${branding.logoZoom || 1})` }}/> : <span className="text-xs font-semibold" style={{ color: branding?.secondaryColor }}>{branding?.name || 'Firma'}</span>}
+            {(() => {
+              const isBurk = (branding?.name || '').toLowerCase().includes('burk') || (typeof window !== 'undefined' && window.location.pathname.toLowerCase().includes('burk'));
+              const effectiveLogo = branding?.logoUrl || (isBurk ? '/burk-haustechnik-logo.svg' : '');
+              return effectiveLogo ? (
+                <img src={effectiveLogo} alt={`${branding?.name || 'Burk Haustechnik'} Logo`} className="h-7 max-w-32 object-contain" style={{ transform: `scale(${branding?.logoZoom || 1})` }}/>
+              ) : (
+                <span className="text-xs font-semibold" style={{ color: branding?.secondaryColor }}>{branding?.name || 'Firma'}</span>
+              );
+            })()}
           </div>
           <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/40">
             Live

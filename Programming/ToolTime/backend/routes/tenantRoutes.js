@@ -153,7 +153,7 @@ tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', req
   const dateFrom = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
   const dateTo = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
   const subject = `Aufmaß ${aufmass.aufmassNumber} – ${aufmass.projectName}`;
-  const body = `Hallo ${String(recipient.displayName || recipient.email).split(' ')[0]},\n\nanbei das Aufmaß ${aufmass.aufmassNumber} für ${aufmass.projectName} (${dateFrom} bis ${dateTo}) als PDF und Excel-Datei.\n\nBitte prüfen und die Abrechnung veranlassen.\n\nViele Grüße\n${req.tenantMember?.displayName || req.auth.email || 'Bauleitung'}`;
+  const body = `Hallo ${String(recipient.displayName || recipient.email).split(' ')[0]},\n\nanbei das Aufmaß ${aufmass.aufmassNumber} für ${aufmass.projectName} (${dateFrom} bis ${dateTo}) als PDF und Excel-Datei.\n\nBitte prüfen und die Abrechnung veranlassen.\n\nViele Grüße\n${req.tenantMember?.displayName || req.auth.email || 'Projektleitung'}`;
   let delivery;
   try {
     delivery = await sendEmail({ to: recipient.email, subject, text: body, attachments: [
@@ -255,7 +255,7 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
   const buttonTextColor = luminance > 0.42 ? '#172334' : '#ffffff';
   const portalOrigin = process.env.PUBLIC_APP_URL || 'https://p12-aufmass.de';
   const portalUrl = `${portalOrigin.replace(/\/$/, '')}/t/${encodeURIComponent(tenantId)}?project=${encodeURIComponent(projectId)}&tab=addendums&item=${encodeURIComponent(entries[0].id)}`;
-  const rows = entries.map(entry => `<tr><td>${escapeHtml(entry.itemOz || '–')}</td><td>${escapeHtml(entry.title)}</td><td>${escapeHtml(entry.orderQuantity)} ${escapeHtml(entry.qu || 'Stk')}</td><td>${escapeHtml(entry.description || entry.note || '–')}</td><td>${escapeHtml(entry.requestedBy || 'Bauleitung')}</td></tr>`).join('');
+  const rows = entries.map(entry => `<tr><td>${escapeHtml(entry.itemOz || '–')}</td><td>${escapeHtml(entry.title)}</td><td>${escapeHtml(entry.orderQuantity)} ${escapeHtml(entry.qu || 'Stk')}</td><td>${escapeHtml(entry.description || entry.note || '–')}</td><td>${escapeHtml(entry.requestedBy || 'Projektleitung')}</td></tr>`).join('');
   const html = `<div style="font-family:Arial,sans-serif;max-width:760px;margin:auto;color:#172334"><h1 style="color:${safePrimary}">Neue Materialanfrage</h1><p>Hallo ${escapeHtml(String(recipientName || 'kaufmännische Leitung').split(' ')[0])},</p><p>für das Projekt <strong>${escapeHtml(project.get('name'))}</strong> liegt eine Materialanfrage vor.</p><table style="width:100%;border-collapse:collapse" border="1" cellpadding="8"><thead><tr><th>Position</th><th>Material</th><th>Menge</th><th>Begründung</th><th>Erfasst von</th></tr></thead><tbody>${rows}</tbody></table><p style="white-space:pre-wrap">${escapeHtml(text.trim())}</p><p><a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:${safePrimary};color:${buttonTextColor};padding:14px 20px;border-radius:8px;text-decoration:none">Materialanfrage im Portal prüfen</a></p></div>`;
   let delivery;
   try {
@@ -274,7 +274,7 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
     batch.set(orderRef, { addendumIds, recipientEmail, recipientName: recipientName || recipientEmail, messageId: delivery.messageId, requestedBy: req.auth.uid, requestedAt: now });
     entries.forEach(entry => {
       batch.update(projectRef.collection('addendums').doc(entry.id), { status: 'requested', requestedAt: now, requestedTo: recipientName || recipientEmail, requestedToEmail: recipientEmail, reorderedQty: entry.orderQuantity, commercialNote: '', updatedAt: now });
-      batch.set(projectRef.collection('bookings').doc(`material_requested_${orderId}_${entry.id}`), { id: `material_requested_${orderId}_${entry.id}`, projectId, roomId: entry.roomId || 'allgemein', roomName: entry.roomName || '', positionName: entry.title, quantity: entry.orderQuantity, qu: entry.qu || 'Stk', type: 'material_requested', note: `${req.tenantMember?.displayName || req.auth.email || 'Bauleitung'} hat ${entry.orderQuantity} ${entry.qu || 'Stk'} ${entry.title} bei ${recipientName || recipientEmail} angefragt.`, createdBy: req.tenantMember?.displayName || req.auth.email || 'Bauleitung', timestamp: now, createdAt: now });
+      batch.set(projectRef.collection('bookings').doc(`material_requested_${orderId}_${entry.id}`), { id: `material_requested_${orderId}_${entry.id}`, projectId, roomId: entry.roomId || 'allgemein', roomName: entry.roomName || '', positionName: entry.title, quantity: entry.orderQuantity, qu: entry.qu || 'Stk', type: 'material_requested', note: `${req.tenantMember?.displayName || req.auth.email || 'Projektleitung'} hat ${entry.orderQuantity} ${entry.qu || 'Stk'} ${entry.title} bei ${recipientName || recipientEmail} angefragt.`, createdBy: req.tenantMember?.displayName || req.auth.email || 'Projektleitung', timestamp: now, createdAt: now });
     });
     await batch.commit();
     res.json({ sent: true, recipientName: recipientName || recipientEmail, recipientEmail, messageId: delivery.messageId });
@@ -293,26 +293,72 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commerci
   if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
   const email = String(req.auth.email || '').toLowerCase();
   const canDecide = req.auth.platformRole === 'superadmin' || req.tenantMember?.role === 'admin'
-    || (req.tenantMember?.role === 'kaufmaennisch' && req.tenantMember?.assignedProjectIds?.includes(projectId))
+    || (req.tenantMember?.role === 'kaufmaennisch' && (!req.tenantMember?.assignedProjectIds || req.tenantMember?.assignedProjectIds.length === 0 || req.tenantMember?.assignedProjectIds?.includes(projectId)))
     || (req.tenantMember?.role === 'kaufmaennisch' && [project.get('commercialManagerId'), project.get('deputyCommercialManagerId')].includes(req.auth.uid))
     || (req.tenantMember?.role === 'kaufmaennisch' && [project.get('commercialManagerEmail'), project.get('deputyCommercialManagerEmail')].some(value => value && String(value).toLowerCase() === email));
   if (!canDecide) return res.status(403).json({ code: 'COMMERCIAL_DECISION_DENIED' });
   const ref = projectRef.collection('addendums').doc(addendumId);
   const now = new Date().toISOString();
+  let approvedItemSnapshot = null;
+  let actorName = 'Kaufmännische Leitung';
+  let approvedQty = 0;
   try {
     await adminDb.runTransaction(async transaction => {
       const item = await transaction.get(ref);
       const canApprovePending = req.auth.platformRole === 'superadmin' || req.tenantMember?.role === 'admin';
       if (!item.exists || !(['requested', 'needs_discussion'].includes(item.get('status')) || (canApprovePending && item.get('status') === 'pending'))) throw new Error('ADDENDUM_NOT_REQUESTED');
       const actor = req.tenantMember?.displayName || req.auth.email || 'Kaufmännische Leitung';
+      actorName = actor;
       const quantity = Number(item.get('reorderedQty') || item.get('quantity')) || 0;
+      approvedQty = quantity;
+      approvedItemSnapshot = item.data();
       transaction.update(ref, { status: decision, approvalType: decision === 'approved' ? fulfillment : item.get('approvalType') || null, commercialApprovedBy: decision === 'approved' ? actor : null, commercialApprovedAt: decision === 'approved' ? now : null, commercialNote: String(note || '').trim(), updatedAt: now });
       const eventId = `commercial_${decision}_${addendumId}_${Date.now()}`;
       const eventNote = decision === 'approved'
         ? `${actor} hat am ${new Date(now).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })} ${quantity} ${item.get('qu') || 'Stk'} ${item.get('title') || 'Material'} ${fulfillment === 'in_stock' ? 'aus dem Lager freigegeben' : 'nachbestellt'}.`
         : `Rücksprache zu ${item.get('title')} erforderlich: ${String(note).trim()}`;
       transaction.set(projectRef.collection('bookings').doc(eventId), { id: eventId, projectId, roomId: item.get('roomId') || 'allgemein', roomName: item.get('roomName') || '', positionName: item.get('title') || '', quantity, qu: item.get('qu') || 'Stk', type: 'commercial_decision', note: eventNote, createdBy: actor, timestamp: now, createdAt: now });
+
+      // If approved, update deliveredQty on matching position in Firestore
+      if (decision === 'approved' && quantity > 0) {
+        const materialId = item.get('materialId');
+        if (materialId) {
+          const posRef = projectRef.collection('positions').doc(materialId);
+          const posSnap = await transaction.get(posRef);
+          if (posSnap.exists) {
+            const currentDelivered = Number(posSnap.get('deliveredQty') ?? posSnap.get('qty')) || 0;
+            transaction.update(posRef, { deliveredQty: currentDelivered + quantity, updatedAt: now });
+          }
+        }
+      }
     });
+
+    // Send confirmation email to Projektleiter if approved
+    if (decision === 'approved') {
+      const recipientEmail = approvedItemSnapshot?.requestedByEmail || project.get('projectManagerEmail') || project.get('deputyProjectManagerEmail');
+      if (recipientEmail) {
+        const portalOrigin = process.env.PUBLIC_APP_URL || 'https://p12-aufmass.de';
+        const portalUrl = `${portalOrigin.replace(/\/$/, '')}/t/${encodeURIComponent(tenantId)}?project=${encodeURIComponent(projectId)}&tab=addendums&item=${encodeURIComponent(addendumId)}`;
+        const fulfillmentText = fulfillment === 'in_stock' ? 'aus dem Lager bereitgestellt' : 'beim Lieferanten nachbestellt';
+        const itemTitle = approvedItemSnapshot?.title || 'Material';
+        const qu = approvedItemSnapshot?.qu || 'Stk';
+        const subject = `Mengenmehrung freigegeben: ${itemTitle}`;
+        const text = `Hallo,\n\ndeine Materialanfrage für das Projekt "${project.get('name')}" wurde von ${actorName} freigegeben.\n\nMaterial: ${itemTitle}\nMenge: +${approvedQty} ${qu}\nStatus: ${fulfillmentText}\n\nDie verfügbare Projektmenge wurde entsprechend um +${approvedQty} ${qu} erhöht.\n\nIm Portal ansehen: ${portalUrl}\n\nErfolgreiches Aufmessen,\nDein P12 Aufmaßteam`;
+        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#172334"><h2 style="color:#2FA36B">Mengenmehrung freigegeben</h2><p>Hallo,</p><p>die Materialanfrage für das Projekt <strong>${escapeHtml(project.get('name'))}</strong> wurde von <strong>${escapeHtml(actorName)}</strong> freigegeben.</p><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:16px 0"><p style="margin:4px 0"><strong>Material:</strong> ${escapeHtml(itemTitle)}</p><p style="margin:4px 0"><strong>Freigegebene Menge:</strong> +${escapeHtml(approvedQty)} ${escapeHtml(qu)}</p><p style="margin:4px 0"><strong>Bereitstellung:</strong> ${escapeHtml(fulfillmentText)}</p></div><p>Die verfügbare Projektmenge wurde entsprechend um <strong>+${escapeHtml(approvedQty)} ${escapeHtml(qu)}</strong> erhöht.</p><p style="margin:24px 0"><a href="${escapeHtml(portalUrl)}" style="display:inline-block;background:#2FA36B;color:#ffffff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Freigabe im Portal ansehen</a></p><p style="color:#64748b;font-size:13px;margin-top:32px">Erfolgreiches Aufmessen,<br/>Dein P12 Aufmaßteam</p></div>`;
+        try {
+          await sendEmail({
+            to: recipientEmail,
+            subject,
+            text,
+            html,
+            idempotencyKey: `approval-${addendumId}-${Date.now()}`
+          });
+        } catch (mailErr) {
+          console.warn('Approval email delivery failed:', mailErr.message);
+        }
+      }
+    }
+
     res.json({ success: true, status: decision });
   } catch (error) {
     if (error.message === 'ADDENDUM_NOT_REQUESTED') return res.status(409).json({ code: error.message });

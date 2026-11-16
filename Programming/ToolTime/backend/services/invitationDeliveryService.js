@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import PDFDocument from 'pdfkit';
 import { sendEmail } from './emailService.js';
 
-const roleNames = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'kaufmännischer Mitarbeiter', monteur: 'Monteur' };
+const roleNames = { admin: 'Administrator', bauleiter: 'Projektleiter', kaufmaennisch: 'kaufmännischer Mitarbeiter', monteur: 'Monteur' };
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 
 function pdfBuffer({ tenantName, displayName, role, shortCode, webInviteUrl, qrDataUrl, isSystemAdmin = false }) {

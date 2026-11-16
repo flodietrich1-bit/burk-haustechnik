@@ -1037,7 +1037,7 @@ export async function createAddendum(projectId: string, addendumData: Partial<Ad
     description: addendumData.description || '',
     quantity: addendumData.quantity !== undefined ? addendumData.quantity : '1',
     qu: addendumData.qu || 'Stk',
-    requestedBy: addendumData.requestedBy || 'Bauleiter',
+    requestedBy: addendumData.requestedBy || 'Projektleiter',
     status: (addendumData.status as any) || 'pending',
     note: addendumData.note || '',
     signature: addendumData.signature || null,

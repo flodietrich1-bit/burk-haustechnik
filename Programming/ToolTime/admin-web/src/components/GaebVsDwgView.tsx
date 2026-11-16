@@ -306,7 +306,7 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
         description: modalReason.trim(),
         note: `Abweichung GAEB vs. DWG (+${modalRow.deltaPercent}%)`,
         status: 'pending',
-        requestedBy: currentUser?.name || 'Bauleiter',
+        requestedBy: currentUser?.name || 'Projektleiter',
         createdByRole: 'bauleiter',
         deviationSource: 'gaeb_vs_dwg',
         type: 'material'
@@ -874,7 +874,7 @@ export const GaebVsDwgView: React.FC<GaebVsDwgViewProps> = ({
                   <input
                     type="text"
                     disabled
-                    value={`Bauleiter (${currentUser?.name || 'Florian Dietrich'})`}
+                    value={`Projektleiter (${currentUser?.name || 'Florian Dietrich'})`}
                     className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-600 cursor-not-allowed"
                   />
                 </div>

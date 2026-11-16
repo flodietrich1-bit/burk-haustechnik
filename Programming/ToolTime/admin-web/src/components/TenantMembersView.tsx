@@ -20,7 +20,7 @@ interface Invitation {
   expiresAt?: string;
 }
 interface InvitationResult { inviteId: string; shortCode: string; qrDataUrl: string; webInviteUrl?: string; pdfBase64: string; emailSent: boolean; emailError?: string | null; }
-const roleLabels: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'Kaufmann', monteur: 'Monteur' };
+const roleLabels: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Projektleiter', kaufmaennisch: 'Kaufmann', monteur: 'Monteur' };
 
 export function TenantMembersView({ tenantId, projects }: { tenantId: string; projects: Project[] }) {
   const [members, setMembers] = useState<Member[]>([]);

@@ -16,11 +16,11 @@ interface InviteResult { inviteId: string; qrToken: string; shortCode: string; q
 
 const roles: Array<{ id: Role; label: string; help: string }> = [
   { id: 'admin', label: 'Administratoren', help: 'Firma, Benutzer und Projekte verwalten' },
-  { id: 'bauleiter', label: 'Bauleiter', help: 'Projekte koordinieren und freigeben' },
+  { id: 'bauleiter', label: 'Projektleiter', help: 'Projekte koordinieren und freigeben' },
   { id: 'kaufmaennisch', label: 'Kaufmann', help: 'Auswertungen und Nachträge bearbeiten' },
   { id: 'monteur', label: 'Monteure', help: 'Zugewiesene Projekte mobil bearbeiten' },
 ];
-const roleNames: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'Kaufmann', monteur: 'Monteur' };
+const roleNames: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Projektleiter', kaufmaennisch: 'Kaufmann', monteur: 'Monteur' };
 
 export function TenantDetailPage() {
   const { tenantId = '' } = useParams();

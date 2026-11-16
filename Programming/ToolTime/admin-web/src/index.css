@@ -21,6 +21,14 @@ body {
   min-height: 100vh;
 }
 
+/* Ensure cursor pointer on all interactive buttons */
+button, [role="button"], [type="button"], [type="submit"], [type="reset"] {
+  cursor: pointer;
+}
+button:disabled, [role="button"]:disabled, [type="button"]:disabled {
+  cursor: not-allowed;
+}
+
 .admin-color-picker {
   padding: 0;
   border: 2px solid #fff;
