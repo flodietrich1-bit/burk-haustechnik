@@ -23,6 +23,10 @@ import { parseInviteInput, resetInstallationId } from '../services/apiService';
 import { activateDeviceWithInvite, loadTenantBranding, getTenantId } from '../services/authService';
 import P12AufmassLogo from '../components/P12AufmassLogo';
 
+const BARCODE_SCANNER_SETTINGS = {
+  barcodeTypes: ['qr'],
+};
+
 /**
  * Clean vector camera silhouette icon
  */
@@ -98,14 +102,51 @@ export default function ActivationScreen({
     });
   }, [branding]);
 
+  useEffect(() => {
+    if (
+      Platform.OS === 'web' ||
+      !CameraView.isModernBarcodeScannerAvailable ||
+      typeof CameraView.onModernBarcodeScanned !== 'function'
+    ) {
+      return undefined;
+    }
+
+    const subscription = CameraView.onModernBarcodeScanned(async (scanningResult) => {
+      if (isScanningRef.current || isActivating) return;
+      const rawData = scanningResult?.data;
+      if (!rawData) return;
+
+      const { qrToken, code } = parseInviteInput(rawData);
+      if (!qrToken && !code) {
+        return;
+      }
+
+      isScanningRef.current = true;
+      try {
+        await CameraView.dismissScanner();
+      } catch (err) {
+        console.warn('Dismiss native scanner warning:', err);
+      }
+      setScanWarning('');
+      setScannerVisible(false);
+      handleRecognizedInvite({ code, qrToken });
+    });
+
+    return () => {
+      subscription?.remove?.();
+    };
+  }, [isActivating]);
+
   const handleOpenScanner = async () => {
     setErrorMsg('');
     setScanWarning('');
     isScanningRef.current = false;
 
-    if (!permission?.granted) {
+    let hasPerm = permission?.granted;
+    if (!hasPerm) {
       const res = await requestPermission();
-      if (!res?.granted) {
+      hasPerm = !!res?.granted;
+      if (!hasPerm) {
         Alert.alert(
           t('cameraPermissionTitle', currentLang),
           t('cameraPermissionMsg', currentLang),
@@ -113,7 +154,25 @@ export default function ActivationScreen({
         );
         return;
       }
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
+
+    // Prefer native system barcode scanner (VisionKit DataScannerViewController on iOS 16+ / Google Code Scanner on Android)
+    if (Platform.OS !== 'web' && CameraView.isModernBarcodeScannerAvailable) {
+      try {
+        await CameraView.launchScanner({
+          barcodeTypes: ['qr'],
+          isHighlightingEnabled: true,
+          isGuidanceEnabled: true,
+          isPinchToZoomEnabled: true,
+        });
+        return;
+      } catch (err) {
+        console.warn('Native scanner fallback to CameraView:', err);
+      }
+    }
+
+    setCameraReady(false);
     setScannerVisible(true);
   };
 
@@ -294,13 +353,13 @@ export default function ActivationScreen({
     return (
       <View style={styles.scannerRoot}>
         <CameraView
-          style={StyleSheet.absoluteFillObject}
+          style={styles.cameraPreview}
           facing="back"
-          barcodeScannerSettings={{
-            barcodeTypes: ['qr'],
-          }}
+          mode="picture"
+          active={scannerVisible}
+          barcodeScannerSettings={BARCODE_SCANNER_SETTINGS}
           onCameraReady={() => setCameraReady(true)}
-          onBarcodeScanned={cameraReady ? handleBarcodeScanned : undefined}
+          onBarcodeScanned={handleBarcodeScanned}
           onMountError={(e) => {
             console.warn('Camera mount error:', e);
             Alert.alert('Kamera-Fehler', 'Kamera konnte nicht gestartet werden.');
@@ -1040,8 +1099,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000000',
   },
-  scannerOverlay: {
+  cameraPreview: {
     flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 20,
