@@ -16,9 +16,11 @@ await env.withSecurityRulesDisabled(async context => {
   await setDoc(doc(db, 'tenants/burk/members/monteur-1'), { role: 'monteur', status: 'active', assignedProjectIds: ['project-1'] });
   await setDoc(doc(db, 'tenants/burk/members/bauleiter-1'), { role: 'bauleiter', status: 'active', assignedProjectIds: [] });
   await setDoc(doc(db, 'tenants/burk/members/kaufmann-1'), { role: 'kaufmaennisch', status: 'active', assignedProjectIds: [] });
-  await setDoc(doc(db, 'tenants/burk/members/other-bauleiter'), { role: 'bauleiter', status: 'active', assignedProjectIds: [] });
+  await setDoc(doc(db, 'tenants/burk/members/restricted-bauleiter'), { role: 'bauleiter', status: 'active', assignedProjectIds: ['project-restricted'] });
+  await setDoc(doc(db, 'tenants/burk/members/restricted-kaufmann'), { role: 'kaufmaennisch', status: 'active', assignedProjectIds: ['project-restricted'] });
+  await setDoc(doc(db, 'tenants/burk/members/other-bauleiter'), { role: 'bauleiter', status: 'active', assignedProjectIds: ['project-restricted'] });
   await setDoc(doc(db, 'tenants/burk/projects/project-1'), { name: 'Projekt 1', status: 'in_progress' });
-  await setDoc(doc(db, 'tenants/burk/projects/project-2'), { name: 'Projekt 2', status: 'in_progress', projectManagerId: 'bauleiter-1', commercialManagerId: 'kaufmann-1' });
+  await setDoc(doc(db, 'tenants/burk/projects/project-2'), { name: 'Projekt 2', status: 'in_progress', projectManagerId: 'restricted-bauleiter', commercialManagerId: 'restricted-kaufmann' });
   await setDoc(doc(db, 'tenants/other'), { name: 'Other', status: 'active' });
   await setDoc(doc(db, 'users/super-firestore'), { platformRole: 'superadmin', email: 'admin@example.com' });
   await setDoc(doc(db, 'users/ordinary'), { email: 'ordinary@example.com' });
@@ -64,13 +66,56 @@ test('assigned monteur can read project and create own booking only', async () =
   await assertFails(setDoc(doc(db, 'tenants/burk/projects/project-1/bookings/forged'), { createdByUid: 'other-user' }));
 });
 
-test('selected project manager and commercial manager can read their project', async () => {
-  for (const uid of ['bauleiter-1', 'kaufmann-1']) {
+test('selected project manager and commercial manager can read their project when restricted', async () => {
+  for (const uid of ['restricted-bauleiter', 'restricted-kaufmann']) {
     const db = env.authenticatedContext(uid).firestore();
     await assertSucceeds(getDoc(doc(db, 'tenants/burk/projects/project-2')));
     await assertFails(getDoc(doc(db, 'tenants/burk/projects/project-1')));
   }
   await assertFails(getDoc(doc(env.authenticatedContext('other-bauleiter').firestore(), 'tenants/burk/projects/project-2')));
+});
+
+test('unrestricted bauleiter and kaufmann (assignedProjectIds: []) can read projects in their tenant', async () => {
+  for (const uid of ['bauleiter-1', 'kaufmann-1']) {
+    const db = env.authenticatedContext(uid).firestore();
+    await assertSucceeds(getDoc(doc(db, 'tenants/burk/projects/project-1')));
+    await assertSucceeds(getDoc(doc(db, 'tenants/burk/projects/project-2')));
+    await assertFails(getDoc(doc(db, 'tenants/other')));
+  }
+});
+
+test('positions can be read by assigned members and written by admin, bauleiter, and kaufmann', async () => {
+  const adminDb = env.authenticatedContext('admin-1').firestore();
+  const bauleiterDb = env.authenticatedContext('bauleiter-1').firestore();
+  const kaufmannDb = env.authenticatedContext('kaufmann-1').firestore();
+  const monteurDb = env.authenticatedContext('monteur-1').firestore();
+  const restrictedBauleiterDb = env.authenticatedContext('restricted-bauleiter').firestore();
+
+  const pos1Kaufmann = doc(kaufmannDb, 'tenants/burk/projects/project-1/positions/pos-1');
+  const pos1Bauleiter = doc(bauleiterDb, 'tenants/burk/projects/project-1/positions/pos-1');
+  const pos1Admin = doc(adminDb, 'tenants/burk/projects/project-1/positions/pos-1');
+  const pos1Monteur = doc(monteurDb, 'tenants/burk/projects/project-1/positions/pos-1');
+  const pos1Restricted = doc(restrictedBauleiterDb, 'tenants/burk/projects/project-1/positions/pos-1');
+
+  // Kaufmann (with assignedProjectIds: []) can read and write positions
+  await assertSucceeds(setDoc(pos1Kaufmann, { name: 'Kabel', deliveredQty: 10 }));
+  await assertSucceeds(getDoc(pos1Kaufmann));
+  await assertSucceeds(updateDoc(pos1Kaufmann, { deliveredQty: 20 }));
+
+  // Bauleiter (with assignedProjectIds: []) can read and write positions
+  await assertSucceeds(getDoc(pos1Bauleiter));
+  await assertSucceeds(updateDoc(pos1Bauleiter, { deliveredQty: 30 }));
+
+  // Admin can read and write positions
+  await assertSucceeds(getDoc(pos1Admin));
+  await assertSucceeds(updateDoc(pos1Admin, { deliveredQty: 40 }));
+
+  // Monteur (assigned to project-1) can read positions, but CANNOT write
+  await assertSucceeds(getDoc(pos1Monteur));
+  await assertFails(updateDoc(pos1Monteur, { deliveredQty: 50 }));
+
+  // Restricted Bauleiter not assigned to project-1 cannot read positions
+  await assertFails(getDoc(pos1Restricted));
 });
 
 test('material request and commercial approval are server-owned transitions', async () => {
@@ -95,21 +140,21 @@ test('aufmasse can be created, read, updated, and deleted by admin, assigned bau
   const bauleiterDb = env.authenticatedContext('bauleiter-1').firestore();
   const kaufmannDb = env.authenticatedContext('kaufmann-1').firestore();
   const monteurDb = env.authenticatedContext('monteur-1').firestore();
-  const otherBauleiterDb = env.authenticatedContext('other-bauleiter').firestore();
+  const restrictedBauleiterDb = env.authenticatedContext('restricted-bauleiter').firestore();
 
-  // project-2 has projectManagerId: 'bauleiter-1' and commercialManagerId: 'kaufmann-1'
-  const aufmassDocKaufmann = doc(kaufmannDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
-  const aufmassDocBauleiter = doc(bauleiterDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
-  const aufmassDocAdmin = doc(adminDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
-  const aufmassDocMonteur = doc(monteurDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
-  const aufmassDocOther = doc(otherBauleiterDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+  // Test aufmasse on project-1 where bauleiter-1 and kaufmann-1 are assigned via assignedProjectIds: []
+  const aufmassDocKaufmann = doc(kaufmannDb, 'tenants/burk/projects/project-1/aufmasse/auf-test-1');
+  const aufmassDocBauleiter = doc(bauleiterDb, 'tenants/burk/projects/project-1/aufmasse/auf-test-1');
+  const aufmassDocAdmin = doc(adminDb, 'tenants/burk/projects/project-1/aufmasse/auf-test-1');
+  const aufmassDocMonteur = doc(monteurDb, 'tenants/burk/projects/project-1/aufmasse/auf-test-1');
+  const aufmassDocRestricted = doc(restrictedBauleiterDb, 'tenants/burk/projects/project-1/aufmasse/auf-test-1');
 
-  // Kaufmann (assigned) can create, read, update
+  // Kaufmann (with assignedProjectIds: []) can create, read, update
   await assertSucceeds(setDoc(aufmassDocKaufmann, { title: 'Aufmaß 1', total: 100 }));
   await assertSucceeds(getDoc(aufmassDocKaufmann));
   await assertSucceeds(updateDoc(aufmassDocKaufmann, { total: 150 }));
 
-  // Bauleiter (assigned) can read and update
+  // Bauleiter (with assignedProjectIds: []) can read and update
   await assertSucceeds(getDoc(aufmassDocBauleiter));
   await assertSucceeds(updateDoc(aufmassDocBauleiter, { total: 200 }));
 
@@ -117,13 +162,17 @@ test('aufmasse can be created, read, updated, and deleted by admin, assigned bau
   await assertSucceeds(getDoc(aufmassDocAdmin));
   await assertSucceeds(updateDoc(aufmassDocAdmin, { total: 250 }));
 
-  // Monteur cannot read or write
-  await assertFails(getDoc(aufmassDocMonteur));
+  // Monteur assigned to project-1 can read aufmasse, but cannot write
+  await assertSucceeds(getDoc(aufmassDocMonteur));
   await assertFails(updateDoc(aufmassDocMonteur, { total: 300 }));
+  await assertFails(setDoc(doc(monteurDb, 'tenants/burk/projects/project-1/aufmasse/forged'), { title: 'Forged' }));
 
-  // Unassigned Bauleiter cannot read or write
-  await assertFails(getDoc(aufmassDocOther));
-  await assertFails(updateDoc(aufmassDocOther, { total: 400 }));
+  // Monteur not assigned to project-2 cannot read or write aufmasse
+  await assertFails(getDoc(doc(monteurDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1')));
+
+  // Restricted Bauleiter not assigned to project-1 cannot read or write aufmasse
+  await assertFails(getDoc(aufmassDocRestricted));
+  await assertFails(updateDoc(aufmassDocRestricted, { total: 400 }));
 
   // Kaufmann can delete
   await assertSucceeds(deleteDoc(aufmassDocKaufmann));

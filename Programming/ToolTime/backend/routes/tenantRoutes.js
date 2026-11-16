@@ -92,7 +92,7 @@ tenantRouter.get('/:tenantId/projects', requireTenantRole('admin', 'bauleiter', 
   const projects = snap.docs.filter(doc => {
     const project = doc.data();
     if (project.status === 'deleted' || project.isDeleted === true) return false;
-    if (req.auth.platformRole === 'superadmin' || role === 'admin' || assigned.has(doc.id)) return true;
+    if (req.auth.platformRole === 'superadmin' || role === 'admin' || assigned.has(doc.id) || (assigned.size === 0 && ['bauleiter', 'kaufmaennisch'].includes(role))) return true;
     if (role === 'monteur' && (project.assignedMonteurIds || []).includes(uid)) return true;
     return fields.some(field => field.endsWith('Email')
       ? email && String(project[field] || '').toLowerCase() === email
@@ -122,7 +122,8 @@ tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', req
   const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
   const project = await projectRef.get();
   if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
-  const assigned = req.tenantMember?.assignedProjectIds?.includes(projectId);
+  const unconstrained = !req.tenantMember?.assignedProjectIds || req.tenantMember?.assignedProjectIds.length === 0;
+  const assigned = unconstrained || req.tenantMember?.assignedProjectIds?.includes(projectId);
   const email = String(req.auth.email || '').toLowerCase();
   const role = req.tenantMember?.role;
   const projectEmails = role === 'bauleiter' ? [project.get('projectManagerEmail'), project.get('deputyProjectManagerEmail')]
@@ -228,8 +229,13 @@ tenantRouter.post('/:tenantId/projects/:projectId/material-orders', requireTenan
   const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
   const project = await projectRef.get();
   if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
-  if (req.auth.platformRole !== 'superadmin' && req.tenantMember?.role !== 'admin'
-    && !req.tenantMember?.assignedProjectIds?.includes(projectId)) return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
+  const userEmail = String(req.auth.email || '').toLowerCase();
+  const isAssigned = (!req.tenantMember?.assignedProjectIds || req.tenantMember?.assignedProjectIds.length === 0 || req.tenantMember?.assignedProjectIds?.includes(projectId))
+    || [project.get('projectManagerId'), project.get('deputyProjectManagerId')].includes(req.auth.uid)
+    || [project.get('projectManagerEmail'), project.get('deputyProjectManagerEmail')].some(e => e && String(e).toLowerCase() === userEmail);
+  if (req.auth.platformRole !== 'superadmin' && req.tenantMember?.role !== 'admin' && !isAssigned) {
+    return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
+  }
   const recipientName = recipient === 'deputy' ? project.get('deputyCommercialManager') : project.get('commercialManager');
   const recipientEmail = recipient === 'deputy' ? project.get('deputyCommercialManagerEmail') : project.get('commercialManagerEmail');
   const recipientId = recipient === 'deputy' ? project.get('deputyCommercialManagerId') : project.get('commercialManagerId');
@@ -409,7 +415,8 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/unplanne
     : [project.get('commercialManagerId'), project.get('deputyCommercialManagerId')];
   const matchingEmails = isBauleiter ? [project.get('projectManagerEmail'), project.get('deputyProjectManagerEmail')]
     : [project.get('commercialManagerEmail'), project.get('deputyCommercialManagerEmail')];
-  if (member?.role !== 'admin' && req.auth.platformRole !== 'superadmin' && !member?.assignedProjectIds?.includes(projectId)
+  const unconstrained = !member?.assignedProjectIds || member?.assignedProjectIds.length === 0;
+  if (member?.role !== 'admin' && req.auth.platformRole !== 'superadmin' && !unconstrained && !member?.assignedProjectIds?.includes(projectId)
     && !matchingIds.includes(req.auth.uid)
     && !matchingEmails.some(value => value && String(value).toLowerCase() === email)) return res.status(403).json({ code: 'PROJECT_ACCESS_DENIED' });
   const itemRef = projectRef.collection('addendums').doc(addendumId);

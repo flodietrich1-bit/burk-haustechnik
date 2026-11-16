@@ -16,6 +16,7 @@ service cloud.firestore {
     function hasTenantRole(tenantId, roles) { return isSuperadmin() || (isActiveMember(tenantId) && tenantRole(tenantId) in roles); }
     function projectAssigned(tenantId, projectId) {
       return hasTenantRole(tenantId, ['admin']) || (isActiveMember(tenantId) && (
+        (tenantRole(tenantId) in ['bauleiter', 'kaufmaennisch'] && get(memberPath(tenantId)).data.get('assignedProjectIds', []).size() == 0) ||
         get(memberPath(tenantId)).data.get('assignedProjectIds', []).hasAny([projectId]) ||
         (tenantRole(tenantId) == 'monteur' && get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.get('assignedMonteurIds', []).hasAny([request.auth.uid])) ||
         (tenantRole(tenantId) == 'bauleiter' && (
@@ -58,7 +59,7 @@ service cloud.firestore {
         allow create, update, delete: if hasTenantRole(tenantId, ['admin']);
         match /positions/{id} {
           allow read: if projectAssigned(tenantId, projectId);
-          allow write: if hasTenantRole(tenantId, ['admin', 'bauleiter']);
+          allow write: if hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch']);
         }
         match /rooms/{id} {
           allow read: if projectAssigned(tenantId, projectId);
