@@ -124,6 +124,9 @@ export default function App() {
           setAppPhase('activation');
           return;
         }
+        const savedTenant = session?.tenantId || (await getTenantId()) || 'burk-haustechnik';
+        loadTenantBranding(savedTenant).then(setTenantBranding).catch(() => {});
+
         if (!session.isActivated) {
           setAppPhase('activation');
           return;
@@ -1223,6 +1226,7 @@ export default function App() {
     return (
       <ActivationScreen
         currentLang={currentLang}
+        branding={tenantBranding}
         onActivationSuccess={handleActivationSuccess}
         onSelectLang={handleSelectLang}
       />

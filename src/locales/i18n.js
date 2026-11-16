@@ -396,9 +396,12 @@ export const TRANSLATIONS = {
   planCurrentRoomMarker: { de: 'Aktiver Raum', ro: 'Cameră activă', pl: 'Aktywne pomieszczenie', hr: 'Aktivna prostorija' },
 
   // Device Activation & QR Onboarding
-  activationTitle: { de: 'Geräte-Aktivierung', ro: 'Activare dispozitiv', pl: 'Aktywacja urządzenia', hr: 'Aktivacija uređaja' },
-  activationSubtitle: { de: 'Scanne deinen Einladungs-QR-Code oder gib den 6-stelligen Code ein.', ro: 'Scanați codul QR de invitație sau introduceți codul din 6 cifre.', pl: 'Zeskanuj kod QR z zaproszenia lub wpisz 6-cyfrowy kod.', hr: 'Skenirajte QR kod pozivnice ili unesite 6-znamenkasti kod.' },
+  activationTitle: { de: 'Geräteaktivierung', ro: 'Activare dispozitiv', pl: 'Aktywacja urządzenia', hr: 'Aktivacija uređaja' },
+  activationSubtitle: { de: 'Scanne jetzt deine Einladung (QR-Code) oder gib deinen 6-stelligen Code ein.', ro: 'Scanați acum codul QR de invitație sau introduceți codul din 6 cifre.', pl: 'Zeskanuj teraz kod QR z zaproszenia lub wpisz 6-cyfrowy kod.', hr: 'Skenirajte sada QR kod pozivnice ili unesite 6-znamenkasti kod.' },
   scanQrBtn: { de: 'Einladung scannen (QR-Code)', ro: 'Scanează invitația (cod QR)', pl: 'Zeskanuj zaproszenie (kod QR)', hr: 'Skeniraj pozivnicu (QR kod)' },
+  enterCodeManuallyBtn: { de: 'Code manuell eingeben', ro: 'Introduceți codul manual', pl: 'Wpisz kod ręcznie', hr: 'Ručno unesite kod' },
+  manualCodePrompt: { de: 'Gib deinen 6-stelligen Einladungscode ein.', ro: 'Introduceți codul de invitație din 6 cifre.', pl: 'Wpisz swój 6-cyfrowy kod zaproszenia.', hr: 'Unesite svoj 6-znamenkasti kod pozivnice.' },
+  backToChoice: { de: '‹ Zurück zur Auswahl', ro: '‹ Înapoi la opțiuni', pl: '‹ Powrót do wyboru', hr: '‹ Povratak na odabir' },
   scanInvalidQr: { de: 'Kein gültiger Einladungs-Code erkannt.', ro: 'Cod de invitație invalid.', pl: 'Nieprawidłowy kod zaproszenia.', hr: 'Nevaljani kod pozivnice.' },
   orEnterCode: { de: 'Oder Code manuell eingeben', ro: 'Sau introduceți codul manual', pl: 'Lub wpisz kod ręcznie', hr: 'Ili ručno unesite kod' },
   codePlaceholder: { de: 'z. B. ABC-234', ro: 'de ex. ABC-234', pl: 'np. ABC-234', hr: 'npr. ABC-234' },

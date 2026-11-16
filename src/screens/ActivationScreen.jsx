@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,15 +11,17 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Image,
 } from 'react-native';
 import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Path, SvgUri } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
-import { t } from '../locales/i18n';
+import { t, LANGUAGES } from '../locales/i18n';
 import { parseInviteInput, resetInstallationId } from '../services/apiService';
-import { activateDeviceWithInvite } from '../services/authService';
+import { activateDeviceWithInvite, loadTenantBranding, getTenantId } from '../services/authService';
+import P12AufmassLogo from '../components/P12AufmassLogo';
 
 /**
  * Clean vector camera silhouette icon
@@ -32,13 +34,25 @@ function CameraSilhouetteIcon({ size = 22, color = '#FFFFFF' }) {
   );
 }
 
-export default function ActivationScreen({ onActivationSuccess, currentLang = 'de' }) {
+export default function ActivationScreen({
+  onActivationSuccess,
+  currentLang = 'de',
+  onSelectLang,
+  branding = null,
+}) {
+  // Mode: 'choice' (initial 2-button screen) | 'manual' (dedicated full code input screen)
+  const [inputMode, setInputMode] = useState('choice');
+
   const [codeDraft, setCodeDraft] = useState('');
   const [isActivating, setIsActivating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [scannerVisible, setScannerVisible] = useState(false);
   const [scanWarning, setScanWarning] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
+
+  // Tenant branding & fallback handling
+  const [tenantBranding, setTenantBranding] = useState(branding || null);
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
 
   // Password Setup Step state
   const [pendingTarget, setPendingTarget] = useState(null); // { code, qrToken }
@@ -51,6 +65,21 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
   const isScanningRef = useRef(false);
 
   const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if (branding) {
+      setTenantBranding(branding);
+      return;
+    }
+    // Attempt loading branding for saved tenant or fallback
+    getTenantId().then(async (tId) => {
+      const targetTenant = tId || 'burk-haustechnik';
+      try {
+        const brand = await loadTenantBranding(targetTenant);
+        if (brand) setTenantBranding(brand);
+      } catch {}
+    });
+  }, [branding]);
 
   const handleOpenScanner = async () => {
     setErrorMsg('');
@@ -164,8 +193,6 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     }
   };
 
-  // Fallback when the live camera preview stays black: use the system camera
-  // (same mechanism as PhotoCaptureScreen) and decode the QR code from the photo.
   const handleTakePhotoScan = async () => {
     try {
       setScannerVisible(false);
@@ -204,7 +231,48 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     handleRecognizedInvite({ code: clean });
   };
 
-  // FULLSCREEN CAMERA SCANNER VIEW (Without Modal wrapper for 100% reliable iOS native camera preview)
+  // Render Burk logo from admin panel if present; otherwise fallback to P12 Aufmaß logo
+  const renderLogo = (isSmall = false) => {
+    const hasCustomLogo = tenantBranding?.logoUrl && !logoLoadFailed;
+    const isSvg =
+      tenantBranding?.logoMimeType?.includes('svg') ||
+      /\.svg(?:\?|$)/i.test(tenantBranding?.logoUrl || '');
+
+    if (hasCustomLogo) {
+      if (isSvg) {
+        return (
+          <View style={[styles.customLogoWrapper, { transform: [{ scale: tenantBranding.logoZoom || 1 }] }]}>
+            <SvgUri
+              width={isSmall ? 150 : 190}
+              height={isSmall ? 44 : 54}
+              uri={tenantBranding.logoUrl}
+              onError={() => setLogoLoadFailed(true)}
+            />
+          </View>
+        );
+      }
+      return (
+        <Image
+          source={{ uri: tenantBranding.logoUrl }}
+          style={[
+            isSmall ? styles.logoImageSmall : styles.logoImage,
+            { transform: [{ scale: tenantBranding.logoZoom || 1 }] },
+          ]}
+          resizeMode="contain"
+          onError={() => setLogoLoadFailed(true)}
+        />
+      );
+    }
+
+    // Default Fallback: P12 Aufmaß official vector logo
+    return (
+      <View style={styles.p12LogoContainer}>
+        <P12AufmassLogo width={isSmall ? 180 : 225} />
+      </View>
+    );
+  };
+
+  // FULLSCREEN CAMERA SCANNER VIEW
   if (scannerVisible) {
     return (
       <View style={styles.scannerRoot}>
@@ -285,6 +353,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
               onPress={() => {
                 isScanningRef.current = false;
                 setScannerVisible(false);
+                setInputMode('manual');
               }}
               activeOpacity={0.8}
             >
@@ -317,13 +386,9 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            {/* Burk Branding */}
-            <View style={styles.topInfo}>
-              <View style={styles.brandRow}>
-                <Text style={styles.brandBold}>burk</Text>
-                <Text style={styles.brandSmall}>Haustechnik</Text>
-              </View>
-              <Text style={styles.appTitle}>Materialtracker</Text>
+            {/* Branding */}
+            <View style={styles.logoBoxManual}>
+              {renderLogo(true)}
             </View>
 
             {/* Title & Instructions */}
@@ -417,7 +482,9 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     );
   }
 
-  // STANDARD ACTIVATION SCREEN
+  // ---------------------------------------------------------
+  // MAIN ACTIVATION SCREEN: CHOICE MODE vs MANUAL INPUT MODE
+  // ---------------------------------------------------------
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -425,101 +492,219 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          bounces={false}
-        >
-          {/* Burk Branding */}
-          <View style={styles.topInfo}>
-            <View style={styles.brandRow}>
-              <Text style={styles.brandBold}>burk</Text>
-              <Text style={styles.brandSmall}>Haustechnik</Text>
-            </View>
-            <Text style={styles.appTitle}>Materialtracker</Text>
-          </View>
-
-          {/* Title & Instructions */}
-          <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
-          <Text style={styles.subtitle}>{t('activationSubtitle', currentLang)}</Text>
-
-          {/* Error Alert with manual retry */}
-          {errorMsg ? (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
-              <TouchableOpacity
-                style={styles.retryBtn}
-                onPress={() => {
-                  setErrorMsg('');
-                  resetInstallationId();
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.retryBtnText}>Entsperren / Erneut versuchen</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {/* Primary Action: QR Code Scanner Button */}
-          <TouchableOpacity
-            style={styles.primaryScanBtn}
-            onPress={handleOpenScanner}
-            disabled={isActivating}
-            activeOpacity={0.85}
-          >
-            <CameraSilhouetteIcon size={22} color="#FFFFFF" />
-            <Text style={styles.primaryScanText}>{t('scanQrBtn', currentLang)}</Text>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>{t('orEnterCode', currentLang)}</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          {/* Manual Code Input - Formatted for 6-char short codes */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={styles.codeInput}
-              value={codeDraft}
-              onChangeText={(text) => {
-                let formatted = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                if (formatted.length > 2) {
-                  formatted = `${formatted.slice(0, 2)}-${formatted.slice(2, 6)}`;
-                }
-                setCodeDraft(formatted);
+        {/* Top Header Row with Language Switcher and optional Back button */}
+        <View style={styles.topBar}>
+          {inputMode === 'manual' ? (
+            <TouchableOpacity
+              style={styles.backBtnPill}
+              onPress={() => {
+                setInputMode('choice');
                 setErrorMsg('');
               }}
-              placeholder="z. B. YC-89MN"
-              placeholderTextColor={COLORS.muted}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              editable={!isActivating}
-              maxLength={7}
-            />
-            <TouchableOpacity
-              style={[styles.activateBtn, (!codeDraft.trim() || isActivating) && styles.btnDisabled]}
-              onPress={handleManualSubmit}
-              disabled={!codeDraft.trim() || isActivating}
-              activeOpacity={0.75}
+              activeOpacity={0.7}
             >
-              {isActivating ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Text style={styles.activateBtnText}>{t('activateBtn', currentLang)}</Text>
-              )}
+              <Text style={styles.backBtnText}>‹ {t('back', currentLang) || 'Zurück'}</Text>
             </TouchableOpacity>
-          </View>
+          ) : (
+            <View style={{ width: 60 }} />
+          )}
 
-          {/* Footer info */}
-          <View style={styles.footerContainer}>
-            <Text style={styles.footerVersion}>
-              {t('appVersionLabel', currentLang, { version: APP_VERSION })}
-            </Text>
+          {/* Language Switcher */}
+          <View style={styles.langRow}>
+            {LANGUAGES.map((l) => (
+              <TouchableOpacity
+                key={l.code}
+                style={[styles.langChip, currentLang === l.code && styles.langChipActive]}
+                onPress={() => onSelectLang && onSelectLang(l.code)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.langChipText,
+                    currentLang === l.code && styles.langChipTextActive,
+                  ]}
+                >
+                  {l.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </ScrollView>
+        </View>
+
+        {inputMode === 'choice' ? (
+          // =======================================================
+          // SCREEN 1: CHOICE SCREEN (Centered vertically, 2 buttons)
+          // =======================================================
+          <ScrollView
+            contentContainerStyle={styles.centeredScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <View style={styles.mainContentCenter}>
+              {/* Centered Logo with generous breathing room */}
+              <View style={styles.logoBox}>
+                {renderLogo(false)}
+              </View>
+
+              {/* Title & Instructions */}
+              <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
+              <Text style={styles.subtitle}>{t('activationSubtitle', currentLang)}</Text>
+
+              {/* Error Alert with manual retry */}
+              {errorMsg ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+                  <TouchableOpacity
+                    style={styles.retryBtn}
+                    onPress={() => {
+                      setErrorMsg('');
+                      resetInstallationId();
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.retryBtnText}>Entsperren / Erneut versuchen</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* The Two Distinct Action Buttons */}
+              <View style={styles.choiceButtonGroup}>
+                {/* Button 1: Einladung scannen (QR-Code) */}
+                <TouchableOpacity
+                  style={styles.primaryScanBtn}
+                  onPress={handleOpenScanner}
+                  disabled={isActivating}
+                  activeOpacity={0.85}
+                >
+                  <CameraSilhouetteIcon size={22} color="#FFFFFF" />
+                  <Text style={styles.primaryScanText}>{t('scanQrBtn', currentLang)}</Text>
+                </TouchableOpacity>
+
+                {/* Button 2: Code manuell eingeben */}
+                <TouchableOpacity
+                  style={styles.secondaryCodeBtn}
+                  onPress={() => {
+                    setErrorMsg('');
+                    setInputMode('manual');
+                  }}
+                  disabled={isActivating}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.secondaryCodeIcon}>⌨️</Text>
+                  <Text style={styles.secondaryCodeText}>
+                    {t('enterCodeManuallyBtn', currentLang)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Footer info */}
+            <View style={styles.footerContainer}>
+              <Text style={styles.footerVersion}>
+                {t('appVersionLabel', currentLang, { version: APP_VERSION })}
+              </Text>
+            </View>
+          </ScrollView>
+        ) : (
+          // =======================================================
+          // SCREEN 2: DEDICATED MANUAL INPUT SCREEN (No scan button)
+          // =======================================================
+          <ScrollView
+            contentContainerStyle={styles.manualScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <View style={styles.manualCard}>
+              {/* Logo */}
+              <View style={styles.logoBoxManual}>
+                {renderLogo(true)}
+              </View>
+
+              <Text style={styles.title}>{t('activationTitle', currentLang)}</Text>
+              <Text style={styles.subtitle}>{t('manualCodePrompt', currentLang)}</Text>
+
+              {/* Error Alert with manual retry */}
+              {errorMsg ? (
+                <View style={styles.errorBox}>
+                  <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
+                  <TouchableOpacity
+                    style={styles.retryBtn}
+                    onPress={() => {
+                      setErrorMsg('');
+                      resetInstallationId();
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.retryBtnText}>Entsperren / Erneut versuchen</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+
+              {/* Manual Code Input Field */}
+              <View style={styles.manualInputGroup}>
+                <TextInput
+                  style={styles.codeInputLarge}
+                  value={codeDraft}
+                  onChangeText={(text) => {
+                    let formatted = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (formatted.length > 2) {
+                      formatted = `${formatted.slice(0, 2)}-${formatted.slice(2, 6)}`;
+                    }
+                    setCodeDraft(formatted);
+                    setErrorMsg('');
+                  }}
+                  placeholder="z. B. YC-89MN"
+                  placeholderTextColor={COLORS.muted}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  autoFocus={true}
+                  editable={!isActivating}
+                  maxLength={7}
+                />
+
+                {/* "Jetzt aktivieren" Button directly underneath */}
+                <TouchableOpacity
+                  style={[
+                    styles.activateBtnLarge,
+                    (!codeDraft.trim() || isActivating) && styles.btnDisabled,
+                  ]}
+                  onPress={handleManualSubmit}
+                  disabled={!codeDraft.trim() || isActivating}
+                  activeOpacity={0.75}
+                >
+                  {isActivating ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.activateBtnLargeText}>{t('activateBtn', currentLang)}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Back to selection link */}
+                <TouchableOpacity
+                  style={styles.switchModeLink}
+                  onPress={() => {
+                    setInputMode('choice');
+                    setErrorMsg('');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.switchModeText}>
+                    {t('backToChoice', currentLang)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Footer info */}
+            <View style={styles.footerContainer}>
+              <Text style={styles.footerVersion}>
+                {t('appVersionLabel', currentLang, { version: APP_VERSION })}
+              </Text>
+            </View>
+          </ScrollView>
+        )}
       </KeyboardAvoidingView>
 
       {/* Activating Loading Screen */}
@@ -536,71 +721,266 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
   keyboardAvoid: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 24,
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  topInfo: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  brandRow: {
+  topBar: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
-  brandBold: {
-    fontSize: 34,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    color: COLORS.primary,
+  backBtnPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#EDF2F7',
   },
-  brandSmall: {
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: COLORS.muted,
+  backBtnText: {
+    fontSize: 13,
     fontWeight: '700',
-    textTransform: 'uppercase',
+    color: COLORS.ink,
   },
-  appTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.inkSoft,
-    marginTop: 2,
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
+  langChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#EDF2F7',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  langChipActive: {
+    backgroundColor: COLORS.ink,
+    borderColor: COLORS.ink,
+  },
+  langChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: COLORS.muted,
+  },
+  langChipTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // Centered choice screen
+  centeredScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 24,
+  },
+  mainContentCenter: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 380,
+    alignSelf: 'center',
+  },
+  logoBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+    minHeight: 56,
+  },
+  p12LogoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  customLogoWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoImage: {
+    width: 190,
+    height: 56,
+  },
+  logoImageSmall: {
+    width: 150,
+    height: 44,
+  },
+
   title: {
     fontSize: 24,
     fontWeight: '800',
     color: COLORS.ink,
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: 'center',
+    letterSpacing: -0.3,
   },
   subtitle: {
     fontSize: 14,
-    color: COLORS.muted,
+    color: '#64748B',
     textAlign: 'center',
+    marginBottom: 36,
+    lineHeight: 21,
+    paddingHorizontal: 12,
+  },
+
+  choiceButtonGroup: {
+    width: '100%',
+    gap: 14,
+  },
+  primaryScanBtn: {
+    backgroundColor: COLORS.primary,
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  primaryScanText: {
+    fontSize: 15.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  secondaryCodeBtn: {
+    backgroundColor: '#FFFFFF',
+    width: '100%',
+    paddingVertical: 15,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  secondaryCodeIcon: {
+    fontSize: 16,
+  },
+  secondaryCodeText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: COLORS.ink,
+  },
+
+  // Manual code screen
+  manualScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+    paddingVertical: 24,
+  },
+  manualCard: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 380,
+    alignSelf: 'center',
+  },
+  logoBoxManual: {
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 24,
-    lineHeight: 20,
+    minHeight: 44,
+  },
+  manualInputGroup: {
+    width: '100%',
+    gap: 12,
+  },
+  codeInputLarge: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    borderRadius: 16,
+    paddingVertical: 16,
     paddingHorizontal: 16,
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.ink,
+    textAlign: 'center',
+    letterSpacing: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  activateBtnLarge: {
+    backgroundColor: COLORS.ink,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  activateBtnLargeText: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  switchModeLink: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  switchModeText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: COLORS.muted,
+  },
+
+  // Password / Shared styles
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 28,
+    paddingTop: 36,
+    paddingBottom: 24,
+    alignItems: 'center',
+  },
+  inputContainer: {
+    width: '100%',
+    maxWidth: 380,
+    gap: 14,
+  },
+  passwordInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.ink,
+  },
+  btnDisabled: {
+    opacity: 0.4,
   },
   errorBox: {
     backgroundColor: '#FEE2E2',
     borderWidth: 1,
     borderColor: '#F87171',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    marginBottom: 16,
+    marginBottom: 20,
     width: '100%',
     alignItems: 'center',
     gap: 8,
@@ -622,95 +1002,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  primaryScanBtn: {
-    backgroundColor: COLORS.primary,
-    width: '100%',
-    paddingVertical: 16,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  primaryScanText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-    width: '100%',
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  dividerText: {
-    paddingHorizontal: 12,
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-  },
-  inputContainer: {
-    width: '100%',
-    gap: 12,
-  },
-  codeInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 20,
-    fontWeight: '800',
-    color: COLORS.ink,
-    textAlign: 'center',
-    letterSpacing: 3,
-  },
-  passwordInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    fontWeight: '600',
-    color: COLORS.ink,
-  },
-  activateBtn: {
-    backgroundColor: COLORS.ink,
-    paddingVertical: 15,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  activateBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  btnDisabled: {
-    opacity: 0.4,
-  },
   footerContainer: {
-    marginTop: 32,
+    marginTop: 40,
     paddingBottom: 8,
     alignItems: 'center',
   },
   footerVersion: {
-    fontSize: 11,
+    fontSize: 11.5,
+    fontWeight: '600',
     color: COLORS.muted,
+    letterSpacing: 0.3,
   },
 
   // SCANNER VIEW STYLES
