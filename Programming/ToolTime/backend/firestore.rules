@@ -83,9 +83,13 @@ service cloud.firestore {
           allow read: if projectAssigned(tenantId, projectId);
           allow write: if false;
         }
+        match /aufmasse/{id} {
+          allow read: if projectAssigned(tenantId, projectId);
+          allow write: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch']);
+        }
         match /{otherCollection}/{id} {
           allow read: if projectAssigned(tenantId, projectId);
-          allow write: if !(otherCollection in ['addendums', 'bookings', 'materialOrders']) && hasTenantRole(tenantId, ['admin', 'bauleiter']);
+          allow write: if !(otherCollection in ['addendums', 'bookings', 'materialOrders', 'aufmasse']) && hasTenantRole(tenantId, ['admin', 'bauleiter']);
         }
       }
     }

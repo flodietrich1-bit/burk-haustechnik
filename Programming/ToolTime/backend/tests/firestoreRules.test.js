@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
 const emulatorPort = Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8085').split(':').pop());
@@ -88,6 +88,53 @@ test('material request and commercial approval are server-owned transitions', as
   await assertFails(updateDoc(doc(bauleiter, 'tenants/burk/projects/project-1/addendums/pending'), { status: 'requested' }));
   await assertSucceeds(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/pending'), { status: 'approved', approvalType: 'in_stock' }));
   await assertSucceeds(updateDoc(doc(admin, 'tenants/burk/projects/project-1/addendums/approved'), { lvPositionId: 'new-position' }));
+});
+
+test('aufmasse can be created, read, updated, and deleted by admin, assigned bauleiter, and assigned kaufmann', async () => {
+  const adminDb = env.authenticatedContext('admin-1').firestore();
+  const bauleiterDb = env.authenticatedContext('bauleiter-1').firestore();
+  const kaufmannDb = env.authenticatedContext('kaufmann-1').firestore();
+  const monteurDb = env.authenticatedContext('monteur-1').firestore();
+  const otherBauleiterDb = env.authenticatedContext('other-bauleiter').firestore();
+
+  // project-2 has projectManagerId: 'bauleiter-1' and commercialManagerId: 'kaufmann-1'
+  const aufmassDocKaufmann = doc(kaufmannDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+  const aufmassDocBauleiter = doc(bauleiterDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+  const aufmassDocAdmin = doc(adminDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+  const aufmassDocMonteur = doc(monteurDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+  const aufmassDocOther = doc(otherBauleiterDb, 'tenants/burk/projects/project-2/aufmasse/auf-test-1');
+
+  // Kaufmann (assigned) can create, read, update
+  await assertSucceeds(setDoc(aufmassDocKaufmann, { title: 'Aufmaß 1', total: 100 }));
+  await assertSucceeds(getDoc(aufmassDocKaufmann));
+  await assertSucceeds(updateDoc(aufmassDocKaufmann, { total: 150 }));
+
+  // Bauleiter (assigned) can read and update
+  await assertSucceeds(getDoc(aufmassDocBauleiter));
+  await assertSucceeds(updateDoc(aufmassDocBauleiter, { total: 200 }));
+
+  // Admin can read and update
+  await assertSucceeds(getDoc(aufmassDocAdmin));
+  await assertSucceeds(updateDoc(aufmassDocAdmin, { total: 250 }));
+
+  // Monteur cannot read or write
+  await assertFails(getDoc(aufmassDocMonteur));
+  await assertFails(updateDoc(aufmassDocMonteur, { total: 300 }));
+
+  // Unassigned Bauleiter cannot read or write
+  await assertFails(getDoc(aufmassDocOther));
+  await assertFails(updateDoc(aufmassDocOther, { total: 400 }));
+
+  // Kaufmann can delete
+  await assertSucceeds(deleteDoc(aufmassDocKaufmann));
+
+  // Bauleiter can create and delete
+  await assertSucceeds(setDoc(aufmassDocBauleiter, { title: 'Aufmaß 2', total: 50 }));
+  await assertSucceeds(deleteDoc(aufmassDocBauleiter));
+
+  // Admin can create and delete
+  await assertSucceeds(setDoc(aufmassDocAdmin, { title: 'Aufmaß 3', total: 75 }));
+  await assertSucceeds(deleteDoc(aufmassDocAdmin));
 });
 
 test('suspended tenant blocks ordinary members', async () => {
