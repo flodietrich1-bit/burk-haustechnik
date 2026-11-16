@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Modal, SafeAreaView, StatusBar } from 'react-native';
 import { t, formatUnit } from '../../locales/i18n';
-import { getRoomDisplayName } from './bookingHelpers';
+import { getRoomDisplayName, formatQty, isMeterUnit } from './bookingHelpers';
 import { styles } from './completeRoomStyles';
 
 export default function CompleteRoomModal({
@@ -45,6 +45,7 @@ export default function CompleteRoomModal({
           <ScrollView style={styles.deltaScrollList} contentContainerStyle={styles.deltaScrollContent}>
             {deltaSummary.map((item) => {
               const displayQu = formatUnit(item.qu, currentLang);
+              const isMeter = isMeterUnit(item.qu);
               const isUnplanned = Boolean(item.isUnplanned || item.status === 'unplanned');
               const hasRoomPlan = !isUnplanned && item.plannedQty !== null && item.plannedQty !== undefined;
               const isUnder = !isUnplanned && (item.status === 'under' || (hasRoomPlan && item.diff > 0));
@@ -61,13 +62,13 @@ export default function CompleteRoomModal({
                         ? `${t('matrixPlanned', currentLang)}: 0 ${displayQu}  |  ${t(
                             'matrixInstalled',
                             currentLang
-                          )}: ${item.installedQty} ${displayQu} (${t('unplannedBadge', currentLang)})`
+                          )}: ${formatQty(item.installedQty, isMeter)} ${displayQu} (${t('unplannedBadge', currentLang)})`
                         : hasRoomPlan
-                        ? `${t('matrixPlanned', currentLang)}: ${item.plannedQty} ${displayQu}  |  ${t(
+                        ? `${t('matrixPlanned', currentLang)}: ${formatQty(item.plannedQty, isMeter)} ${displayQu}  |  ${t(
                             'matrixInstalled',
                             currentLang
-                          )}: ${item.installedQty} ${displayQu}`
-                        : `${t('matrixInstalled', currentLang)}: ${item.installedQty} ${displayQu} (${t(
+                          )}: ${formatQty(item.installedQty, isMeter)} ${displayQu}`
+                        : `${t('matrixInstalled', currentLang)}: ${formatQty(item.installedQty, isMeter)} ${displayQu} (${t(
                             'matrixOnlyGaeb',
                             currentLang
                           )})`}
@@ -77,20 +78,20 @@ export default function CompleteRoomModal({
                   {isUnplanned ? (
                     <View style={styles.deltaBadgeOver}>
                       <Text style={styles.deltaBadgeOverText}>
-                        +{item.installedQty} {displayQu} {t('unplannedBadge', currentLang)}
+                        +{formatQty(item.installedQty, isMeter)} {displayQu} {t('unplannedBadge', currentLang)}
                       </Text>
                     </View>
                   ) : hasRoomPlan ? (
                     isUnder ? (
                       <View style={styles.deltaBadgeUnder}>
                         <Text style={styles.deltaBadgeUnderText}>
-                          +{item.diff.toFixed(1)} {displayQu} {t('completeUnder', currentLang)}
+                          +{formatQty(item.diff, isMeter)} {displayQu} {t('completeUnder', currentLang)}
                         </Text>
                       </View>
                     ) : isOver ? (
                       <View style={styles.deltaBadgeOver}>
                         <Text style={styles.deltaBadgeOverText}>
-                          -{Math.abs(item.diff).toFixed(1)} {displayQu} {t('completeOver', currentLang)}
+                          -{formatQty(Math.abs(item.diff), isMeter)} {displayQu} {t('completeOver', currentLang)}
                         </Text>
                       </View>
                     ) : (
@@ -103,7 +104,7 @@ export default function CompleteRoomModal({
                   ) : (
                     <View style={styles.deltaBadgeExact}>
                       <Text style={styles.deltaBadgeExactText}>
-                        {item.installedQty} {displayQu}
+                        {formatQty(item.installedQty, isMeter)} {displayQu}
                       </Text>
                     </View>
                   )}

@@ -16,6 +16,7 @@ import {
   getMaterialDisplayName,
   getRoomDisplayName,
   cleanMaterialName,
+  isMeterUnit,
 } from '../components/booking/bookingHelpers';
 import MaterialBookingCard from '../components/booking/MaterialBookingCard';
 import NachtragModal from '../components/booking/NachtragModal';
@@ -85,6 +86,7 @@ export default function BookingScreen({
   const [showUnclearModal, setShowUnclearModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showNachtragModal, setShowNachtragModal] = useState(false);
+  const [isSliderDragging, setIsSliderDragging] = useState(false);
 
   // Dropdown list of materials present in this room
   const roomMaterialsList = useMemo(() => {
@@ -151,25 +153,15 @@ export default function BookingScreen({
     ? filteredMaterials.map((m) => m.id)
     : [...new Set([...unplannedMaterialIds, ...activeMaterialIds])];
 
-  // Stepper with Over-Quantity / Mehrverbrauch check capped at delivered quantity
-  const handleStep = (matId, stepDelta) => {
-    if (isLocked) {
-      handleLockedAction();
-      return;
-    }
+  const applyNextDelta = (matId, rawNextDelta) => {
     const { mat, roomPlan } = resolveMat(matId, materials, room);
     if (!mat) return;
 
-    const currentDelta = Number(sessionQuantities[matId]) || 0;
+    const isMeter = isMeterUnit(mat.qu || roomPlan?.qu);
+    const nextDelta = isMeter
+      ? Math.max(0, Number(Number(rawNextDelta || 0).toFixed(2)))
+      : Math.max(0, Math.round(Number(rawNextDelta || 0)));
 
-    // Stepping down: always allowed down to 0
-    if (stepDelta < 0) {
-      const nextDelta = Math.max(0, currentDelta + stepDelta);
-      onQuantityChange(matId, nextDelta);
-      return;
-    }
-
-    // Stepping up: Allow using more material directly without modal
     const isUnplannedMat = Boolean(
       mat.isUnplanned ||
       roomPlan?.isUnplanned ||
@@ -181,12 +173,13 @@ export default function BookingScreen({
       ? Number(roomPlan.installedQty || 0)
       : Number(mat.installedQty || 0);
 
-    const nextDelta = currentDelta + stepDelta;
-    const nextTotalVerb = installedBefore + nextDelta;
+    const nextTotalVerb = isMeter
+      ? Number((installedBefore + nextDelta).toFixed(2))
+      : Math.round(installedBefore + nextDelta);
 
     // Mehrverbrauch automatisch erfassen für Admin (Abweichungen), ohne Monteur zu blockieren
     if (!isUnplannedMat && planned > 0 && nextTotalVerb > planned) {
-      const exceededBy = nextTotalVerb - planned;
+      const exceededBy = Number((nextTotalVerb - planned).toFixed(2));
       if (onOverConsumptionAlert) {
         onOverConsumptionAlert({
           id: `alert_${room.id}_${matId}`,
@@ -212,6 +205,35 @@ export default function BookingScreen({
     }
 
     onQuantityChange(matId, nextDelta);
+  };
+
+  // Stepper (+/-) always works in integer steps (+1 / -1)
+  const handleStep = (matId, stepDelta) => {
+    if (isLocked) {
+      handleLockedAction();
+      return;
+    }
+    const { mat, roomPlan } = resolveMat(matId, materials, room);
+    if (!mat) return;
+
+    const isMeter = isMeterUnit(mat.qu || roomPlan?.qu);
+    const currentDelta = Number(sessionQuantities[matId]) || 0;
+    const intStep = stepDelta >= 0 ? 1 : -1;
+
+    const nextDelta = isMeter
+      ? Math.max(0, Number((currentDelta + intStep).toFixed(2)))
+      : Math.max(0, Math.round(currentDelta + intStep));
+
+    applyNextDelta(matId, nextDelta);
+  };
+
+  // Direct delta setter for Slider (up to 100%) and Calculator Keypad (exact meter value)
+  const handleSetDelta = (matId, targetDelta) => {
+    if (isLocked) {
+      handleLockedAction();
+      return;
+    }
+    applyNextDelta(matId, targetDelta);
   };
 
   // Photos & room status
@@ -327,7 +349,10 @@ export default function BookingScreen({
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        scrollEnabled={!isSliderDragging}
+      >
         {/* Room Header */}
         <View style={styles.headerRowClean}>
           <View style={{ flex: 1 }}>
@@ -455,6 +480,8 @@ export default function BookingScreen({
                 isUnplanned={isUnplannedMat}
                 siteStockAvailable={siteStockAvailable}
                 onStep={handleStep}
+                onSetDelta={handleSetDelta}
+                onDragStateChange={setIsSliderDragging}
                 onLockedAction={handleLockedAction}
               />
             );

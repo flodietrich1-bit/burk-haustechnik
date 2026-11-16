@@ -1,9 +1,24 @@
 import { GLOSSARY } from '../../locales/i18n';
 
-export const formatQty = (val) => {
+export const isMeterUnit = (qu) => {
+  if (!qu) return false;
+  const q = String(qu).trim().toLowerCase();
+  return q === 'm' || q === 'meter' || q === 'lfm' || q === 'mtr' || q === 'lfdm' || q === 'lfm.';
+};
+
+export const formatQty = (val, isMeter = false, forceTwoDecimals = false) => {
   if (val === null || val === undefined || isNaN(val)) return '0';
   const num = Number(val);
-  return num % 1 === 0 ? String(num) : num.toFixed(1);
+  if (Math.abs(num - Math.round(num)) < 0.0001) {
+    if (forceTwoDecimals && isMeter && num > 0) {
+      return num.toFixed(2).replace('.', ',');
+    }
+    return String(Math.round(num));
+  }
+  if (isMeter) {
+    return num.toFixed(2).replace('.', ',');
+  }
+  return num.toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
 };
 
 export const getRoomDisplayName = (room, currentLang = 'de') => {

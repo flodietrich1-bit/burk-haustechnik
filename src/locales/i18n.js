@@ -437,6 +437,10 @@ export const TRANSLATIONS = {
   switchUserOrNewInvite: { de: 'Mit neuem Einladungscode aktivieren', ro: 'Activați cu un cod de invitație nou', pl: 'Aktywuj nowym kodem zaproszenia', hr: 'Aktivirajte novim pozivnim kodom' },
   savePasswordAndContinue: { de: 'Passwort speichern & starten', ro: 'Salvează parola și începe', pl: 'Zapisz hasło i zacznij', hr: 'Spremi lozinku i kreni' },
   loggedInAs: { de: 'Angemeldet als', ro: 'Conectat ca', pl: 'Zalogowano jako', hr: 'Prijavljen kao' },
+  calcModalTitle: { de: 'Genaue Meterzahl eingeben', ro: 'Introduceți lungimea exactă (m)', pl: 'Wpisz dokładną długość (m)', hr: 'Unesite točnu duljinu (m)' },
+  calcApplyBtn: { de: '✓ Übernehmen', ro: '✓ Aplică', pl: '✓ Zatwierdź', hr: '✓ Primijeni' },
+  calcClearBtn: { de: 'C', ro: 'C', pl: 'C', hr: 'C' },
+  tapToEditHint: { de: '✎', ro: '✎', pl: '✎', hr: '✎' },
 };
 
 // Glossary for material categories & abbreviations (DE -> foreign translations)

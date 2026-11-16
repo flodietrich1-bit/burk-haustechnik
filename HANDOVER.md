@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.50` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.51` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung).
 - The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -243,6 +243,16 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-16 (v2.51)**
+  - **Ziel / Anlass:** Drei Mengeneingabe-Wege auf den Raum-Materialkacheln: (1) ziehbarer „Verbaut“-Slider bis max. 100%, (2) Plus/Minus-Stepper immer in Ganzzahl-Schritten (über 100% nur via `+`), (3) direktes Antippen der Zahl für exakte Taschenrechner-Eingabe (`0`–`9` und `,` bis 2 Nachkommastellen) ausschließlich bei Meter-Einheiten (`m`).
+  - **Änderungen:**
+    - `ProgressBar.jsx`: Interaktiver PanResponder-Slider mit Thumb-Griff und präzisem Einrasten bei 0% und 100%.
+    - `bookingHelpers.js`: `isMeterUnit(qu)` und erweitertes `formatQty(val, isMeter, forceTwoDecimals)` für 2 Nachkommastellen bei Meter-Einheiten.
+    - `MaterialBookingCard.jsx` & `materialCardStyles.js`: Slider-Kopplung (bis max. 100%, bei Meter in `0,01`-Schritten, bei Stückzahlen in Ganzzahlen); antippen von „Verbaut“ oder der Stepper-Zahl öffnet bei Meter-Einheiten ein Taschenrechner-Modal (`0`–`9`, `,`, `⌫`, `C`, `✓ Übernehmen`).
+    - `BookingScreen.jsx` & `CompleteRoomModal.jsx`: `handleStep` (immer `±1` Ganzzahl-Schritte), `handleSetDelta` und Scroll-Lock während aktivem Slider-Ziehen.
+    - `src/constants/version.js`: Bump auf `v2.51`.
+  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
 
 - **2026-11-16 (v2.50)**
   - **Ziel / Anlass:** Behebung der schwarzen Kamera-Vorschau beim QR-Scan auf iOS (Expo Go / Fabric).
