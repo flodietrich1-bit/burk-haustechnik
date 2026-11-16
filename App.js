@@ -17,6 +17,9 @@ import {
   restoreSession,
   loadTenantBranding,
   getTenantId,
+  lockDevice,
+  logoutDevice,
+  loadAssignedProjects,
 } from './src/services/authService';
 import {
   getRooms,
@@ -31,6 +34,7 @@ import {
   getLocalUnsyncedDelta,
   computeRoomPercentage,
   getCachedPlans,
+  clearProjectCache,
 } from './src/services/storageService';
 import { syncBookings as runSyncBookings, checkOnlineStatus, subscribeToRoomLive } from './src/services/syncService';
 import { t } from './src/locales/i18n';
@@ -40,6 +44,7 @@ import Header from './src/components/Header';
 
 // Screens
 import ActivationScreen from './src/screens/ActivationScreen';
+import LoginScreen from './src/screens/LoginScreen';
 import SetupProfileScreen from './src/screens/SetupProfileScreen';
 import PinLockScreen from './src/screens/PinLockScreen';
 import ProjectSelectScreen from './src/screens/ProjectSelectScreen';
@@ -114,6 +119,11 @@ export default function App() {
 
         const session = await restoreSession();
         restoredSession = session;
+        if (session.isUserDeleted) {
+          Alert.alert(t('userDeletedTitle', savedLang), t('userDeletedMsg', savedLang));
+          setAppPhase('activation');
+          return;
+        }
         if (!session.isActivated) {
           setAppPhase('activation');
           return;
@@ -125,6 +135,11 @@ export default function App() {
         if (activeMonteur?.defaultLanguage) {
           setCurrentLang(activeMonteur.defaultLanguage);
           await setLanguage(activeMonteur.defaultLanguage);
+        }
+
+        if (session.isLocked) {
+          setAppPhase('login');
+          return;
         }
 
         const assigned = Array.isArray(session.projects) ? session.projects : [];
@@ -159,7 +174,7 @@ export default function App() {
 
           // Trigger silent background sync
           syncBookings({ silent: true, projectId: targetProj?.id })
-            .then(() => refreshData(targetProj?.id))
+            .then((res) => handleSyncResult(res, targetProj?.id))
             .catch(() => {});
         }
       } catch (err) {
@@ -182,6 +197,73 @@ export default function App() {
     initApp();
   }, []);
 
+  const handleUserDeleted = useCallback(async () => {
+    await logoutDevice();
+    setMonteur(null);
+    setProject(null);
+    setAvailableProjects([]);
+    Alert.alert(
+      t('userDeletedTitle', currentLang),
+      t('userDeletedMsg', currentLang)
+    );
+    setAppPhase('activation');
+  }, [currentLang]);
+
+  const handleProjectDeleted = useCallback(async (deletedProjectId) => {
+    const pId = deletedProjectId || project?.id;
+    if (!pId) return;
+
+    await clearProjectCache(pId);
+
+    const tenantId = await getTenantId();
+    const updatedAssigned = await loadAssignedProjects(tenantId, monteur);
+    const remaining = Array.isArray(updatedAssigned)
+      ? updatedAssigned.filter((p) => p && p.id !== pId && p.status !== 'deleted' && !p.isDeleted)
+      : [];
+
+    setAvailableProjects(remaining);
+
+    Alert.alert(
+      t('projectDeletedTitle', currentLang),
+      t('projectDeletedMsg', currentLang)
+    );
+
+    if (remaining.length === 0) {
+      setProject(null);
+      setAppPhase('project_select');
+    } else if (remaining.length === 1) {
+      const nextProj = remaining[0];
+      setProject(nextProj);
+      await setActiveProjectId(nextProj.id);
+      await refreshData(nextProj.id);
+      setAppPhase('app');
+      setCurrentScreen('rooms');
+    } else {
+      setProject(null);
+      setAppPhase('project_select');
+    }
+  }, [currentLang, monteur, project?.id]);
+
+  const handleSyncResult = useCallback((res, pId) => {
+    if (!res) return;
+    if (res.isUserDeleted) {
+      handleUserDeleted();
+      return;
+    }
+    if (res.isProjectDeleted) {
+      handleProjectDeleted(pId || res.projectId);
+      return;
+    }
+    if (res.success) {
+      refreshData(pId);
+    }
+  }, [handleUserDeleted, handleProjectDeleted]);
+
+  const handleLogout = useCallback(async () => {
+    await lockDevice();
+    setAppPhase('login');
+  }, []);
+
   // 2. NetInfo Listener for real-time connectivity & background sync
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(async (state) => {
@@ -194,16 +276,14 @@ export default function App() {
         const delta = await getLocalUnsyncedDelta(pId);
         if (delta.hasLocalDelta && activeSyncsRef.current === 0) {
           syncBookings({ silent: true, projectId: pId }).then((res) => {
-            if (res.success) {
-              refreshData(pId);
-            }
+            handleSyncResult(res, pId);
           });
         }
       }
     });
 
     return () => unsubscribe();
-  }, [appPhase, project?.id, syncBookings]);
+  }, [appPhase, project?.id, syncBookings, handleSyncResult]);
 
   // 2b. Periodic Silent Background Sync (every 60 seconds)
   useEffect(() => {
@@ -216,9 +296,7 @@ export default function App() {
         if (online && project?.id && activeSyncsRef.current === 0) {
           const pId = project.id;
           const res = await syncBookings({ silent: true, projectId: pId });
-          if (res && res.success) {
-            await refreshData(pId);
-          }
+          handleSyncResult(res, pId);
         }
       } catch (err) {
         console.warn('Periodic 60s background sync warning:', err?.message);
@@ -226,7 +304,7 @@ export default function App() {
     }, 60000);
 
     return () => clearInterval(syncInterval);
-  }, [appPhase, project?.id, syncBookings]);
+  }, [appPhase, project?.id, syncBookings, handleSyncResult]);
 
   const refreshData = async (targetProjectId) => {
     const pId = targetProjectId || project?.id;
@@ -427,10 +505,8 @@ export default function App() {
     const pId = project?.id;
     const res = await syncBookings({ silent: false, projectId: pId, currentLang });
     if (res.reason === 'offline') setIsOnline(false);
-    if (res.success) {
-      setIsOnline(true);
-      await refreshData(pId);
-    }
+    if (res.success) setIsOnline(true);
+    handleSyncResult(res, pId);
   };
 
   // 7. Room Navigation & Draft Restoration
@@ -1130,6 +1206,23 @@ export default function App() {
     );
   }
 
+  if (appPhase === 'login') {
+    return (
+      <LoginScreen
+        monteur={monteur}
+        branding={tenantBranding}
+        currentLang={currentLang}
+        onLoginSuccess={handleUnlockWithAutoSync}
+        onResetDevice={() => {
+          setMonteur(null);
+          setProject(null);
+          setAvailableProjects([]);
+          setAppPhase('activation');
+        }}
+      />
+    );
+  }
+
   if (appPhase === 'pin') {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -1156,6 +1249,7 @@ export default function App() {
         currentLang={currentLang}
         onSelectLang={handleSelectLang}
         onSelectProject={handleSelectProject}
+        onLogout={handleLogout}
       />
     );
   }
@@ -1177,6 +1271,7 @@ export default function App() {
         isSyncing={isSyncing}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
         onBackToRooms={currentScreen === 'book' ? handleLeaveRoomDraft : null}
+        onLogout={handleLogout}
       />
 
       {/* Screen Router */}

@@ -40,6 +40,13 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
   const [scanWarning, setScanWarning] = useState('');
   const [cameraReady, setCameraReady] = useState(false);
 
+  // Password Setup Step state
+  const [pendingTarget, setPendingTarget] = useState(null); // { code, qrToken }
+  const [isSettingPassword, setIsSettingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
   // Synchronous lock to prevent duplicate frames from firing multiple activation requests
   const isScanningRef = useRef(false);
 
@@ -64,11 +71,11 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     setScannerVisible(true);
   };
 
-  const executeActivation = async ({ code, qrToken }) => {
+  const executeActivation = async ({ code, qrToken, password }) => {
     setIsActivating(true);
     setErrorMsg('');
     try {
-      const result = await activateDeviceWithInvite({ code, qrToken });
+      const result = await activateDeviceWithInvite({ code, qrToken, password });
       if (result.success && onActivationSuccess) {
         onActivationSuccess(result.monteur, result.projects, result.tenantId);
       }
@@ -81,9 +88,37 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       } else {
         setErrorMsg(t('inviteInvalid', currentLang));
       }
+      setIsSettingPassword(false);
+      setPendingTarget(null);
     } finally {
       setIsActivating(false);
     }
+  };
+
+  const handleRecognizedInvite = ({ code, qrToken }) => {
+    setPendingTarget({ code, qrToken });
+    setIsSettingPassword(true);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError('');
+  };
+
+  const handleFinalizeWithPassword = async () => {
+    if (!newPassword || newPassword.trim().length < 4) {
+      setPasswordError(t('passwordTooShort', currentLang));
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError(t('passwordMismatch', currentLang));
+      return;
+    }
+    if (!pendingTarget) return;
+
+    await executeActivation({
+      code: pendingTarget.code,
+      qrToken: pendingTarget.qrToken,
+      password: newPassword.trim(),
+    });
   };
 
   const handleBarcodeScanned = (scanningResult) => {
@@ -101,7 +136,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
     isScanningRef.current = true;
     setScanWarning('');
     setScannerVisible(false);
-    executeActivation({ code, qrToken });
+    handleRecognizedInvite({ code, qrToken });
   };
 
   const handlePickFromGallery = async () => {
@@ -166,7 +201,7 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
       setErrorMsg(t('inviteInvalid', currentLang));
       return;
     }
-    executeActivation({ code: clean });
+    handleRecognizedInvite({ code: clean });
   };
 
   // FULLSCREEN CAMERA SCANNER VIEW (Without Modal wrapper for 100% reliable iOS native camera preview)
@@ -265,6 +300,120 @@ export default function ActivationScreen({ onActivationSuccess, currentLang = 'd
           </View>
         ) : null}
       </View>
+    );
+  }
+
+  // PASSWORD SETUP STEP FOR NEW MONTEUR ACTIVATION
+  if (isSettingPassword && pendingTarget) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Burk Branding */}
+            <View style={styles.topInfo}>
+              <View style={styles.brandRow}>
+                <Text style={styles.brandBold}>burk</Text>
+                <Text style={styles.brandSmall}>Haustechnik</Text>
+              </View>
+              <Text style={styles.appTitle}>Materialtracker</Text>
+            </View>
+
+            {/* Title & Instructions */}
+            <Text style={styles.title}>{t('setupPasswordTitle', currentLang)}</Text>
+            <Text style={styles.subtitle}>
+              {t('setupPasswordSubtitle', currentLang)}
+            </Text>
+
+            {passwordError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>⚠️ {passwordError}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder={t('passwordPlaceholder', currentLang)}
+                placeholderTextColor={COLORS.muted}
+                secureTextEntry
+                value={newPassword}
+                onChangeText={(text) => {
+                  setNewPassword(text);
+                  setPasswordError('');
+                }}
+                autoCapitalize="none"
+                editable={!isActivating}
+              />
+              <TextInput
+                style={styles.passwordInput}
+                placeholder={t('passwordConfirmPlaceholder', currentLang)}
+                placeholderTextColor={COLORS.muted}
+                secureTextEntry
+                value={confirmPassword}
+                onChangeText={(text) => {
+                  setConfirmPassword(text);
+                  setPasswordError('');
+                }}
+                autoCapitalize="none"
+                editable={!isActivating}
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.primaryScanBtn,
+                  (!newPassword || !confirmPassword || isActivating) && styles.btnDisabled,
+                ]}
+                onPress={handleFinalizeWithPassword}
+                disabled={!newPassword || !confirmPassword || isActivating}
+                activeOpacity={0.8}
+              >
+                {isActivating ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.primaryScanText}>
+                    {t('savePasswordAndContinue', currentLang)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{ marginTop: 16, alignItems: 'center', paddingVertical: 10 }}
+                onPress={() => {
+                  setIsSettingPassword(false);
+                  setPendingTarget(null);
+                  isScanningRef.current = false;
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: COLORS.muted, fontSize: 14, fontWeight: '600' }}>
+                  ‹ {t('cancel', currentLang)}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.footerContainer}>
+              <Text style={styles.footerVersion}>
+                {t('appVersionLabel', currentLang, { version: APP_VERSION })}
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+
+        {isActivating ? (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>{t('activating', currentLang)}</Text>
+          </View>
+        ) : null}
+      </SafeAreaView>
     );
   }
 
@@ -527,6 +676,17 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
     textAlign: 'center',
     letterSpacing: 3,
+  },
+  passwordInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.ink,
   },
   activateBtn: {
     backgroundColor: COLORS.ink,

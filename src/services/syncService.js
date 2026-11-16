@@ -189,6 +189,34 @@ export async function syncBookings({
       await syncMonteurToFirebase(monteur, tenantId);
     }
 
+    // Verify user is still active in Firestore member collection
+    if (tenantId && monteur?.id) {
+      try {
+        const memberRef = doc(db, 'tenants', tenantId, 'members', monteur.id);
+        const memberSnap = await getDoc(memberRef);
+        if (!memberSnap.exists() || memberSnap.data()?.status !== 'active') {
+          console.warn(`Monteur ${monteur.id} is no longer active in tenant ${tenantId}.`);
+          return {
+            success: false,
+            isUserDeleted: true,
+            reason: 'user_deleted',
+          };
+        }
+      } catch (memberErr) {
+        if (
+          memberErr.code === 'permission-denied' ||
+          memberErr.code === 'auth/user-disabled' ||
+          memberErr.code === 'auth/user-not-found'
+        ) {
+          return {
+            success: false,
+            isUserDeleted: true,
+            reason: 'user_deleted',
+          };
+        }
+      }
+    }
+
     // Verify project accessibility in Firestore
     try {
       const projectRef = tenantId
@@ -201,11 +229,21 @@ export async function syncBookings({
         return {
           success: false,
           isDeleted: true,
+          isProjectDeleted: true,
+          projectId,
           reason: 'project_unavailable',
         };
       }
     } catch (projErr) {
       console.warn('Project check notice in sync:', projErr.message);
+      if (projErr.code === 'permission-denied') {
+        return {
+          success: false,
+          isProjectDeleted: true,
+          projectId,
+          reason: 'permission_denied',
+        };
+      }
     }
 
     let pushedCount = 0;

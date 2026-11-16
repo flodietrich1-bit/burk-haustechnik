@@ -7,6 +7,7 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
@@ -18,6 +19,7 @@ export default function ProjectSelectScreen({
   onSelectProject,
   currentLang = 'de',
   onSelectLang,
+  onLogout = null,
 }) {
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -69,6 +71,28 @@ export default function ProjectSelectScreen({
                 {projects.length} {projects.length === 1 ? t('projectSingle', currentLang) : t('projectPlural', currentLang)}
               </Text>
             </View>
+            {onLogout && (
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                onPress={() => {
+                  Alert.alert(
+                    t('logoutTitle', currentLang),
+                    t('logoutConfirm', currentLang),
+                    [
+                      { text: t('cancel', currentLang), style: 'cancel' },
+                      {
+                        text: t('logoutBtn', currentLang),
+                        style: 'destructive',
+                        onPress: onLogout,
+                      },
+                    ]
+                  );
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.logoutBtnText}>🚪 {t('logoutBtn', currentLang)}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -236,6 +260,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
   },
+  monteurBadgeRight: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
   projectCountBadge: {
     backgroundColor: 'rgba(59,130,196,0.25)',
     paddingHorizontal: 10,
@@ -248,6 +276,19 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '800',
     color: '#93C5FD',
+  },
+  logoutBtn: {
+    backgroundColor: 'rgba(239,68,68,0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.4)',
+  },
+  logoutBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FCA5A5',
   },
   scrollContent: {
     padding: 16,

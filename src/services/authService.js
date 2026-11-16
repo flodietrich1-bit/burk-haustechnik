@@ -3,10 +3,13 @@ import NetInfo from '@react-native-community/netinfo';
 import { signInWithCustomToken, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { redeemInviteApi, fetchAssignedProjectsApi, getApiBaseUrl } from './apiService';
+import { redeemInviteApi, fetchAssignedProjectsApi, loginMonteurApi, getApiBaseUrl } from './apiService';
+import { computePasswordHash } from './hashHelper';
 
 const USER_KEY = 'ttapp_active_monteur';
 const TENANT_KEY = 'ttapp_tenant_id';
+const IS_LOCKED_KEY = 'ttapp_is_device_locked';
+const PASSWORD_HASH_PREFIX = '@ttapp:password_hash:';
 const BRANDING_CACHE_PREFIX = '@ttapp:branding:';
 const LOCKOUT_KEYS = {
   ATTEMPTS: 'ttapp_pin_failed_attempts',
@@ -199,15 +202,129 @@ export async function isDeviceActivated() {
 }
 
 /**
- * Activate device using invite code or QR token
+ * Check if the device is currently locked / logged out
+ */
+export async function isDeviceLocked() {
+  try {
+    return (await AsyncStorage.getItem(IS_LOCKED_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lock the device / log out user into password screen
+ */
+export async function lockDevice() {
+  try {
+    await AsyncStorage.setItem(IS_LOCKED_KEY, 'true');
+    await signOut(auth).catch(() => {});
+  } catch (e) {
+    console.warn('Error locking device:', e);
+  }
+}
+
+/**
+ * Save monteur password hash locally
+ */
+export async function saveMonteurPassword(uid, password) {
+  if (!uid || !password) return;
+  const hash = computePasswordHash(password, uid);
+  await AsyncStorage.setItem(`${PASSWORD_HASH_PREFIX}${uid}`, hash);
+}
+
+/**
+ * Get locally stored monteur password hash
+ */
+export async function getMonteurPasswordHash(uid) {
+  if (!uid) return null;
+  return await AsyncStorage.getItem(`${PASSWORD_HASH_PREFIX}${uid}`);
+}
+
+/**
+ * Unlock device with monteur's personal password
+ */
+export async function unlockDeviceWithPassword(password) {
+  const [tenantId, monteur] = await Promise.all([
+    getTenantId(),
+    getActiveMonteur(),
+  ]);
+
+  if (!tenantId || !monteur?.id) {
+    throw new Error('NO_ACTIVE_MONTEUR');
+  }
+
+  const online = await isOnline();
+  let verified = false;
+
+  if (online) {
+    try {
+      const loginRes = await loginMonteurApi({
+        tenantId,
+        monteurId: monteur.id,
+        password,
+      });
+
+      if (loginRes.customToken) {
+        await signInWithCustomToken(auth, loginRes.customToken);
+      }
+      verified = true;
+      await saveMonteurPassword(monteur.id, password);
+    } catch (err) {
+      if (err.code === 'MEMBER_NOT_FOUND' || err.status === 404) {
+        // User was deleted in admin!
+        await logoutDevice();
+        const deleteErr = new Error('USER_DELETED');
+        deleteErr.code = 'USER_DELETED';
+        throw deleteErr;
+      }
+      if (err.code === 'INVALID_PASSWORD' || err.status === 401) {
+        const passErr = new Error('INVALID_PASSWORD');
+        passErr.code = 'INVALID_PASSWORD';
+        throw passErr;
+      }
+      // If network/other error, fall through to offline local check
+    }
+  }
+
+  if (!verified) {
+    const localHash = await getMonteurPasswordHash(monteur.id);
+    if (!localHash) {
+      await saveMonteurPassword(monteur.id, password);
+    } else {
+      const inputHash = computePasswordHash(password, monteur.id);
+      if (inputHash !== localHash) {
+        const passErr = new Error('INVALID_PASSWORD');
+        passErr.code = 'INVALID_PASSWORD';
+        throw passErr;
+      }
+    }
+  }
+
+  // Clear locked state
+  await AsyncStorage.removeItem(IS_LOCKED_KEY);
+
+  // Load assigned projects
+  const projects = await loadAssignedProjects(tenantId, monteur);
+
+  return {
+    success: true,
+    tenantId,
+    monteur,
+    projects,
+  };
+}
+
+/**
+ * Activate device using invite code or QR token (with personal password)
  * 1. Redeem invite at Express backend -> gets { customToken, tenantId, ... }
  * 2. Authenticate Firebase Auth via signInWithCustomToken
  * 3. Load member profile from Firestore (tenants/:tenantId/members/:uid)
  * 4. Fetch assigned projects via backend API and cache them
  */
-export async function activateDeviceWithInvite({ code, qrToken }) {
+export async function activateDeviceWithInvite({ code, qrToken, password }) {
   // 1. Redeem invite at backend
-  const redeemResult = await redeemInviteApi({ code, qrToken });
+  const redeemResult = await redeemInviteApi({ code, qrToken, password });
   const { customToken, tenantId } = redeemResult;
 
   if (!customToken || !tenantId) {
@@ -242,11 +359,16 @@ export async function activateDeviceWithInvite({ code, qrToken }) {
     tenantId,
   };
 
-  // 5. Persist tenant & monteur locally
-  await Promise.all([
+  // 5. Persist tenant & monteur locally and save password hash
+  const saveTasks = [
     setTenantId(tenantId),
     AsyncStorage.setItem(USER_KEY, JSON.stringify(monteur)),
-  ]);
+    AsyncStorage.removeItem(IS_LOCKED_KEY),
+  ];
+  if (password) {
+    saveTasks.push(saveMonteurPassword(uid, password));
+  }
+  await Promise.all(saveTasks);
 
   // 6. Fetch and cache assigned projects via backend API
   let projects = [];
@@ -317,16 +439,28 @@ export async function loadAssignedProjects(tenantId, monteur) {
  * Restore persistent session on app start without requiring re-activation
  */
 export async function restoreSession() {
-  const [tenantId, monteur] = await Promise.all([
+  const [tenantId, monteur, isLocked] = await Promise.all([
     getTenantId(),
     getActiveMonteur(),
+    isDeviceLocked(),
   ]);
 
   if (!tenantId || !monteur) {
     return {
       isActivated: false,
+      isLocked: false,
       tenantId: null,
       monteur: null,
+      projects: [],
+    };
+  }
+
+  if (isLocked) {
+    return {
+      isActivated: true,
+      isLocked: true,
+      tenantId,
+      monteur,
       projects: [],
     };
   }
@@ -343,11 +477,41 @@ export async function restoreSession() {
     });
   }
 
+  // Online verification: check if user doc still exists in Firestore
+  const online = await isOnline();
+  if (online && auth.currentUser) {
+    try {
+      const memberDoc = await getDoc(doc(db, 'tenants', tenantId, 'members', monteur.id));
+      if (!memberDoc.exists() || memberDoc.data()?.status !== 'active') {
+        await logoutDevice();
+        return {
+          isActivated: false,
+          isUserDeleted: true,
+          tenantId: null,
+          monteur: null,
+          projects: [],
+        };
+      }
+    } catch (e) {
+      if (e?.code === 'permission-denied' || e?.code === 'auth/user-disabled' || e?.code === 'auth/user-not-found') {
+        await logoutDevice();
+        return {
+          isActivated: false,
+          isUserDeleted: true,
+          tenantId: null,
+          monteur: null,
+          projects: [],
+        };
+      }
+    }
+  }
+
   // Load projects
   const projects = await loadAssignedProjects(tenantId, monteur);
 
   return {
     isActivated: true,
+    isLocked: false,
     tenantId,
     monteur,
     projects,
@@ -359,12 +523,24 @@ export async function restoreSession() {
  */
 export async function logoutDevice() {
   try {
+    const [monteur, tenantId] = await Promise.all([
+      getActiveMonteur(),
+      getTenantId(),
+    ]);
     await signOut(auth).catch(() => {});
-    await Promise.all([
+    const removeTasks = [
       AsyncStorage.removeItem(USER_KEY),
       AsyncStorage.removeItem(TENANT_KEY),
+      AsyncStorage.removeItem(IS_LOCKED_KEY),
       resetPinLockout(),
-    ]);
+    ];
+    if (monteur?.id) {
+      removeTasks.push(AsyncStorage.removeItem(`${PASSWORD_HASH_PREFIX}${monteur.id}`));
+      if (tenantId) {
+        removeTasks.push(AsyncStorage.removeItem(`@ttapp:projects:${tenantId}:${monteur.id}`));
+      }
+    }
+    await Promise.all(removeTasks);
   } catch (e) {
     console.warn('Error during logout:', e);
   }

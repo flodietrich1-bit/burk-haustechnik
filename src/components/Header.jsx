@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Animated } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Animated, Alert } from 'react-native';
 import Svg, { Path, SvgUri } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { LANGUAGES, t } from '../locales/i18n';
@@ -15,6 +15,7 @@ export default function Header({
   isSyncing = false,
   onSwitchProject = null,
   onBackToRooms = null,
+  onLogout = null,
 }) {
   const spinAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef(null);
@@ -110,6 +111,32 @@ export default function Header({
               </Svg>
             )}
           </TouchableOpacity>
+
+          {onLogout && (
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={() => {
+                Alert.alert(
+                  t('logoutTitle', currentLang),
+                  t('logoutConfirm', currentLang),
+                  [
+                    { text: t('cancel', currentLang), style: 'cancel' },
+                    {
+                      text: t('logoutBtn', currentLang),
+                      style: 'destructive',
+                      onPress: onLogout,
+                    },
+                  ]
+                );
+              }}
+              accessibilityLabel={t('logoutTitle', currentLang)}
+              activeOpacity={0.7}
+            >
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="#DC2626" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -208,6 +235,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 19,
     backgroundColor: COLORS.amber,
+  },
+  logoutButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
   subBar: {
     flexDirection: 'row',

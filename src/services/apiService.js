@@ -106,7 +106,7 @@ export function parseInviteInput(scannedData) {
  * Redeem an invite code or qrToken via Express backend
  * POST /api/public/invites/redeem
  */
-export async function redeemInviteApi({ code, qrToken }) {
+export async function redeemInviteApi({ code, qrToken, password }) {
   const installationId = await getInstallationId();
   const apiBase = await getApiBaseUrl();
 
@@ -114,6 +114,7 @@ export async function redeemInviteApi({ code, qrToken }) {
     installationId,
     ...(code ? { code } : {}),
     ...(qrToken ? { qrToken } : {}),
+    ...(password ? { password } : {}),
   };
 
   const response = await fetch(`${apiBase}/public/invites/redeem`, {
@@ -136,6 +137,31 @@ export async function redeemInviteApi({ code, qrToken }) {
   }
 
   return data; // { customToken, tenantId, requiresLocalPinSetup }
+}
+
+/**
+ * Login a monteur with their personal password
+ * POST /api/public/invites/login
+ */
+export async function loginMonteurApi({ tenantId, monteurId, password }) {
+  if (!tenantId || !monteurId || !password) throw new Error('MISSING_CREDENTIALS');
+  const apiBase = await getApiBaseUrl();
+  const response = await fetch(`${apiBase}/public/invites/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ tenantId, monteurId, password }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.code || `LOGIN_FAILED_${response.status}`);
+    error.status = response.status;
+    error.code = data.code;
+    throw error;
+  }
+  return data; // { success: true, customToken, tenantId, monteur }
 }
 
 /**
