@@ -304,32 +304,60 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commerci
   let approvedQty = 0;
   try {
     await adminDb.runTransaction(async transaction => {
+      // 1. All reads must be executed before all writes in Firestore transactions
       const item = await transaction.get(ref);
       const canApprovePending = req.auth.platformRole === 'superadmin' || req.tenantMember?.role === 'admin';
       if (!item.exists || !(['requested', 'needs_discussion'].includes(item.get('status')) || (canApprovePending && item.get('status') === 'pending'))) throw new Error('ADDENDUM_NOT_REQUESTED');
-      const actor = req.tenantMember?.displayName || req.auth.email || 'Kaufmännische Leitung';
-      actorName = actor;
+      
       const quantity = Number(item.get('reorderedQty') || item.get('quantity')) || 0;
       approvedQty = quantity;
       approvedItemSnapshot = item.data();
-      transaction.update(ref, { status: decision, approvalType: decision === 'approved' ? fulfillment : item.get('approvalType') || null, commercialApprovedBy: decision === 'approved' ? actor : null, commercialApprovedAt: decision === 'approved' ? now : null, commercialNote: String(note || '').trim(), updatedAt: now });
+
+      let posRef = null;
+      let posSnap = null;
+      const materialId = item.get('materialId');
+      if (decision === 'approved' && quantity > 0 && materialId) {
+        posRef = projectRef.collection('positions').doc(materialId);
+        posSnap = await transaction.get(posRef);
+      }
+
+      // 2. All writes executed after all reads
+      const actor = req.tenantMember?.displayName || req.auth.email || 'Kaufmännische Leitung';
+      actorName = actor;
+
+      transaction.update(ref, { 
+        status: decision, 
+        approvalType: decision === 'approved' ? fulfillment : item.get('approvalType') || null, 
+        commercialApprovedBy: decision === 'approved' ? actor : null, 
+        commercialApprovedAt: decision === 'approved' ? now : null, 
+        commercialNote: String(note || '').trim(), 
+        updatedAt: now 
+      });
+
       const eventId = `commercial_${decision}_${addendumId}_${Date.now()}`;
       const eventNote = decision === 'approved'
         ? `${actor} hat am ${new Date(now).toLocaleString('de-DE', { timeZone: 'Europe/Berlin' })} ${quantity} ${item.get('qu') || 'Stk'} ${item.get('title') || 'Material'} ${fulfillment === 'in_stock' ? 'aus dem Lager freigegeben' : 'nachbestellt'}.`
         : `Rücksprache zu ${item.get('title')} erforderlich: ${String(note).trim()}`;
-      transaction.set(projectRef.collection('bookings').doc(eventId), { id: eventId, projectId, roomId: item.get('roomId') || 'allgemein', roomName: item.get('roomName') || '', positionName: item.get('title') || '', quantity, qu: item.get('qu') || 'Stk', type: 'commercial_decision', note: eventNote, createdBy: actor, timestamp: now, createdAt: now });
+
+      transaction.set(projectRef.collection('bookings').doc(eventId), { 
+        id: eventId, 
+        projectId, 
+        roomId: item.get('roomId') || 'allgemein', 
+        roomName: item.get('roomName') || '', 
+        positionName: item.get('title') || '', 
+        quantity, 
+        qu: item.get('qu') || 'Stk', 
+        type: 'commercial_decision', 
+        note: eventNote, 
+        createdBy: actor, 
+        timestamp: now, 
+        createdAt: now 
+      });
 
       // If approved, update deliveredQty on matching position in Firestore
-      if (decision === 'approved' && quantity > 0) {
-        const materialId = item.get('materialId');
-        if (materialId) {
-          const posRef = projectRef.collection('positions').doc(materialId);
-          const posSnap = await transaction.get(posRef);
-          if (posSnap.exists) {
-            const currentDelivered = Number(posSnap.get('deliveredQty') ?? posSnap.get('qty')) || 0;
-            transaction.update(posRef, { deliveredQty: currentDelivered + quantity, updatedAt: now });
-          }
-        }
+      if (posRef && posSnap && posSnap.exists) {
+        const currentDelivered = Number(posSnap.get('deliveredQty') ?? posSnap.get('qty')) || 0;
+        transaction.update(posRef, { deliveredQty: currentDelivered + quantity, updatedAt: now });
       }
     });
 
@@ -362,7 +390,8 @@ tenantRouter.post('/:tenantId/projects/:projectId/addendums/:addendumId/commerci
     res.json({ success: true, status: decision });
   } catch (error) {
     if (error.message === 'ADDENDUM_NOT_REQUESTED') return res.status(409).json({ code: error.message });
-    throw error;
+    console.error('Commercial decision failed:', error);
+    return res.status(500).json({ code: 'COMMERCIAL_DECISION_FAILED', message: error.message });
   }
 });
 
