@@ -23,6 +23,13 @@ interface ProjectSettingsViewProps {
   onDeleteProject?: () => void;
 }
 
+const LANGUAGE_CONFIG: Record<string, { flag: string; label: string }> = {
+  de: { flag: '🇩🇪', label: 'Deutsch' },
+  ro: { flag: '🇷🇴', label: 'Rumänisch' },
+  pl: { flag: '🇵🇱', label: 'Polnisch' },
+  hr: { flag: '🇭🇷', label: 'Kroatisch' },
+};
+
 export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({ 
   project, 
   users, 
@@ -515,6 +522,7 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
             {monteurUsers.map(monteur => {
               const slugId = monteur.name.toLowerCase().replace(/\s+/g, '-');
               const isAssigned = (form.assignedMonteurIds || []).includes(monteur.id) || (form.assignedMonteurIds || []).includes(slugId);
+              const langConfig = LANGUAGE_CONFIG[monteur.defaultLanguage || 'de'] || LANGUAGE_CONFIG['de'];
 
               return (
                 <div
@@ -526,26 +534,39 @@ export const ProjectSettingsView: React.FC<ProjectSettingsViewProps> = ({
                       : 'bg-slate-50 hover:bg-slate-100 border-slate-200'
                   }`}
                 >
-                  <div className="space-y-1 truncate mr-2">
-                    <span className="font-bold text-xs text-slate-900 block truncate">
-                      {monteur.name}
-                    </span>
-                    <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span>PIN wird in der Monteur-App verwaltet</span>
-                      {monteur.email ? (
-                        <span className="text-slate-600 font-medium flex items-center space-x-0.5">
-                          <Mail className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
-                          <span>{monteur.email}</span>
+                  <div className="space-y-1 truncate mr-2 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-bold text-xs text-slate-900 truncate">
+                        {monteur.name}
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-[10px] shrink-0"
+                        title={`App-Sprache: ${langConfig.label}`}
+                      >
+                        <span>{langConfig.flag}</span>
+                        <span className="font-semibold text-slate-600">{(monteur.defaultLanguage || 'de').toUpperCase()}</span>
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-600 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                      {monteur.phone ? (
+                        <a
+                          href={`tel:${monteur.phone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-blue-600 hover:text-blue-800 hover:underline font-semibold flex items-center space-x-1"
+                          title="Monteur anrufen"
+                        >
+                          <Phone className="w-3 h-3 text-blue-500 shrink-0" />
+                          <span>{monteur.phone}</span>
+                        </a>
+                      ) : monteur.email ? (
+                        <span className="text-slate-500 font-medium flex items-center space-x-1 truncate">
+                          <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{monteur.email}</span>
                         </span>
                       ) : (
-                        <span className="text-slate-400">Keine Mail</span>
+                        <span className="text-slate-400 italic text-[10px]">Keine Telefonnummer</span>
                       )}
-                      {monteur.phone ? (
-                        <span className="text-slate-600 font-medium flex items-center space-x-0.5">
-                          <Phone className="w-2.5 h-2.5 text-slate-400 mr-0.5" />
-                          <span>{monteur.phone}</span>
-                        </span>
-                      ) : null}
                     </div>
                   </div>
 
