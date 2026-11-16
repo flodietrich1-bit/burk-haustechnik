@@ -99,7 +99,7 @@ export default function MaterialBookingCard({
 
   const isPlusDisabled = isLocked;
   const canInteractiveSlide = !isLocked && !finalIsUnplanned && baseTarget > 0 && Boolean(onSetDelta);
-  const canOpenCalculator = isMeter && !isLocked && Boolean(onSetDelta);
+  const canOpenCalculator = !isLocked && Boolean(onSetDelta);
 
   const gloss = getForeignGloss(mat, currentLang);
 
@@ -131,14 +131,16 @@ export default function MaterialBookingCard({
     }
   };
 
-  // Calculator Modal handlers (strictly for meter units: 0-9 and comma up to 2 decimal places)
+  // Calculator Modal handlers (exact numbers: meters up to 2 decimals, pieces as whole integers)
   const openCalculator = () => {
     if (isLocked) {
       if (onLockedAction) onLockedAction();
       return;
     }
     if (!canOpenCalculator) return;
-    const initialStr = formatQty(currentRoomVerb, true, false);
+    const initialStr = isMeter
+      ? formatQty(currentRoomVerb, true, false)
+      : String(Math.round(currentRoomVerb));
     setCalcInput(initialStr);
     setReplaceOnNext(true);
     setCalcVisible(true);
@@ -165,6 +167,7 @@ export default function MaterialBookingCard({
   };
 
   const handleCalcComma = () => {
+    if (!isMeter) return; // Stück can only be whole integers
     if (replaceOnNext) {
       setCalcInput('0,');
       setReplaceOnNext(false);
@@ -189,9 +192,13 @@ export default function MaterialBookingCard({
   const handleCalcConfirm = () => {
     const normalized = String(calcInput || '0').replace(',', '.');
     const parsed = parseFloat(normalized);
-    const validNum = !isNaN(parsed) && parsed >= 0 ? Number(parsed.toFixed(2)) : 0;
-    const targetVerb = Math.max(roomInstalledBefore, validNum);
-    const nextDelta = Math.max(0, Number((targetVerb - roomInstalledBefore).toFixed(2)));
+    const validNum = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+    const targetVerb = isMeter
+      ? Math.max(roomInstalledBefore, Number(validNum.toFixed(2)))
+      : Math.max(roomInstalledBefore, Math.round(validNum));
+    const nextDelta = isMeter
+      ? Math.max(0, Number((targetVerb - roomInstalledBefore).toFixed(2)))
+      : Math.max(0, Math.round(targetVerb - roomInstalledBefore));
     setCalcVisible(false);
     if (onSetDelta) {
       onSetDelta(mat.id, nextDelta, { fromCalculator: true });
@@ -314,6 +321,7 @@ export default function MaterialBookingCard({
             {/* Minus Button */}
             <TouchableOpacity
               style={[styles.stepperInlineBtn, isLocked && styles.stepperInlineBtnDisabled]}
+              hitSlop={{ top: 8, bottom: 8, left: 10, right: 4 }}
               onPress={() => {
                 if (isLocked) {
                   if (onLockedAction) onLockedAction();
@@ -322,17 +330,18 @@ export default function MaterialBookingCard({
                 onStep(mat.id, -1);
               }}
               disabled={isLocked}
-              activeOpacity={0.6}
+              activeOpacity={0.5}
             >
               <Text style={[styles.stepperInlineBtnText, isLocked && styles.stepperInlineBtnTextDisabled]}>−</Text>
             </TouchableOpacity>
 
-            {/* Center: VERBAUT & Value (Tappable for Calculator on Meter items) */}
+            {/* Center: VERBAUT & Value (Tappable for Calculator on both Meter and Piece items) */}
             <TouchableOpacity
               style={styles.installedValCenter}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               disabled={!canOpenCalculator && !isLocked}
               onPress={openCalculator}
-              activeOpacity={canOpenCalculator ? 0.65 : 1}
+              activeOpacity={canOpenCalculator ? 0.6 : 1}
             >
               <Text
                 style={[
@@ -361,6 +370,7 @@ export default function MaterialBookingCard({
             {/* Plus Button */}
             <TouchableOpacity
               style={[styles.stepperInlineBtn, isPlusDisabled && styles.stepperInlineBtnDisabled]}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 10 }}
               onPress={() => {
                 if (isLocked) {
                   if (onLockedAction) onLockedAction();
@@ -369,7 +379,7 @@ export default function MaterialBookingCard({
                 onStep(mat.id, 1);
               }}
               disabled={isPlusDisabled}
-              activeOpacity={0.6}
+              activeOpacity={0.5}
             >
               <Text style={[styles.stepperInlineBtnText, isPlusDisabled && styles.stepperInlineBtnTextDisabled]}>+</Text>
             </TouchableOpacity>
@@ -466,7 +476,7 @@ export default function MaterialBookingCard({
 
               {hasRoomPlan ? (
                 <Text style={styles.calcPlannedInfo}>
-                  {t('matrixPlanned', currentLang)}: {formatQty(roomPlanned, true)} {displayQu}
+                  {t('matrixPlanned', currentLang)}: {isMeter ? formatQty(roomPlanned, true) : Math.round(roomPlanned)} {displayQu}
                 </Text>
               ) : null}
 
@@ -476,7 +486,7 @@ export default function MaterialBookingCard({
                 <Text style={styles.calcDisplayUnit}>{displayQu}</Text>
               </View>
 
-              {/* Calculator Keypad: 0-9 and comma only */}
+              {/* Calculator Keypad: 0-9 and comma (comma disabled for piece units) */}
               <View style={styles.calcGrid}>
                 {[
                   ['7', '8', '9'],
@@ -497,14 +507,19 @@ export default function MaterialBookingCard({
                   </View>
                 ))}
 
-                {/* Bottom Row: Comma, 0, Backspace */}
+                {/* Bottom Row: Comma (disabled for Stück), 0, Backspace */}
                 <View style={styles.calcRow}>
                   <TouchableOpacity
-                    style={[styles.calcKey, styles.calcKeyAccent]}
+                    style={[
+                      styles.calcKey,
+                      styles.calcKeyAccent,
+                      !isMeter && { opacity: 0.25, backgroundColor: '#E2E8F0' },
+                    ]}
+                    disabled={!isMeter}
                     onPress={handleCalcComma}
                     activeOpacity={0.65}
                   >
-                    <Text style={styles.calcKeyText}>,</Text>
+                    <Text style={[styles.calcKeyText, !isMeter && { color: '#94A3B8' }]}>,</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
