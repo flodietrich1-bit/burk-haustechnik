@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb, adminStorage } from '../adminFirebase.js';
 import { authenticateFirebaseUser, requireSuperadmin, requireTenantRole } from '../middleware/auth.js';
-import { createInvite } from '../services/inviteService.js';
+import { createInvite, cleanupRedeemedInvites } from '../services/inviteService.js';
 import { prepareInvitationDelivery } from '../services/invitationDeliveryService.js';
 import { sendEmail } from '../services/emailService.js';
 import { generateAufmassPdf } from '../aufmassPdfService.js';
@@ -90,8 +90,9 @@ tenantRouter.get('/:tenantId/projects', requireTenantRole('admin', 'bauleiter', 
       ? ['commercialManagerId', 'deputyCommercialManagerId', 'commercialManagerEmail', 'deputyCommercialManagerEmail']
       : [];
   const projects = snap.docs.filter(doc => {
-    if (req.auth.platformRole === 'superadmin' || role === 'admin' || assigned.has(doc.id)) return true;
     const project = doc.data();
+    if (project.status === 'deleted' || project.isDeleted === true) return false;
+    if (req.auth.platformRole === 'superadmin' || role === 'admin' || assigned.has(doc.id)) return true;
     if (role === 'monteur' && (project.assignedMonteurIds || []).includes(uid)) return true;
     return fields.some(field => field.endsWith('Email')
       ? email && String(project[field] || '').toLowerCase() === email
@@ -429,12 +430,82 @@ tenantRouter.delete('/:tenantId/members/:uid', requireTenantRole('admin'), async
     const admins = await memberRef.parent.where('role', '==', 'admin').get();
     if (admins.docs.filter(doc => doc.get('status') === 'active').length <= 1) return res.status(409).json({ code: 'LAST_ADMIN_REQUIRED' });
   }
+  const memberEmail = current.get('email');
   await adminDb.recursiveDelete(memberRef);
-  const profile = adminDb.doc(`users/${req.params.uid}`);
-  if ((await profile.get()).exists) await profile.update({ tenantIds: FieldValue.arrayRemove(req.params.tenantId), updatedAt: FieldValue.serverTimestamp() });
-  await adminAuth.revokeRefreshTokens(req.params.uid).catch(error => {
-    if (error.code !== 'auth/user-not-found') throw error;
+
+  // Clean user profile in users/:uid
+  const profileRef = adminDb.doc(`users/${req.params.uid}`);
+  const profileSnap = await profileRef.get();
+  if (profileSnap.exists) {
+    const remaining = (profileSnap.get('tenantIds') || []).filter(t => t !== req.params.tenantId);
+    if (remaining.length === 0) {
+      await profileRef.delete();
+    } else {
+      await profileRef.update({ tenantIds: remaining, updatedAt: FieldValue.serverTimestamp() });
+    }
+  }
+
+  // Remove member from all projects in this tenant
+  try {
+    const projectsSnap = await adminDb.collection(`tenants/${req.params.tenantId}/projects`).get();
+    const projectBatch = adminDb.batch();
+    let hasProjectUpdates = false;
+    for (const pDoc of projectsSnap.docs) {
+      const pData = pDoc.data();
+      let changed = false;
+      const updates = {};
+      if (Array.isArray(pData.assignedMonteurIds) && pData.assignedMonteurIds.includes(req.params.uid)) {
+        updates.assignedMonteurIds = FieldValue.arrayRemove(req.params.uid);
+        changed = true;
+      }
+      if (pData.projectManagerId === req.params.uid) { updates.projectManagerId = null; changed = true; }
+      if (pData.commercialManagerId === req.params.uid) { updates.commercialManagerId = null; changed = true; }
+      if (changed) {
+        updates.updatedAt = new Date().toISOString();
+        projectBatch.update(pDoc.ref, updates);
+        hasProjectUpdates = true;
+      }
+    }
+    if (hasProjectUpdates) await projectBatch.commit();
+  } catch (err) {
+    console.warn('Error removing deleted member from projects:', err);
+  }
+
+  // Clean up any pending invites for this member
+  try {
+    const invitesSnap = await adminDb.collection(`tenants/${req.params.tenantId}/invites`).get();
+    const inviteBatch = adminDb.batch();
+    let hasInviteUpdates = false;
+    for (const iDoc of invitesSnap.docs) {
+      const iData = iDoc.data();
+      const matchEmail = memberEmail && iData.emailNormalized === String(memberEmail).toLowerCase();
+      const matchUid = iData.redeemedByUid === req.params.uid;
+      if (matchEmail || matchUid) {
+        if (iData.shortCodeHash) inviteBatch.delete(adminDb.doc(`inviteCodeIndex/${iData.shortCodeHash}`));
+        if (iData.qrTokenHash) inviteBatch.delete(adminDb.doc(`inviteQrIndex/${iData.qrTokenHash}`));
+        inviteBatch.delete(iDoc.ref);
+        hasInviteUpdates = true;
+      }
+    }
+    if (hasInviteUpdates) await inviteBatch.commit();
+  } catch (err) {
+    console.warn('Error cleaning invites for deleted member:', err);
+  }
+
+  // Revoke refresh tokens and permanently delete from Firebase Auth
+  await adminAuth.revokeRefreshTokens(req.params.uid).catch(() => {});
+  await adminAuth.deleteUser(req.params.uid).catch(error => {
+    if (error.code !== 'auth/user-not-found') console.warn('Could not delete user from Firebase Auth:', error);
   });
+  if (memberEmail) {
+    try {
+      const userByEmail = await adminAuth.getUserByEmail(memberEmail);
+      if (userByEmail && userByEmail.uid !== req.params.uid) {
+        await adminAuth.deleteUser(userByEmail.uid).catch(() => {});
+      }
+    } catch {}
+  }
+
   res.json({ success: true });
 });
 
@@ -456,17 +527,50 @@ tenantRouter.post('/:tenantId/invites', requireTenantRole('admin'), async (req, 
   const tenantRef = adminDb.doc(`tenants/${req.params.tenantId}`);
   const tenantSlug = await ensurePublicSlug(tenantRef);
   const tenant = (await tenantRef.get()).data();
-  const delivery = await prepareInvitationDelivery({ tenantName: tenant?.name || req.params.tenantId, tenantSlug, webBaseUrl: process.env.NODE_ENV === 'production' ? undefined : req.get('origin'), displayName: req.body.displayName, email: req.body.email, role: req.body.role, shortCode: result.shortCode, qrToken: result.qrToken, inviteId: result.inviteId, invitedByName: req.auth.platformRole === 'superadmin' ? 'P12 Aufmaß' : req.tenantMember?.displayName || 'Administrator' });
+  const delivery = await prepareInvitationDelivery({ tenantName: tenant?.name || req.params.tenantId, tenantSlug, webBaseUrl: process.env.NODE_ENV === 'production' ? undefined : req.get('origin'), displayName: req.body.displayName, email: req.body.email, role: req.body.role, shortCode: result.shortCode, qrToken: result.qrToken, inviteId: result.inviteId, invitedByName: req.auth.platformRole === 'superadmin' ? 'P12 Aufmaß' : (tenant?.name || 'Administrator') });
   await tenantRef.collection('invites').doc(result.inviteId).update({ emailSent: delivery.emailSent, emailError: delivery.emailError, sendCount: req.body.email ? 1 : 0, updatedAt: FieldValue.serverTimestamp() });
   res.status(201).json({ ...result, ...delivery });
 });
 
 tenantRouter.get('/:tenantId/invites', requireTenantRole('admin'), async (req, res) => {
+  await cleanupRedeemedInvites(req.params.tenantId).catch(() => {});
   const snap = await adminDb.collection(`tenants/${req.params.tenantId}/invites`).orderBy('createdAt', 'desc').limit(100).get();
   res.json(snap.docs.map(doc => {
     const data = doc.data();
-    return { id: doc.id, displayName: data.displayName, email: data.emailNormalized, role: data.role, status: data.status, emailSent: data.emailSent || false, emailError: data.emailError || null, expiresAt: data.expiresAt?.toDate?.().toISOString(), createdAt: data.createdAt?.toDate?.().toISOString(), redeemedAt: data.redeemedAt?.toDate?.().toISOString() };
+    return {
+      id: doc.id,
+      displayName: data.displayName,
+      email: data.emailNormalized,
+      role: data.role,
+      status: data.status,
+      emailSent: data.emailSent || false,
+      emailError: data.emailError || null,
+      assignedProjectIds: Array.isArray(data.assignedProjectIds) ? data.assignedProjectIds : (data.projectId ? [data.projectId] : []),
+      projectId: data.projectId || data.assignedProjectIds?.[0] || null,
+      projectName: data.projectName || null,
+      expiresAt: data.expiresAt?.toDate?.().toISOString(),
+      createdAt: data.createdAt?.toDate?.().toISOString(),
+      redeemedAt: data.redeemedAt?.toDate?.().toISOString(),
+    };
   }));
+});
+
+tenantRouter.post('/:tenantId/invites/cleanup', requireTenantRole('admin'), async (req, res) => {
+  const cleanedCount = await cleanupRedeemedInvites(req.params.tenantId);
+  res.json({ success: true, cleanedCount });
+});
+
+tenantRouter.delete('/:tenantId/invites/:inviteId', requireTenantRole('admin'), async (req, res) => {
+  const ref = adminDb.doc(`tenants/${req.params.tenantId}/invites/${req.params.inviteId}`);
+  const snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ code: 'INVITE_NOT_FOUND' });
+  const invite = snap.data();
+  const batch = adminDb.batch();
+  batch.delete(ref);
+  if (invite.shortCodeHash) batch.delete(adminDb.doc(`inviteCodeIndex/${invite.shortCodeHash}`));
+  if (invite.qrTokenHash) batch.delete(adminDb.doc(`inviteQrIndex/${invite.qrTokenHash}`));
+  await batch.commit();
+  res.json({ success: true, deletedId: req.params.inviteId });
 });
 
 tenantRouter.post('/:tenantId/invites/:inviteId/revoke', requireTenantRole('admin'), async (req, res) => {
@@ -489,11 +593,21 @@ tenantRouter.post('/:tenantId/invites/:inviteId/resend', requireTenantRole('admi
   if (old.shortCodeHash) revokeBatch.delete(adminDb.doc(`inviteCodeIndex/${old.shortCodeHash}`));
   if (old.qrTokenHash) revokeBatch.delete(adminDb.doc(`inviteQrIndex/${old.qrTokenHash}`));
   await revokeBatch.commit();
-  const result = await createInvite({ tenantId: req.params.tenantId, actorUid: req.auth.uid, input: { ...old, email: old.emailNormalized } });
+  const result = await createInvite({
+    tenantId: req.params.tenantId,
+    actorUid: req.auth.uid,
+    input: {
+      ...old,
+      email: old.emailNormalized,
+      projectId: old.projectId || old.assignedProjectIds?.[0],
+      assignedProjectIds: old.assignedProjectIds,
+      projectName: old.projectName,
+    },
+  });
   const tenantRef = adminDb.doc(`tenants/${req.params.tenantId}`);
   const tenantSlug = await ensurePublicSlug(tenantRef);
   const tenant = (await tenantRef.get()).data();
-  const delivery = await prepareInvitationDelivery({ tenantName: tenant?.name || req.params.tenantId, tenantSlug, webBaseUrl: process.env.NODE_ENV === 'production' ? undefined : req.get('origin'), displayName: old.displayName, email: old.emailNormalized, role: old.role, shortCode: result.shortCode, qrToken: result.qrToken, inviteId: result.inviteId, invitedByName: req.auth.platformRole === 'superadmin' ? 'P12 Aufmaß' : req.tenantMember?.displayName || 'Administrator' });
+  const delivery = await prepareInvitationDelivery({ tenantName: tenant?.name || req.params.tenantId, tenantSlug, webBaseUrl: process.env.NODE_ENV === 'production' ? undefined : req.get('origin'), displayName: old.displayName, email: old.emailNormalized, role: old.role, shortCode: result.shortCode, qrToken: result.qrToken, inviteId: result.inviteId, invitedByName: req.auth.platformRole === 'superadmin' ? 'P12 Aufmaß' : (tenant?.name || 'Administrator') });
   await tenantRef.collection('invites').doc(result.inviteId).update({ emailSent: delivery.emailSent, emailError: delivery.emailError, sendCount: old.emailNormalized ? 1 : 0, updatedAt: FieldValue.serverTimestamp() });
   res.status(201).json({ ...result, ...delivery });
 });

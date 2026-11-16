@@ -3,9 +3,8 @@ import { adminDb } from '../adminFirebase.js';
 
 function key(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function penaltyMs(attempts) {
-  if (attempts >= 5) return 24 * 60 * 60 * 1000;
-  if (attempts >= 4) return 60 * 60 * 1000;
-  if (attempts >= 3) return 10 * 60 * 1000;
+  if (attempts >= 20) return 15 * 60 * 1000;
+  if (attempts >= 10) return 60 * 1000;
   return 0;
 }
 

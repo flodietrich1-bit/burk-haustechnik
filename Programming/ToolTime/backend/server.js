@@ -19,9 +19,11 @@ import { generateAufmassPdf } from './aufmassPdfService.js';
 import { tenantRouter } from './routes/tenantRoutes.js';
 import { publicInviteRouter } from './routes/publicInviteRoutes.js';
 import { publicBrandingRouter } from './routes/publicBrandingRoutes.js';
+import { cleanupAllRedeemedInvites } from './services/inviteService.js';
 import { authenticateFirebaseUser, requireTenantRole } from './middleware/auth.js';
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 // CORS setup to allow admin-web (localhost:5173 / localhost:8080)
@@ -55,6 +57,27 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Automated Invite Cleanup Endpoint (Cronjob / Cloud Scheduler trigger)
+app.post('/api/cron/cleanup-invites', async (req, res) => {
+  try {
+    const cleaned = await cleanupAllRedeemedInvites();
+    res.json({ status: 'ok', cleanedCount: cleaned, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('Cron cleanup-invites error:', err?.message || err);
+    res.status(500).json({ error: err?.message || 'CLEANUP_FAILED' });
+  }
+});
+
+// 24h periodic background invite cleanup
+setInterval(async () => {
+  try {
+    const count = await cleanupAllRedeemedInvites();
+    if (count > 0) console.log(`[CLEANUP] Deleted ${count} redeemed invitations older than 30 days.`);
+  } catch (err) {
+    console.error('[CLEANUP] Periodic invite cleanup error:', err?.message || err);
+  }
+}, 24 * 60 * 60 * 1000);
 
 /**
  * 0. Endpoint: Autodesk Platform Services (APS) Viewer Token

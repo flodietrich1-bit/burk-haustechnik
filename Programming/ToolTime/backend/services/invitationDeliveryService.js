@@ -5,13 +5,13 @@ import { sendEmail } from './emailService.js';
 const roleNames = { admin: 'Administrator', bauleiter: 'Bauleiter', kaufmaennisch: 'kaufmännischer Mitarbeiter', monteur: 'Monteur' };
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 
-function pdfBuffer({ tenantName, displayName, role, shortCode, webInviteUrl, qrDataUrl }) {
+function pdfBuffer({ tenantName, displayName, role, shortCode, webInviteUrl, qrDataUrl, isSystemAdmin = false }) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 56 }); const chunks = [];
     doc.on('data', chunk => chunks.push(chunk)); doc.on('end', () => resolve(Buffer.concat(chunks))); doc.on('error', reject);
     doc.fontSize(24).fillColor('#1C2A3B').text('Willkommen bei P12 Aufmaß');
     doc.moveDown().fontSize(12).fillColor('#334155').text(`Hallo ${displayName},`);
-    doc.moveDown(0.5).text(`${tenantName} hat Sie als ${roleNames[role]} zu P12 Aufmaß eingeladen.`);
+    doc.moveDown(0.5).text(`${isSystemAdmin ? 'P12 Aufmaß' : tenantName} hat Sie als ${roleNames[role]} zu P12 Aufmaß eingeladen.`);
     doc.moveDown().image(qrDataUrl, { fit: [220, 220], align: 'center' });
     if (role === 'monteur') doc.moveDown().fontSize(26).fillColor('#0F172A').text(shortCode, { align: 'center', characterSpacing: 3 });
     else doc.moveDown().fontSize(10).fillColor('#334155').text(`Aktivierungslink: ${webInviteUrl}`, { align: 'center', link: webInviteUrl });
@@ -26,16 +26,17 @@ export async function prepareInvitationDelivery({ tenantName, tenantSlug, webBas
   const companyPath = encodeURIComponent(tenantSlug.toUpperCase());
   const webInviteUrl = role !== 'monteur' ? `${baseUrl}/${companyPath}/invite?token=${encodeURIComponent(qrToken)}&Firma=${companyPath}` : null;
   const qrDataUrl = await QRCode.toDataURL(webInviteUrl || deepLink, { errorCorrectionLevel: 'M', margin: 2, width: 600 });
-  const pdf = await pdfBuffer({ tenantName, displayName, role, shortCode, webInviteUrl, qrDataUrl });
+  const isSystemAdmin = invitedByName === 'P12 Aufmaß';
+  const pdf = await pdfBuffer({ tenantName, displayName, role, shortCode, webInviteUrl, qrDataUrl, isSystemAdmin });
   let emailSent = false;
   let emailError = null;
   if (email) {
-    const sender = invitedByName === 'P12 Aufmaß' ? 'P12 Aufmaß' : `${invitedByName} von ${tenantName}`;
+    const sender = isSystemAdmin ? 'P12 Aufmaß' : tenantName;
     const introduction = `Du wurdest von ${sender} als ${roleNames[role]} zu P12 Aufmaß eingeladen.`;
     const text = role === 'monteur'
-      ? `Hallo ${displayName},\n\n${introduction}\n\nÖffne die TT-App und scanne den QR-Code in der angehängten PDF. Dein Aktivierungscode lautet: ${shortCode}\n\nDie Einladung ist einmalig und sieben Tage gültig.\n\nViele Grüße\nP12 Aufmaß`
-      : `Hallo ${displayName},\n\n${introduction}\n\nNimm deine Einladung über diesen Link an: ${webInviteUrl}\n\nAuf der Aktivierungsseite legst du dein Passwort fest. Du brauchst keinen zusätzlichen Code.\n\nDie Einladung ist einmalig und sieben Tage gültig.\n\nViele Grüße\nP12 Aufmaß`;
-    const html = `<div style="font-family:Arial,sans-serif;max-width:560px;color:#1f1a4d"><h1>Einladung zu P12 Aufmaß</h1><p>Hallo ${escapeHtml(displayName)},</p><p>${escapeHtml(introduction)}</p>${role === 'monteur' ? `<p>Öffne die TT-App und scanne den QR-Code in der angehängten PDF.</p><p>Dein Aktivierungscode: <strong>${escapeHtml(shortCode)}</strong></p>` : `<p><a href="${escapeHtml(webInviteUrl)}" style="display:inline-block;background:#7437d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Einladung annehmen</a></p><p>Auf der Aktivierungsseite legst du dein Passwort fest. Ein zusätzlicher Code ist nicht nötig.</p>`}<p>Die Einladung ist einmalig und sieben Tage gültig.</p><p>Viele Grüße<br>P12 Aufmaß</p></div>`;
+      ? `Hallo ${displayName},\n\n${introduction}\n\nÖffne die TT-App und scanne den QR-Code in der angehängten PDF. Dein Aktivierungscode lautet: ${shortCode}\n\nDie Einladung ist einmalig und sieben Tage gültig.\n\nErfolgreiches Aufmessen,\nDein P12 Aufmaßteam`
+      : `Hallo ${displayName},\n\n${introduction}\n\nNimm deine Einladung über diesen Link an: ${webInviteUrl}\n\nAuf der Aktivierungsseite legst du dein Passwort fest. Du brauchst keinen zusätzlichen Code.\n\nDie Einladung ist einmalig und sieben Tage gültig.\n\nErfolgreiches Aufmessen,\nDein P12 Aufmaßteam`;
+    const html = `<div style="font-family:Arial,sans-serif;max-width:560px;color:#1f1a4d"><h1>Einladung zu P12 Aufmaß</h1><p>Hallo ${escapeHtml(displayName)},</p><p>${escapeHtml(introduction)}</p>${role === 'monteur' ? `<p>Öffne die TT-App und scanne den QR-Code in der angehängten PDF.</p><p>Dein Aktivierungscode: <strong>${escapeHtml(shortCode)}</strong></p>` : `<p><a href="${escapeHtml(webInviteUrl)}" style="display:inline-block;background:#7437d9;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Einladung annehmen</a></p><p>Auf der Aktivierungsseite legst du dein Passwort fest. Ein zusätzlicher Code ist nicht nötig.</p>`}<p>Die Einladung ist einmalig und sieben Tage gültig.</p><p>Erfolgreiches Aufmessen,<br>Dein P12 Aufmaßteam</p></div>`;
     try {
       const result = await sendEmailImpl({
         to: email, subject: `${tenantName}: Einladung zu P12 Aufmaß`, text, html,

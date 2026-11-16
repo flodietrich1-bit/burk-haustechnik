@@ -23,14 +23,16 @@ test('invitation includes branded link and generated PDF in the outgoing email',
   assert.equal(invitation.pdfBase64, outgoing.attachments[0].content.toString('base64'));
 });
 
-test('installer invitation includes the activation code and named inviter', async () => {
+test('installer invitation includes the activation code and company inviter', async () => {
   let outgoing;
   await prepareInvitationDelivery({
     tenantName: 'Burk Haustechnik', tenantSlug: 'burk', webBaseUrl: 'http://localhost:5173',
     displayName: 'Max Monteur', email: 'max@example.com', role: 'monteur', invitedByName: 'Florian Burk',
     shortCode: 'AB-C234', qrToken: 'sample-token', inviteId: 'installer-invite',
   }, { sendEmailImpl: async message => { outgoing = message; return { sent: true }; } });
-  assert.match(outgoing.text, /Du wurdest von Florian Burk von Burk Haustechnik als Monteur/);
+  assert.match(outgoing.text, /Du wurdest von Burk Haustechnik als Monteur zu P12 Aufmaß eingeladen\./);
+  assert.match(outgoing.text, /Erfolgreiches Aufmessen,\nDein P12 Aufmaßteam/);
+  assert.match(outgoing.html, /Erfolgreiches Aufmessen,<br>Dein P12 Aufmaßteam/);
   assert.match(outgoing.text, /AB-C234/);
 });
 

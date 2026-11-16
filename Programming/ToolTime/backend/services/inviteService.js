@@ -66,12 +66,26 @@ export async function createInvite({ tenantId, actorUid, input }) {
   const generation = 1;
   const lookupHash = hmac(`short:${shortCode}`);
 
+  const assignedProjectIds = Array.isArray(input.assignedProjectIds)
+    ? input.assignedProjectIds
+    : (input.projectId ? [input.projectId] : []);
+
+  let projectName = input.projectName || null;
+  if (!projectName && assignedProjectIds[0]) {
+    try {
+      const pSnap = await adminDb.doc(`tenants/${tenantId}/projects/${assignedProjectIds[0]}`).get();
+      if (pSnap.exists) projectName = pSnap.get('name') || null;
+    } catch (_) {}
+  }
+
   const invite = {
     displayName: String(input.displayName || '').trim(),
     emailNormalized: input.email ? String(input.email).trim().toLowerCase() : null,
     role: input.role,
     defaultLanguage: input.defaultLanguage || 'de',
-    assignedProjectIds: Array.isArray(input.assignedProjectIds) ? input.assignedProjectIds : [],
+    assignedProjectIds,
+    projectId: assignedProjectIds[0] || null,
+    projectName,
     status: 'pending', generation, sendCount: 0,
     shortCodeHash: lookupHash,
     qrTokenHash: hmac(`qr:${qrToken}`),
@@ -90,7 +104,52 @@ export async function createInvite({ tenantId, actorUid, input }) {
   return { inviteId: inviteRef.id, shortCode: formatShortCode(shortCode), qrToken, expiresAt: expiresAt.toISOString() };
 }
 
-export async function redeemInvite({ code, qrToken, installationId, webUid, tenantSlug }) {
+export async function cleanupRedeemedInvites(tenantId) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  try {
+    const invitesRef = adminDb.collection(`tenants/${tenantId}/invites`);
+    const snap = await invitesRef.where('status', '==', 'redeemed').get();
+    if (snap.empty) return 0;
+
+    let deleted = 0;
+    const batch = adminDb.batch();
+    for (const doc of snap.docs) {
+      const data = doc.data();
+      const redeemedDate = data.redeemedAt?.toDate ? data.redeemedAt.toDate() : (data.updatedAt?.toDate ? data.updatedAt.toDate() : null);
+      if (redeemedDate && redeemedDate < thirtyDaysAgo) {
+        batch.delete(doc.ref);
+        if (data.shortCodeHash) batch.delete(adminDb.doc(`inviteCodeIndex/${data.shortCodeHash}`));
+        if (data.qrTokenHash) batch.delete(adminDb.doc(`inviteQrIndex/${data.qrTokenHash}`));
+        deleted++;
+      }
+    }
+    if (deleted > 0) {
+      await batch.commit();
+    }
+    return deleted;
+  } catch (err) {
+    console.warn(`cleanupRedeemedInvites error for tenant ${tenantId}:`, err?.message || err);
+    return 0;
+  }
+}
+
+export async function cleanupAllRedeemedInvites() {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  try {
+    const tenantsSnap = await adminDb.collection('tenants').get();
+    let totalDeleted = 0;
+    for (const tenantDoc of tenantsSnap.docs) {
+      const deleted = await cleanupRedeemedInvites(tenantDoc.id);
+      totalDeleted += deleted;
+    }
+    return totalDeleted;
+  } catch (err) {
+    console.warn('cleanupAllRedeemedInvites error:', err?.message || err);
+    return 0;
+  }
+}
+
+export async function redeemInvite({ code, qrToken, installationId, password, webUid, tenantSlug }) {
   const normalized = normalizeCode(code);
   const isQr = Boolean(qrToken);
   const lookupHash = isQr ? hmac(`qr:${qrToken}`) : hmac(`short:${normalized}`);
@@ -142,6 +201,7 @@ export async function redeemInvite({ code, qrToken, installationId, webUid, tena
 
     const memberRef = adminDb.doc(`tenants/${tenantId}/members/${user.uid}`);
     const deviceRef = installationId ? memberRef.collection('devices').doc(installationId) : null;
+    const passwordHash = password ? crypto.createHash('sha256').update(`${password}:${user.uid}`).digest('hex') : null;
     const batch = adminDb.batch();
     batch.set(adminDb.doc(`users/${user.uid}`), {
       email: inviteData.emailNormalized || null,
@@ -152,7 +212,9 @@ export async function redeemInvite({ code, qrToken, installationId, webUid, tena
     batch.set(memberRef, {
       displayName: inviteData.displayName, email: inviteData.emailNormalized, role: inviteData.role,
       defaultLanguage: inviteData.defaultLanguage, assignedProjectIds: inviteData.assignedProjectIds,
-      status: 'active', createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      status: 'active',
+      ...(passwordHash ? { passwordHash } : {}),
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
     if (deviceRef) batch.set(deviceRef, { status: 'active', activatedAt: FieldValue.serverTimestamp(), lastSeenAt: FieldValue.serverTimestamp() });
     batch.update(inviteRef, { status: 'redeemed', redeemedAt: FieldValue.serverTimestamp(), redeemedByUid: user.uid, updatedAt: FieldValue.serverTimestamp() });
@@ -165,4 +227,43 @@ export async function redeemInvite({ code, qrToken, installationId, webUid, tena
     await inviteRef.update({ status: 'pending', reservationId: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() }).catch(() => {});
     throw error;
   }
+}
+
+export async function loginMonteur({ tenantId, monteurId, password }) {
+  if (!tenantId || !monteurId || !password) return null;
+  const memberRef = adminDb.doc(`tenants/${tenantId}/members/${monteurId}`);
+  const snap = await memberRef.get();
+  if (!snap.exists || snap.get('status') !== 'active') {
+    const error = new Error('MEMBER_NOT_FOUND');
+    error.publicCode = 'MEMBER_NOT_FOUND';
+    throw error;
+  }
+  const memberData = snap.data();
+  const expectedHash = memberData.passwordHash;
+  if (!expectedHash) {
+    const error = new Error('PASSWORD_NOT_SET');
+    error.publicCode = 'PASSWORD_NOT_SET';
+    throw error;
+  }
+  const inputHash = crypto.createHash('sha256').update(`${password}:${monteurId}`).digest('hex');
+  if (inputHash !== expectedHash) {
+    const error = new Error('INVALID_PASSWORD');
+    error.publicCode = 'INVALID_PASSWORD';
+    throw error;
+  }
+  const customToken = await adminAuth.createCustomToken(monteurId);
+  return {
+    success: true,
+    customToken,
+    tenantId,
+    monteur: {
+      id: monteurId,
+      name: memberData.displayName || 'Monteur',
+      email: memberData.email || '',
+      role: memberData.role || 'monteur',
+      defaultLanguage: memberData.defaultLanguage || 'de',
+      assignedProjectIds: memberData.assignedProjectIds || [],
+      tenantId,
+    },
+  };
 }

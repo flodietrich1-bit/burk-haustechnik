@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef, type FormEvent, type ReactNode } from 'react';
-import { ArrowLeft, Ban, Building2, Camera, Check, Copy, ImageUp, Mail, Pencil, Plus, RefreshCw, Save, Trash2, Users } from 'lucide-react';
+import { ArrowLeft, Building2, Camera, Check, Copy, ImageUp, Mail, Pencil, Plus, Save, Trash2, Users } from 'lucide-react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getDownloadURL, ref, uploadBytesResumable, type UploadTask } from 'firebase/storage';
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
@@ -10,7 +10,8 @@ type Role = 'admin' | 'bauleiter' | 'kaufmaennisch' | 'monteur';
 interface Company { legalName?: string; street?: string; postalCode?: string; city?: string; country?: string; phone?: string; email?: string; website?: string; billingSameAsContact?: boolean; billingName?: string; billingEmail?: string; billingPhone?: string; vatId?: string; contactName?: string; }
 interface Tenant { id: string; name: string; slug: string; publicSlug?: string; status: string; company?: Company; branding?: { primaryColor?: string; secondaryColor?: string; logoPath?: string | null; logoZoom?: number }; }
 interface Member { id: string; displayName?: string; email?: string; role?: Role; status?: string; }
-interface Invite { id: string; displayName: string; email?: string; role: Role; status: string; emailSent?: boolean; emailError?: string | null; expiresAt?: string; }
+interface Project { id: string; name: string; }
+interface Invite { id: string; displayName: string; email?: string; role: Role; status: string; emailSent?: boolean; emailError?: string | null; expiresAt?: string; assignedProjectIds?: string[]; projectId?: string | null; projectName?: string | null; }
 interface InviteResult { inviteId: string; qrToken: string; shortCode: string; qrDataUrl: string; webInviteUrl?: string; pdfBase64: string; emailSent: boolean; emailError?: string | null; }
 
 const roles: Array<{ id: Role; label: string; help: string }> = [
@@ -24,7 +25,11 @@ const roleNames: Record<Role, string> = { admin: 'Administrator', bauleiter: 'Ba
 export function TenantDetailPage() {
   const { tenantId = '' } = useParams();
   const navigate = useNavigate();
-  const [tenant, setTenant] = useState<Tenant | null>(null); const [members, setMembers] = useState<Member[]>([]); const [invites, setInvites] = useState<Invite[]>([]);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [inviteRole, setInviteRole] = useState<Role | null>(null); const [result, setResult] = useState<InviteResult | null>(null); const [inviteNotice, setInviteNotice] = useState('');
   const [displayName, setName] = useState(''); const [email, setEmail] = useState(''); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
   const [company, setCompany] = useState<Company>({}); const [primaryColor, setPrimaryColor] = useState('#7E3FE6'); const [secondaryColor, setSecondaryColor] = useState('#1F1A4D'); const [logoZoom, setLogoZoom] = useState(1); const [logoFile, setLogoFile] = useState<File | null>(null); const [logoPreview, setLogoPreview] = useState(''); const [savedLogoUrl, setSavedLogoUrl] = useState(''); const [logoLoadError, setLogoLoadError] = useState(false);
@@ -47,8 +52,13 @@ export function TenantDetailPage() {
 
   const load = useCallback(async () => {
     try {
-      const [tenantData, memberData, inviteData] = await Promise.all([api<Tenant>(`/tenants/${tenantId}`), api<Member[]>(`/tenants/${tenantId}/members`), api<Invite[]>(`/tenants/${tenantId}/invites`)]);
-      setTenant(tenantData); setMembers(memberData); setInvites(inviteData); setCompany(tenantData.company || {}); setPrimaryColor(tenantData.branding?.primaryColor || '#7E3FE6'); setSecondaryColor(tenantData.branding?.secondaryColor || '#1F1A4D'); setLogoZoom(tenantData.branding?.logoZoom || 1);
+      const [tenantData, memberData, inviteData, projectData] = await Promise.all([
+        api<Tenant>(`/tenants/${tenantId}`),
+        api<Member[]>(`/tenants/${tenantId}/members`),
+        api<Invite[]>(`/tenants/${tenantId}/invites`),
+        api<Project[]>(`/tenants/${tenantId}/projects`).catch(() => []),
+      ]);
+      setTenant(tenantData); setMembers(memberData); setInvites(inviteData); setProjects(projectData || []); setCompany(tenantData.company || {}); setPrimaryColor(tenantData.branding?.primaryColor || '#7E3FE6'); setSecondaryColor(tenantData.branding?.secondaryColor || '#1F1A4D'); setLogoZoom(tenantData.branding?.logoZoom || 1);
     } catch {
       try {
         const [tenantSnap, memberSnap] = await Promise.all([
@@ -60,6 +70,7 @@ export function TenantDetailPage() {
         setTenant(tenantData);
         setMembers(memberSnap.docs.map(item => ({ id: item.id, ...item.data() }) as Member));
         setInvites([]);
+        setProjects([]);
         setCompany(tenantData.company || {});
         setPrimaryColor(tenantData.branding?.primaryColor || '#7E3FE6');
         setSecondaryColor(tenantData.branding?.secondaryColor || '#1F1A4D');
@@ -122,7 +133,7 @@ export function TenantDetailPage() {
     finally { setBusy(false); }
   }
   async function deleteMember(member: Member) {
-    if (!confirm(`„${member.displayName || member.email || 'Dieses Mitglied'}“ aus dieser Firma entfernen? Der Zugang zu dieser Firma wird entzogen.`)) return;
+    if (!confirm(`Möchtest du „${member.displayName || member.email || 'Dieses Mitglied'}“ wirklich unwiderruflich löschen? Der Zugang zur App und das Benutzerkonto werden vollständig gelöscht.`)) return;
     setBusy(true); setError(''); setNotice('');
     try {
       await api(`/tenants/${tenantId}/members/${encodeURIComponent(member.id)}`, { method: 'DELETE' });
@@ -136,13 +147,45 @@ export function TenantDetailPage() {
   }
   const hasAdmin = members.some(member => member.role === 'admin' && member.status === 'active') || invites.some(item => item.role === 'admin' && item.status === 'pending' && Boolean(item.expiresAt && new Date(item.expiresAt) > new Date()));
   function openInvite(role: Role = 'admin', name = '', contactEmail = '') {
-    setInviteRole(hasAdmin ? role : 'admin'); setName(name); setEmail(contactEmail); setResult(null); setInviteNotice(''); setError('');
+    setInviteRole(hasAdmin ? role : 'admin');
+    setName(name);
+    setEmail(contactEmail);
+    if (projects.length === 1) setSelectedProjectId(projects[0].id);
+    else setSelectedProjectId('');
+    setResult(null);
+    setInviteNotice('');
+    setError('');
   }
-  function closeInvite() { setInviteRole(null); setResult(null); setName(''); setEmail(''); setInviteNotice(''); setError(''); }
+  function closeInvite() { setInviteRole(null); setResult(null); setName(''); setEmail(''); setSelectedProjectId(''); setInviteNotice(''); setError(''); }
   async function invite(event: FormEvent) {
     event.preventDefault(); if (!inviteRole) return; setBusy(true); setError('');
-    try { const data = await api<InviteResult>(`/tenants/${tenantId}/invites`, { method: 'POST', body: JSON.stringify({ displayName, email: email || undefined, role: inviteRole }) }); setResult(data); setInviteNotice(''); await load(); }
+    try {
+      const data = await api<InviteResult>(`/tenants/${tenantId}/invites`, {
+        method: 'POST',
+        body: JSON.stringify({
+          displayName,
+          email: email || undefined,
+          role: inviteRole,
+          assignedProjectIds: selectedProjectId ? [selectedProjectId] : [],
+          projectId: selectedProjectId || undefined,
+        }),
+      });
+      setResult(data); setInviteNotice(''); await load();
+    }
     catch (inviteError) { setError(message(inviteError, 'Einladung konnte nicht erstellt werden.')); } finally { setBusy(false); }
+  }
+  async function deleteInvite(id: string, name?: string) {
+    if (!confirm(`Möchtest du die Einladung für „${name || 'diesen Benutzer'}“ wirklich löschen?`)) return;
+    setBusy(true); setError('');
+    try {
+      await api(`/tenants/${tenantId}/invites/${id}`, { method: 'DELETE' });
+      await load();
+      setNotice(`Einladung für „${name || 'Benutzer'}“ gelöscht.`);
+    } catch (e) {
+      setError(message(e, 'Löschen fehlgeschlagen.'));
+    } finally {
+      setBusy(false);
+    }
   }
   async function revoke(id: string) { try { await api(`/tenants/${tenantId}/invites/${id}/revoke`, { method: 'POST' }); await load(); } catch (e) { setError(message(e, 'Widerrufen fehlgeschlagen.')); } }
   async function resend(id: string) { setBusy(true); setError(''); try { const data = await api<InviteResult>(`/tenants/${tenantId}/invites/${id}/resend`, { method: 'POST' }); const item = invites.find(invite => invite.id === id); setInviteRole(item?.role || inviteRole || 'admin'); setName(item?.displayName || displayName); setEmail(item?.email || email); setResult(data); setInviteNotice(''); await load(); } catch (e) { setError(message(e, 'Neuversand fehlgeschlagen.')); } finally { setBusy(false); } }
@@ -224,8 +267,139 @@ export function TenantDetailPage() {
         {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         {inviteNotice && <p role="status" className="rounded-xl bg-[#F2EBFF] p-3 text-sm text-[#1F1A4D]">{inviteNotice}</p>}
         <button type="button" onClick={downloadPdf} className="text-sm font-semibold text-[#7E3FE6] hover:underline">Einladungs-PDF herunterladen</button>
-      </div> : <form onSubmit={invite} className="space-y-5">{!hasAdmin && <p className="rounded-xl bg-[#F2EBFF] p-3 text-sm text-[#1F1A4D]">Für diese Firma muss zuerst ein Administrator eingeladen werden.</p>}<label className="block text-sm font-semibold text-[#1F1A4D]">Rolle<select value={inviteRole} onChange={e=>setInviteRole(e.target.value as Role)} className="mt-2 w-full rounded-xl border border-[#E8E2F0] bg-white px-4 py-3">{roles.map(role=><option key={role.id} value={role.id} disabled={!hasAdmin && role.id!=='admin'}>{roleNames[role.id]}</option>)}</select></label><label className="block text-sm font-semibold text-[#1F1A4D]">Vor- und Nachname<input className="mt-2 w-full rounded-xl border border-[#E8E2F0] px-4 py-3" value={displayName} onChange={e=>setName(e.target.value)} required/></label><label className="block text-sm font-semibold text-[#1F1A4D]">E-Mail{inviteRole==='monteur' && ' (optional)'}<input type="email" className="mt-2 w-full rounded-xl border border-[#E8E2F0] px-4 py-3" value={email} onChange={e=>setEmail(e.target.value)} required={inviteRole!=='monteur'}/></label>{error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}<button disabled={busy} className="w-full rounded-xl bg-[#7E3FE6] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6B2BD8] disabled:opacity-50">{busy ? 'Einladung wird gesendet …' : 'Jetzt einladen'}</button></form>}</div></div>}
-      <section className="overflow-hidden rounded-3xl bg-white shadow-sm"><div className="border-b p-5"><Heading icon={Mail} title="Einladungen" text="Ausstehende, eingelöste und widerrufene Einladungen"/></div><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-[#F7F4FD] text-left text-xs uppercase text-[#6B6481]"><tr><th className="p-4">Name</th><th>Rolle</th><th>Status</th><th>Gültig bis</th><th/></tr></thead><tbody>{invites.map(item=><tr key={item.id} className="border-t"><td className="p-4"><b>{item.displayName}</b><br/><span className="text-xs text-[#6B6481]">{item.email || 'ohne E-Mail'}</span></td><td>{roleNames[item.role]}</td><td>{item.status}</td><td>{item.expiresAt ? new Date(item.expiresAt).toLocaleString('de-DE') : '–'}</td><td><div className="flex gap-3">{item.status !== 'redeemed' && <><button onClick={()=>void resend(item.id)} title="Neu senden"><RefreshCw className="h-4 w-4"/></button><button onClick={()=>void revoke(item.id)} title="Widerrufen" className="text-red-600"><Ban className="h-4 w-4"/></button></>}</div></td></tr>)}</tbody></table>{!invites.length && <p className="p-8 text-center text-sm text-[#89839B]">Noch keine Einladungen vorhanden.</p>}</div></section>
+      </div> : <form onSubmit={invite} className="space-y-5">
+        {!hasAdmin && <p className="rounded-xl bg-[#F2EBFF] p-3 text-sm text-[#1F1A4D]">Für diese Firma muss zuerst ein Administrator eingeladen werden.</p>}
+        <label className="block text-sm font-semibold text-[#1F1A4D]">Rolle
+          <select value={inviteRole} onChange={e=>setInviteRole(e.target.value as Role)} className="mt-2 w-full rounded-xl border border-[#E8E2F0] bg-white px-4 py-3 cursor-pointer">
+            {roles.map(role=><option key={role.id} value={role.id} disabled={!hasAdmin && role.id!=='admin'}>{roleNames[role.id]}</option>)}
+          </select>
+        </label>
+        {projects.length > 0 && (
+          <label className="block text-sm font-semibold text-[#1F1A4D]">Projektzuweisung
+            <select
+              value={selectedProjectId}
+              onChange={e => setSelectedProjectId(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-[#E8E2F0] bg-white px-4 py-3 text-sm cursor-pointer"
+            >
+              <option value="">Keinem Projekt zuordnen</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  🏢 {p.name || p.id}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="block text-sm font-semibold text-[#1F1A4D]">Vor- und Nachname
+          <input className="mt-2 w-full rounded-xl border border-[#E8E2F0] px-4 py-3" value={displayName} onChange={e=>setName(e.target.value)} required/>
+        </label>
+        <label className="block text-sm font-semibold text-[#1F1A4D]">E-Mail{inviteRole==='monteur' && ' (optional)'}
+          <input type="email" className="mt-2 w-full rounded-xl border border-[#E8E2F0] px-4 py-3" value={email} onChange={e=>setEmail(e.target.value)} required={inviteRole!=='monteur'}/>
+        </label>
+        {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        <button disabled={busy} className="w-full rounded-xl bg-[#7E3FE6] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6B2BD8] disabled:opacity-50 cursor-pointer">
+          {busy ? 'Einladung wird gesendet …' : 'Jetzt einladen'}
+        </button>
+      </form>}</div></div>}
+      <section className="overflow-hidden rounded-3xl bg-white shadow-sm">
+        <div className="border-b p-5">
+          <Heading icon={Mail} title="Einladungen" text="Ausstehende, angenommene und widerrufene Einladungen (automatische Bereinigung nach 30 Tagen)"/>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[#F7F4FD] text-left text-xs uppercase text-[#6B6481]">
+              <tr>
+                <th className="p-4">Name</th>
+                <th>Rolle</th>
+                <th>Projekt</th>
+                <th>Status</th>
+                <th>Gültig bis</th>
+                <th className="p-4 text-right">Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map(item => {
+                const assignedProj = projects.find(p => p.id === item.projectId || item.assignedProjectIds?.includes(p.id));
+                const isPending = item.status === 'pending';
+                const isRedeemed = item.status === 'redeemed';
+                const isRevoked = item.status === 'revoked';
+
+                return (
+                  <tr key={item.id} className="border-t hover:bg-[#FAF8FE] transition-colors">
+                    <td className="p-4">
+                      <b>{item.displayName}</b><br/>
+                      <span className="text-xs text-[#6B6481]">{item.email || 'ohne E-Mail'}</span>
+                    </td>
+                    <td>
+                      <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-bold text-blue-800">
+                        {roleNames[item.role]}
+                      </span>
+                    </td>
+                    <td className="text-xs text-[#6B6481]">
+                      {assignedProj ? (
+                        <span className="font-semibold text-blue-900 bg-blue-50/70 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                          🏢 {assignedProj.name}
+                        </span>
+                      ) : (
+                        item.projectName ? (
+                          <span className="font-semibold text-blue-900 bg-blue-50/70 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                            🏢 {item.projectName}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">Kein Projekt</span>
+                        )
+                      )}
+                    </td>
+                    <td>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                        isRedeemed ? 'bg-emerald-100 text-emerald-800' :
+                        isRevoked ? 'bg-slate-100 text-slate-500' :
+                        'bg-amber-100 text-amber-800'
+                      }`}>
+                        {isRedeemed ? '✓ Angenommen' : isRevoked ? 'Widerrufen' : 'Ausstehend'}
+                      </span>
+                    </td>
+                    <td>{item.expiresAt ? new Date(item.expiresAt).toLocaleDateString('de-DE') : '–'}</td>
+                    <td className="p-4 text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        {isPending && item.email && (
+                          <button
+                            type="button"
+                            onClick={() => void resend(item.id)}
+                            className="cursor-pointer text-xs font-semibold text-[#7E3FE6] hover:underline"
+                            title="Einladung erneut senden"
+                          >
+                            Erneut einladen
+                          </button>
+                        )}
+                        {isPending && (
+                          <button
+                            type="button"
+                            onClick={() => void revoke(item.id)}
+                            className="cursor-pointer text-xs font-semibold text-amber-700 hover:underline"
+                            title="Einladung widerrufen"
+                          >
+                            Widerrufen
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void deleteInvite(item.id, item.displayName)}
+                          className="cursor-pointer text-xs font-semibold text-red-600 hover:underline"
+                          title="Einladung manuell löschen"
+                        >
+                          Löschen
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!invites.length && <p className="p-8 text-center text-sm text-[#89839B]">Noch keine Einladungen vorhanden.</p>}
+        </div>
+      </section>
     </main>
   </div>;
 }
