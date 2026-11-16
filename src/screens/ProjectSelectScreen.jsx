@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
@@ -20,7 +21,20 @@ export default function ProjectSelectScreen({
   currentLang = 'de',
   onSelectLang,
   onLogout = null,
+  onRefresh = null,
 }) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.ink} />
@@ -98,11 +112,25 @@ export default function ProjectSelectScreen({
       </View>
 
       {/* Projects List */}
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('selectProjectTitle', currentLang)}</Text>
-          <Text style={styles.sectionSub}>{t('selectProjectSub', currentLang)}</Text>
-        </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={COLORS.amber}
+              colors={[COLORS.amber]}
+            />
+          ) : undefined
+        }
+      >
+        {projects.length > 0 && (
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('selectProjectTitle', currentLang)}</Text>
+            <Text style={styles.sectionSub}>{t('selectProjectSub', currentLang)}</Text>
+          </View>
+        )}
 
         {projects.length === 0 ? (
           <View style={styles.emptyStateBox}>
@@ -111,6 +139,19 @@ export default function ProjectSelectScreen({
             <Text style={styles.emptyStateSub}>
               {t('noProjectsSub', currentLang)}
             </Text>
+            {onRefresh && (
+              <TouchableOpacity
+                style={styles.refreshBtn}
+                onPress={handleRefresh}
+                activeOpacity={0.7}
+                disabled={refreshing}
+              >
+                <Text style={styles.refreshBtnText}>
+                  {refreshing ? '⏳ ' : '🔄 '}
+                  {t('refreshProjectsBtn', currentLang)}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           projects.map((proj) => (
@@ -431,14 +472,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: COLORS.ink,
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: 'center',
   },
   emptyStateSub: {
-    fontSize: 12.5,
+    fontSize: 13,
     color: COLORS.muted,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  refreshBtn: {
+    backgroundColor: COLORS.amber,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 4,
+  },
+  refreshBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   monteurBadgeRight: {
     flexDirection: 'row',

@@ -264,6 +264,29 @@ export default function App() {
     setAppPhase('login');
   }, []);
 
+  const handleRefreshProjects = useCallback(async () => {
+    try {
+      const tenantId = await getTenantId();
+      const updatedAssigned = await loadAssignedProjects(tenantId, monteur);
+      const activeList = Array.isArray(updatedAssigned)
+        ? updatedAssigned.filter((p) => p && p.status !== 'deleted' && !p.isDeleted)
+        : [];
+      setAvailableProjects(activeList);
+      if (activeList.length === 1) {
+        const targetProj = activeList[0];
+        setProject(targetProj);
+        if (targetProj?.id) {
+          await setActiveProjectId(targetProj.id);
+          await refreshData(targetProj.id);
+        }
+        setAppPhase('app');
+        setCurrentScreen('rooms');
+      }
+    } catch (err) {
+      console.warn('Error refreshing assigned projects:', err);
+    }
+  }, [monteur]);
+
   // 2. NetInfo Listener for real-time connectivity & background sync
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener(async (state) => {
@@ -1250,6 +1273,7 @@ export default function App() {
         onSelectLang={handleSelectLang}
         onSelectProject={handleSelectProject}
         onLogout={handleLogout}
+        onRefresh={handleRefreshProjects}
       />
     );
   }

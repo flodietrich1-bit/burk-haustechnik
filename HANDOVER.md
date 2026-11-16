@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.46` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.47` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung).
 - The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -243,6 +243,15 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-16 (v2.47)**
+  - **Ziel / Anlass:** Klarer Leerzustand bei nicht zugeordneten Projekten („Dir wurde noch kein Projekt zugeordnet. Bitte melde dich gegebenenfalls bei deinem zuständigen Projektleiter.“) ohne irreführende Projektauswahl-Überschrift, inkl. Pull-to-Refresh und Neuladen-Button.
+  - **Änderungen:**
+    - `i18n.js`: `noProjectsAvailable` und `noProjectsSub` mit der exakten Wunschformulierung in allen 4 Sprachen (DE, RO, PL, HR) aktualisiert. Neuen Übersetzungs-Key `refreshProjectsBtn` ergänzt.
+    - `ProjectSelectScreen.jsx`: `sectionHeader` ausgeblendet, wenn `projects.length === 0`. Prominenter Neuladen-Button (`refreshBtn`) und `RefreshControl` auf der ScrollView integriert.
+    - `App.js`: `handleRefreshProjects` implementiert und als `onRefresh`-Prop an `ProjectSelectScreen` übergeben; leitet bei 1 neu zugeordnetem Projekt sofort in die Raumliste weiter.
+    - `src/constants/version.js`: Versions-Bump auf `v2.47`.
+  - **Verifikation:** `npx expo-doctor` 20/20 Checks bestanden, `npx expo export --platform ios` (818 Module) fehlerfrei gebündelt, `git diff --check` fehlerfrei.
 
 - **2026-11-16 (v2.46)**
   - **Ziel / Anlass:** Saubere User- und Google-Auth-Löschung, Signalerkennung gelöschter User in TTApp, Abmelde-Icon im Header mit Passwort-Sperre/LoginScreen und Bereinigung gelöschter Projekte.
