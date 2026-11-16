@@ -198,6 +198,14 @@ export default function MaterialBookingCard({
     }
   };
 
+  const remainingQty = finalIsUnplanned
+    ? 0
+    : Math.max(0, Number((baseTarget - currentRoomVerb).toFixed(2)));
+
+  const displayVerbVal = currentRoomVerb > 0
+    ? `+${formatQty(currentRoomVerb, isMeter, isDraggingSlider && isMeter)}`
+    : '0';
+
   const formattedDelta = formatQty(safeDelta, isMeter, isDraggingSlider && isMeter);
 
   return (
@@ -263,84 +271,146 @@ export default function MaterialBookingCard({
         </View>
       </View>
 
-      {/* 2. 3-Metrics Matrix: Geplant | Verfügbar | Verbaut */}
-      <View style={styles.metricsContainer}>
-        {/* Geplant */}
-        <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>{t('matrixPlanned', currentLang)}</Text>
-          <Text style={styles.metricValue}>
-            {finalIsUnplanned ? (
-              <>
-                0 <Text style={styles.metricUnit}>{displayQu}</Text>
-              </>
-            ) : (
-              <>
-                {hasRoomPlan ? `${formatQty(roomPlanned, isMeter)} ` : '–'}
-                {hasRoomPlan ? <Text style={styles.metricUnit}>{displayQu}</Text> : ''}
-              </>
-            )}
-          </Text>
-          <Text style={styles.metricSub}>
-            {finalIsUnplanned
-              ? t('unplannedBadge', currentLang)
-              : hasRoomPlan
-              ? t('matrixRoom', currentLang)
-              : t('matrixOnlyGaeb', currentLang)}
-          </Text>
+      {userReason ? (
+        <View style={styles.reasonBadgeRow}>
+          <View style={styles.reasonBadge}>
+            <Text style={styles.reasonBadgeText} numberOfLines={1}>
+              ℹ️ {userReason}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      {/* 2. Quantity Box: GEPLANT (left) & VERBAUT Pill with Integrated Stepper (right) */}
+      <View style={styles.quantityBox}>
+        <View style={styles.quantityTopRow}>
+          {/* GEPLANT */}
+          <View style={styles.plannedCol}>
+            <Text style={styles.qtyLabel}>{t('matrixPlanned', currentLang)}</Text>
+            <Text style={styles.plannedValue}>
+              {finalIsUnplanned ? (
+                <>
+                  0 <Text style={styles.plannedUnit}>{displayQu}</Text>
+                </>
+              ) : (
+                <>
+                  {hasRoomPlan ? `${formatQty(roomPlanned, isMeter)} ` : '– '}
+                  <Text style={styles.plannedUnit}>{displayQu}</Text>
+                </>
+              )}
+            </Text>
+          </View>
+
+          {/* VERBAUT Stepper Pill: [ − | VERBAUT +20 m | + ] */}
+          <View
+            style={[
+              styles.installedStepperPill,
+              isOver &&
+                (progressPct > 110
+                  ? styles.installedStepperPillOverRed
+                  : styles.installedStepperPillOverYellow),
+            ]}
+          >
+            {/* Minus Button */}
+            <TouchableOpacity
+              style={[styles.stepperInlineBtn, isLocked && styles.stepperInlineBtnDisabled]}
+              onPress={() => {
+                if (isLocked) {
+                  if (onLockedAction) onLockedAction();
+                  return;
+                }
+                onStep(mat.id, -1);
+              }}
+              disabled={isLocked}
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.stepperInlineBtnText, isLocked && styles.stepperInlineBtnTextDisabled]}>−</Text>
+            </TouchableOpacity>
+
+            {/* Center: VERBAUT & Value (Tappable for Calculator on Meter items) */}
+            <TouchableOpacity
+              style={styles.installedValCenter}
+              disabled={!canOpenCalculator && !isLocked}
+              onPress={openCalculator}
+              activeOpacity={canOpenCalculator ? 0.65 : 1}
+            >
+              <Text
+                style={[
+                  styles.installedLabelText,
+                  isOver &&
+                    (progressPct > 110
+                      ? styles.installedTextOverRed
+                      : styles.installedTextOverYellow),
+                ]}
+              >
+                {t('matrixInstalled', currentLang)}
+              </Text>
+              <Text
+                style={[
+                  styles.installedValText,
+                  isOver &&
+                    (progressPct > 110
+                      ? styles.installedTextOverRed
+                      : styles.installedTextOverYellow),
+                ]}
+              >
+                {displayVerbVal} {displayQu}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Plus Button */}
+            <TouchableOpacity
+              style={[styles.stepperInlineBtn, isPlusDisabled && styles.stepperInlineBtnDisabled]}
+              onPress={() => {
+                if (isLocked) {
+                  if (onLockedAction) onLockedAction();
+                  return;
+                }
+                onStep(mat.id, 1);
+              }}
+              disabled={isPlusDisabled}
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.stepperInlineBtnText, isPlusDisabled && styles.stepperInlineBtnTextDisabled]}>+</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.metricDivider} />
-
-        {/* Verfügbar */}
-        <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>{t('matrixAvailable', currentLang)}</Text>
+        {/* Bottom Banner: Noch übrig: {geplant - verbaut} m */}
+        <View
+          style={[
+            styles.remainingBanner,
+            isOver
+              ? (progressPct > 110 ? styles.remainingBannerRed : styles.remainingBannerYellow)
+              : null,
+          ]}
+        >
           <Text
             style={[
-              styles.metricValue,
+              styles.remainingBannerText,
               isOver
-                ? (progressPct > 110 ? styles.metricValOverRed : styles.metricValOverYellow)
-                : availableQty === 0
-                ? styles.metricValDone
+                ? (progressPct > 110
+                    ? styles.remainingBannerTextRed
+                    : styles.remainingBannerTextYellow)
                 : null,
             ]}
           >
-            {isOver ? `-${formatQty(exceededBy, isMeter)}` : formatQty(availableQty, isMeter, isDraggingSlider && isMeter)}{' '}
-            <Text style={styles.metricUnit}>{displayQu}</Text>
-          </Text>
-          <Text style={styles.metricSub}>
-            {isOver
-              ? t('matrixOver', currentLang)
-              : finalIsUnplanned
-              ? t('matrixRemaining', currentLang) || 'Rest'
-              : t('matrixOpen', currentLang)}
+            {finalIsUnplanned
+              ? t('siteStockRemaining', currentLang, {
+                  qty: formatQty(availableQty, isMeter, isDraggingSlider && isMeter),
+                  unit: displayQu,
+                })
+              : isOver
+              ? t('overConsumptionRemaining', currentLang, {
+                  qty: formatQty(exceededBy, isMeter, isDraggingSlider && isMeter),
+                  unit: displayQu,
+                })
+              : t('remainingLeft', currentLang, {
+                  qty: formatQty(remainingQty, isMeter, isDraggingSlider && isMeter),
+                  unit: displayQu,
+                })}
           </Text>
         </View>
-
-        <View style={styles.metricDivider} />
-
-        {/* Verbaut (Tappable for exact input on Meter items) */}
-        <TouchableOpacity
-          style={[styles.metricCell, canOpenCalculator && styles.metricCellEditable]}
-          disabled={!canOpenCalculator && !isLocked}
-          onPress={openCalculator}
-          activeOpacity={canOpenCalculator ? 0.65 : 1}
-        >
-          <Text style={styles.metricLabel}>
-            {t('matrixInstalled', currentLang)}
-            {canOpenCalculator ? ' ✎' : ''}
-          </Text>
-          <Text
-            style={[
-              styles.metricValue,
-              isOver ? (progressPct > 110 ? styles.metricValOverRed : styles.metricValOverYellow) : null,
-              canOpenCalculator && styles.metricValueEditable,
-            ]}
-          >
-            {formatQty(currentRoomVerb, isMeter, isDraggingSlider && isMeter)}{' '}
-            <Text style={styles.metricUnit}>{displayQu}</Text>
-          </Text>
-          <Text style={styles.metricSub}>{t('matrixInRoom', currentLang)}</Text>
-        </TouchableOpacity>
       </View>
 
       {/* 3. Interactive Progress Bar (Draggable up to 100%) */}
@@ -349,7 +419,7 @@ export default function MaterialBookingCard({
           <ProgressBar
             progress={rawPct}
             isOver={isOver}
-            height={6}
+            height={7}
             interactive={canInteractiveSlide}
             onSlideRatio={handleSlideRatio}
             onDragStateChange={handleSliderDragState}
@@ -367,66 +437,6 @@ export default function MaterialBookingCard({
         >
           {progressPct} %
         </Text>
-      </View>
-
-      {/* 4. Bottom Row: Stepper (+ / − always in integer steps; tapping number opens calculator for meter units) */}
-      <View style={styles.cardFooterRow}>
-        <View style={{ flex: 1, paddingRight: 8 }}>
-          {userReason ? (
-            <View style={styles.reasonBadge}>
-              <Text style={styles.reasonBadgeText} numberOfLines={1}>
-                ℹ️ {userReason}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Stepper (+ / −) */}
-        <View style={styles.stepperWrapper}>
-          <TouchableOpacity
-            style={[styles.stepperBtn, isLocked && styles.stepperBtnDisabled]}
-            onPress={() => {
-              if (isLocked) {
-                if (onLockedAction) onLockedAction();
-                return;
-              }
-              onStep(mat.id, -1);
-            }}
-            disabled={isLocked}
-            activeOpacity={0.6}
-          >
-            <Text style={[styles.stepperBtnText, isLocked && styles.stepperBtnTextDisabled]}>−</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.stepperValBox, canOpenCalculator && styles.stepperValBoxEditable]}
-            disabled={!canOpenCalculator && !isLocked}
-            onPress={openCalculator}
-            activeOpacity={canOpenCalculator ? 0.65 : 1}
-          >
-            <Text style={[styles.stepperValText, canOpenCalculator && styles.stepperValTextEditable]}>
-              {safeDelta > 0 ? `+${formattedDelta}` : formattedDelta}
-            </Text>
-            <Text style={styles.stepperUnitText}>
-              {displayQu} {canOpenCalculator ? '✎' : t('perWeek', currentLang)}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.stepperBtn, isPlusDisabled && styles.stepperBtnDisabled]}
-            onPress={() => {
-              if (isLocked) {
-                if (onLockedAction) onLockedAction();
-                return;
-              }
-              onStep(mat.id, 1);
-            }}
-            disabled={isPlusDisabled}
-            activeOpacity={0.6}
-          >
-            <Text style={[styles.stepperBtnText, isPlusDisabled && styles.stepperBtnTextDisabled]}>+</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* 5. Calculator Keypad Modal (Strictly for Meter Units: 0-9 and comma) */}

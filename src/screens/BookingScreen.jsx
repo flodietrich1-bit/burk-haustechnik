@@ -207,7 +207,7 @@ export default function BookingScreen({
     onQuantityChange(matId, nextDelta);
   };
 
-  // Stepper (+/-) always works in integer steps (+1 / -1)
+  // Stepper (+/-): springs to the next full integer (e.g. 15.7 -> (+) 16.0 / (-) 15.0)
   const handleStep = (matId, stepDelta) => {
     if (isLocked) {
       handleLockedAction();
@@ -217,12 +217,38 @@ export default function BookingScreen({
     if (!mat) return;
 
     const isMeter = isMeterUnit(mat.qu || roomPlan?.qu);
+    const hasRoomPlan = Boolean(roomPlan) && !mat.isUnplanned && !roomPlan?.isUnplanned;
+    const installedBefore = hasRoomPlan
+      ? Number(roomPlan.installedQty || 0)
+      : Number(mat.installedQty || 0);
+
     const currentDelta = Number(sessionQuantities[matId]) || 0;
-    const intStep = stepDelta >= 0 ? 1 : -1;
+    const currentTotalVerb = isMeter
+      ? Number((installedBefore + currentDelta).toFixed(2))
+      : Math.round(installedBefore + currentDelta);
+
+    const isInteger = Math.abs(currentTotalVerb - Math.round(currentTotalVerb)) < 0.001;
+
+    let nextTotalVerb;
+    if (stepDelta >= 0) {
+      // e.g. 15.7 -> 16.0; 16.0 -> 17.0
+      if (isInteger) {
+        nextTotalVerb = Math.round(currentTotalVerb) + 1;
+      } else {
+        nextTotalVerb = Math.floor(currentTotalVerb) + 1;
+      }
+    } else {
+      // e.g. 15.7 -> 15.0; 15.0 -> 14.0
+      if (isInteger) {
+        nextTotalVerb = Math.max(0, Math.round(currentTotalVerb) - 1);
+      } else {
+        nextTotalVerb = Math.max(0, Math.floor(currentTotalVerb));
+      }
+    }
 
     const nextDelta = isMeter
-      ? Math.max(0, Number((currentDelta + intStep).toFixed(2)))
-      : Math.max(0, Math.round(currentDelta + intStep));
+      ? Math.max(0, Number((nextTotalVerb - installedBefore).toFixed(2)))
+      : Math.max(0, Math.round(nextTotalVerb - installedBefore));
 
     applyNextDelta(matId, nextDelta);
   };
