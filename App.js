@@ -264,12 +264,8 @@ export default function App() {
   }, [handleUserDeleted, handleProjectDeleted]);
 
   const handleLogout = useCallback(async () => {
-    await logoutDevice();
-    setMonteur(null);
-    setProject(null);
-    setAvailableProjects([]);
-    setTenantBranding(null);
-    setAppPhase('activation');
+    await lockDevice();
+    setAppPhase('login');
   }, []);
 
   const handleRefreshProjects = useCallback(async () => {
