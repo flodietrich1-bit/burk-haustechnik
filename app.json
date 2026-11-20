@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "TTApp",
+    "name": "P12 Aufmass",
     "slug": "TTApp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,8 +8,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.vibefactory.ttapp",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "Kamera wird zum Scannen des Einladungs-QR-Codes benötigt."
+        "NSCameraUsageDescription": "Die Kamera wird zum Scannen von Einladungs-QR-Codes sowie zum Aufnehmen von Nachweisfotos für Baustellen und Räume benötigt.",
+        "NSPhotoLibraryUsageDescription": "Der Zugriff auf die Fotomediathek wird benötigt, um Nachweisfotos für Baustellen und Räume auszuwählen.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -18,7 +22,11 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "platforms": [
       "ios",
@@ -42,7 +50,15 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Kamera wird zum Scannen des Einladungs-QR-Codes benötigt."
+          "cameraPermission": "Die Kamera wird zum Scannen von Einladungs-QR-Codes sowie zum Aufnehmen von Nachweisfotos für Baustellen und Räume benötigt.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Der Zugriff auf die Fotomediathek wird benötigt, um Nachweisfotos für Baustellen und Räume auszuwählen.",
+          "cameraPermission": "Die Kamera wird zum Aufnehmen von Nachweisfotos für Baustellen und Räume benötigt."
         }
       ]
     ]

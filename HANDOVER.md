@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.53` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.56` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
 - Implemented [code]: PIN/Passwort login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung). Redesign der Materialkachel mit stabilem, fix breitem Stepper-Pill `[ − | VERBAUT +X m | + ]` (46x48px Touchflächen, hitSlop, kein Resizing beim Slider-Ziehen), Antippen auch bei Stückzahlen zum genauen Editieren (Komma deaktiviert) und durchgehendem „Noch übrig“-Balken.
 - The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -22,7 +22,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 - Libraries: `firebase ^12.19` (Firestore, Storage, Auth custom-token session), `@react-native-async-storage/async-storage`, `@react-native-community/netinfo`, `expo-file-system`, `expo-image-manipulator`, `expo-image-picker`, `expo-updates`, `expo-status-bar`, `react-native-svg` (ProgressRing) [config/code].
 - Package manager: npm (`package-lock.json`) [config].
 - Backend: Firebase project `burk-haustechnik` (Firestore + Storage); config object hard-coded in `src/services/firebase.js` [code].
-- Hosting/distribution: Expo/EAS (`owner: vibe-factory-gmbh`, updates URL `https://u.expo.dev/<projectId>`, `runtimeVersion.policy: appVersion`) [config]. No `eas.json` in repo; build profiles Unknown / needs confirmation.
+- Hosting/distribution: Expo/EAS (`owner: vibe-factory-gmbh`, updates URL `https://u.expo.dev/<projectId>`, `runtimeVersion.policy: appVersion`) [config]. `eas.json` mit Profilen für internal (development, preview) und production (autoIncrement, auto-submit) konfiguriert.
 - Git remote: `git@github.com:flodietrich1-bit/burk-haustechnik.git`; branch `Monteur` is the only app branch [git/AGENTS.md].
 
 ## 4. Repository Structure
@@ -187,6 +187,32 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-20 (v2.56)**
+  - **Ziel / Anlass:** Umsetzung des exakten Website-Links gemäß Screendesign („Du hast noch keinen Zugang? Firma anmelden / Mehr erfahren →“) unter den Login-/Aktivierungs-Boxen.
+  - **Änderungen:**
+    - `LoginScreen.jsx`: `Linking` und diskreten 2-Zeiler unter der Passwort-Login-Box eingebunden (dezent zentrierter Text + blauer unterstrichener Link zu `https://p12-aufmass.de`).
+    - `ActivationScreen.jsx`: Container bereinigt auf das schlichte Design ohne graue Box/Rahmen (gleicher Look wie auf LoginScreen).
+    - `i18n.js`: Lokalisierte Keys `noAccessQuestion` und `registerCompanyLink` in allen 4 Sprachen (DE, RO, PL, HR).
+    - `src/constants/version.js`: Bump auf `v2.56`.
+  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module fehlerfrei gebündelt).
+
+- **2026-11-20 (v2.55)**
+  - **Ziel / Anlass:** Integration eines diskreten Website-Links und Anfrage-Hinweises auf dem Aktivierungs-Screen vor dem offiziellen Livegang im Apple App Store & Google Play Store.
+  - **Änderungen:**
+    - `ActivationScreen.jsx`: `Linking` eingebunden, Button/Container „Noch kein Zugang? Website besuchen & Zugang anfragen ↗“ auf dem primären Auswahl-Screen sowie im manuellen Eingabe-Modus integriert (Ziel: `https://p12-aufmass.de`).
+    - `i18n.js`: Lokalisierte Keys `noAccessTitle` und `visitWebsiteBtn` in allen 4 Sprachen (DE, RO, PL, HR) hinterlegt.
+    - `src/constants/version.js`: Bump auf `v2.55`.
+  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
+
+- **2026-11-19 (v2.54)**
+  - **Ziel / Anlass:** Vorbereitung des ersten iOS TestFlight Releases via EAS Build & App Store Connect.
+  - **Änderungen:**
+    - `assets/icon.png`: Neues offizielles P12-Aufmaß-Icon als 1024x1024 RGB-PNG (ohne Alpha-Kanal für Apple App Store Konformität) integriert.
+    - `app.json`: `bundleIdentifier: "com.vibefactory.ttapp"`, `buildNumber: "1"`, vollständige `NSPhotoLibraryUsageDescription` & erweiterte `NSCameraUsageDescription` (inkl. Baustellen-/Raumfotos) in `infoPlist` eingetragen; Plugins `expo-camera` (`microphonePermission: false`) und `expo-image-picker` sauber konfiguriert.
+    - `eas.json`: Neu angelegt mit Build-Profilen (`development`, `preview`, `production` mit `autoIncrement: true`) und `submit`-Konfiguration.
+    - `src/constants/version.js`: Bump auf `v2.54`.
+  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
 
 - **2026-11-16 (v2.53)**
   - **Ziel / Anlass:** Große, leicht treffbare Klickflächen für `+` und `−`, stabile feste Breite für die Stepper-Box (kein Wachsen/Schrumpfen beim Slider-Ziehen) und Aktivierung des Tastatur-Modals auch bei Stückzahlen (ohne Komma).

@@ -12,12 +12,15 @@ import {
   ScrollView,
   Platform,
   Image,
+  Linking,
 } from 'react-native';
 import Svg, { Path, SvgUri } from 'react-native-svg';
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import { unlockDeviceWithPassword, logoutDevice } from '../services/authService';
+
+const WEBSITE_URL = 'https://p12-aufmass.de';
 
 export default function LoginScreen({
   monteur,
@@ -213,6 +216,21 @@ export default function LoginScreen({
                 {t('switchUserOrNewInvite', currentLang)}
               </Text>
             </TouchableOpacity>
+
+            {/* Request Access / Website Link */}
+            <View style={styles.noAccessBox}>
+              <Text style={styles.noAccessPrompt}>
+                {t('noAccessQuestion', currentLang)}
+              </Text>
+              <TouchableOpacity
+                onPress={() => Linking.openURL(WEBSITE_URL)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.noAccessLink}>
+                  {t('registerCompanyLink', currentLang)}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Version Footer */}
@@ -387,6 +405,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.muted,
     textDecorationLine: 'underline',
+  },
+  noAccessBox: {
+    marginTop: 22,
+    alignItems: 'center',
+    gap: 4,
+  },
+  noAccessPrompt: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  noAccessLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
   },
   footerContainer: {
     marginTop: 24,

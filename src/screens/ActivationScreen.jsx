@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   Image,
+  Linking,
 } from 'react-native';
 import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
@@ -22,6 +23,8 @@ import { t, LANGUAGES } from '../locales/i18n';
 import { parseInviteInput, resetInstallationId } from '../services/apiService';
 import { activateDeviceWithInvite, loadTenantBranding, getTenantId } from '../services/authService';
 import P12AufmassLogo from '../components/P12AufmassLogo';
+
+const WEBSITE_URL = 'https://p12-aufmass.de';
 
 const BARCODE_SCANNER_SETTINGS = {
   barcodeTypes: ['qr'],
@@ -674,6 +677,21 @@ export default function ActivationScreen({
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Request Access / Website Link */}
+              <View style={styles.noAccessContainer}>
+                <Text style={styles.noAccessPrompt}>
+                  {t('noAccessQuestion', currentLang)}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(WEBSITE_URL)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.noAccessLink}>
+                    {t('registerCompanyLink', currentLang)}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Footer info */}
@@ -771,6 +789,21 @@ export default function ActivationScreen({
                     {t('backToChoice', currentLang)}
                   </Text>
                 </TouchableOpacity>
+
+                {/* Request Access Link */}
+                <View style={styles.noAccessContainerManual}>
+                  <Text style={styles.noAccessPrompt}>
+                    {t('noAccessQuestion', currentLang)}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(WEBSITE_URL)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.noAccessLink}>
+                      {t('registerCompanyLink', currentLang)}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
 
@@ -954,6 +987,31 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
     color: COLORS.ink,
+  },
+  noAccessContainer: {
+    marginTop: 26,
+    alignItems: 'center',
+    gap: 4,
+    width: '100%',
+  },
+  noAccessContainerManual: {
+    marginTop: 18,
+    alignItems: 'center',
+    gap: 4,
+    width: '100%',
+  },
+  noAccessPrompt: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  noAccessLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
+    textAlign: 'center',
   },
 
   // Manual code screen
