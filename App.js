@@ -205,6 +205,7 @@ export default function App() {
     setMonteur(null);
     setProject(null);
     setAvailableProjects([]);
+    setTenantBranding(null);
     Alert.alert(
       t('userDeletedTitle', currentLang),
       t('userDeletedMsg', currentLang)
@@ -263,8 +264,12 @@ export default function App() {
   }, [handleUserDeleted, handleProjectDeleted]);
 
   const handleLogout = useCallback(async () => {
-    await lockDevice();
-    setAppPhase('login');
+    await logoutDevice();
+    setMonteur(null);
+    setProject(null);
+    setAvailableProjects([]);
+    setTenantBranding(null);
+    setAppPhase('activation');
   }, []);
 
   const handleRefreshProjects = useCallback(async () => {
@@ -1244,6 +1249,7 @@ export default function App() {
           setMonteur(null);
           setProject(null);
           setAvailableProjects([]);
+          setTenantBranding(null);
           setAppPhase('activation');
         }}
       />
