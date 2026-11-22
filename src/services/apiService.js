@@ -110,33 +110,54 @@ export async function redeemInviteApi({ code, qrToken, password }) {
   const installationId = await getInstallationId();
   const apiBase = await getApiBaseUrl();
 
-  const payload = {
-    installationId,
-    ...(code ? { code } : {}),
-    ...(qrToken ? { qrToken } : {}),
-    ...(password ? { password } : {}),
+  const sendPayload = async (codeToUse) => {
+    const payload = {
+      installationId,
+      ...(codeToUse ? { code: codeToUse } : {}),
+      ...(qrToken ? { qrToken } : {}),
+      ...(password ? { password } : {}),
+    };
+
+    const response = await fetch(`${apiBase}/public/invites/redeem`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const error = new Error(data.code || `REDEEM_FAILED_${response.status}`);
+      error.status = response.status;
+      error.code = data.code;
+      error.retryAfterSeconds = data.retryAfterSeconds;
+      throw error;
+    }
+
+    return data;
   };
 
-  const response = await fetch(`${apiBase}/public/invites/redeem`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const error = new Error(data.code || `REDEEM_FAILED_${response.status}`);
-    error.status = response.status;
-    error.code = data.code;
-    error.retryAfterSeconds = data.retryAfterSeconds;
-    throw error;
+  try {
+    return await sendPayload(code);
+  } catch (err) {
+    if (err.code === 'INVITE_INVALID' && code) {
+      const unhyphenated = code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (code.includes('-') && unhyphenated !== code) {
+        try {
+          return await sendPayload(unhyphenated);
+        } catch {}
+      } else if (!code.includes('-') && code.length === 6) {
+        const hyphenated = `${code.slice(0, 2)}-${code.slice(2)}`;
+        try {
+          return await sendPayload(hyphenated);
+        } catch {}
+      }
+    }
+    throw err;
   }
-
-  return data; // { customToken, tenantId, requiresLocalPinSetup }
 }
 
 /**

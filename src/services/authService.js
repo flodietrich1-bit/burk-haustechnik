@@ -5,6 +5,8 @@ import { doc, getDoc, setDoc, collection, getDocs, query, where } from 'firebase
 import { auth, db } from './firebase';
 import { redeemInviteApi, fetchAssignedProjectsApi, loginMonteurApi, getApiBaseUrl } from './apiService';
 import { computePasswordHash } from './hashHelper';
+import { INITIAL_ROOMS, INITIAL_MATERIALS, DEFAULT_PROJECT, DEFAULT_PROJECT_ID } from '../constants/initialData';
+import { saveRooms, saveMaterials, saveProjectInfo } from './storageService';
 
 const USER_KEY = 'ttapp_active_monteur';
 const TENANT_KEY = 'ttapp_tenant_id';
@@ -132,6 +134,16 @@ export async function getTenantId() {
  */
 export async function loadTenantBranding(tenantId) {
   if (!tenantId) return null;
+  if (tenantId === 'p12-demo') {
+    return {
+      name: 'P12 Aufmaß Demo',
+      logoUrl: null,
+      logoMimeType: '',
+      logoZoom: 1,
+      primaryColor: '#2563EB',
+      secondaryColor: '#38BDF8',
+    };
+  }
   const cacheKey = `${BRANDING_CACHE_PREFIX}${tenantId}`;
   try {
     const apiBase = await getApiBaseUrl();
@@ -252,6 +264,17 @@ export async function unlockDeviceWithPassword(password) {
 
   if (!tenantId || !monteur?.id) {
     throw new Error('NO_ACTIVE_MONTEUR');
+  }
+
+  // Demo account instant unlock
+  if (tenantId === 'p12-demo') {
+    await AsyncStorage.removeItem(IS_LOCKED_KEY);
+    return {
+      success: true,
+      tenantId,
+      monteur,
+      projects: [DEFAULT_PROJECT],
+    };
   }
 
   const online = await isOnline();
@@ -390,11 +413,62 @@ export async function activateDeviceWithInvite({ code, qrToken, password }) {
 }
 
 /**
+ * Joker / Demonstration Account Activation for Apple App Store Review & Offline Demo
+ */
+export async function activateDemoAccount(password = 'demo') {
+  const demoMonteur = {
+    id: 'user_mont_demo',
+    uid: 'user_mont_demo',
+    name: 'Stefan Maier (Prüfer)',
+    email: 'reviewer@apple.com',
+    role: 'monteur',
+    defaultLanguage: 'de',
+    assignedProjectIds: [DEFAULT_PROJECT_ID],
+    projectIds: [DEFAULT_PROJECT_ID],
+    tenantId: 'p12-demo',
+  };
+
+  const tasks = [
+    setTenantId('p12-demo'),
+    AsyncStorage.setItem(USER_KEY, JSON.stringify(demoMonteur)),
+    AsyncStorage.removeItem(IS_LOCKED_KEY),
+    saveMonteurPassword(demoMonteur.id, password || 'demo'),
+    saveRooms(INITIAL_ROOMS, DEFAULT_PROJECT_ID),
+    saveMaterials(INITIAL_MATERIALS, DEFAULT_PROJECT_ID),
+    saveProjectInfo(DEFAULT_PROJECT, DEFAULT_PROJECT_ID),
+    AsyncStorage.setItem(`@ttapp:projects:p12-demo:${demoMonteur.id}`, JSON.stringify([DEFAULT_PROJECT])),
+  ];
+
+  const branding = {
+    name: 'P12 Aufmaß Demo',
+    logoUrl: null,
+    logoMimeType: '',
+    logoZoom: 1,
+    primaryColor: '#2563EB',
+    secondaryColor: '#38BDF8',
+  };
+  tasks.push(AsyncStorage.setItem(`${BRANDING_CACHE_PREFIX}p12-demo`, JSON.stringify(branding)));
+
+  await Promise.all(tasks);
+
+  return {
+    success: true,
+    tenantId: 'p12-demo',
+    monteur: demoMonteur,
+    projects: [DEFAULT_PROJECT],
+  };
+}
+
+/**
  * Load assigned projects for tenant & monteur (online via Backend API, fallback to cache)
  */
 export async function loadAssignedProjects(tenantId, monteur) {
   const tId = tenantId || (await getTenantId());
   const activeUser = monteur || (await getActiveMonteur());
+
+  if (tId === 'p12-demo') {
+    return [DEFAULT_PROJECT];
+  }
 
   if (!tId || !activeUser?.id) return [];
 
@@ -462,6 +536,17 @@ export async function restoreSession() {
       tenantId,
       monteur,
       projects: [],
+    };
+  }
+
+  // Demo session bypass (skip Firestore check)
+  if (tenantId === 'p12-demo') {
+    return {
+      isActivated: true,
+      isLocked: false,
+      tenantId,
+      monteur,
+      projects: [DEFAULT_PROJECT],
     };
   }
 

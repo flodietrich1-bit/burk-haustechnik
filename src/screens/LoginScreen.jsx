@@ -20,8 +20,6 @@ import { APP_VERSION } from '../constants/version';
 import { t } from '../locales/i18n';
 import { unlockDeviceWithPassword, logoutDevice } from '../services/authService';
 
-const WEBSITE_URL = 'https://p12-aufmass.de';
-
 export default function LoginScreen({
   monteur,
   branding,
@@ -216,21 +214,6 @@ export default function LoginScreen({
                 {t('switchUserOrNewInvite', currentLang)}
               </Text>
             </TouchableOpacity>
-
-            {/* Request Access / Website Link */}
-            <View style={styles.noAccessBox}>
-              <Text style={styles.noAccessPrompt}>
-                {t('noAccessQuestion', currentLang)}
-              </Text>
-              <TouchableOpacity
-                onPress={() => Linking.openURL(WEBSITE_URL)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.noAccessLink}>
-                  {t('registerCompanyLink', currentLang)}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
 
           {/* Version Footer */}

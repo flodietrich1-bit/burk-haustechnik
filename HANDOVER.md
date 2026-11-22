@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.58` (`src/constants/version.js`) [code]. `package.json`/`app.json` version are still `1.0.0` (unrelated to the display version) [config].
+- App version `v2.59` (`src/constants/version.js`) [code]. iOS native `buildNumber: "4"` in `app.json` [config].
 - Implemented [code]: PIN/Passwort login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung). Redesign der Materialkachel mit stabilem, fix breitem Stepper-Pill `[ − | VERBAUT +X m | + ]` (46x48px Touchflächen, hitSlop, kein Resizing beim Slider-Ziehen), Antippen auch bei Stückzahlen zum genauen Editieren (Komma deaktiviert) und durchgehendem „Noch übrig“-Balken.
 - The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -187,6 +187,17 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-22 (v2.59)**
+  - **Ziel / Anlass:** Behebung der Apple App Store Review Beanstandungen nach Reject für Guideline 3.1.1 (IAP-Verdacht durch Registrierungs-Wording & Links) und Guideline 2.1 (Prüfer-Anmeldung ohne physischen QR-Scan).
+  - **Änderungen:**
+    - `ActivationScreen.jsx` & `LoginScreen.jsx`: Externe Website-Links (`https://p12-aufmass.de`) und Registrierungs-Hinweise („Firma anmelden / Mehr erfahren“) vollständig entfernt.
+    - `i18n.js`: Screen-Titel und Buttons auf neutrales Verbindungs-Wording umgestellt: „Gerät mit Firma verbinden“, „Mit QR-Code verbinden“, „Zugangsdaten manuell eingeben“, Hinweistext: „Scannen Sie den QR-Code aus Ihrer P12-Verwaltungssoftware oder geben Sie Ihre Zugangsdaten manuell ein, um dieses Gerät mit Ihrem bestehenden Firmenkonto zu verknüpfen.“
+    - `ActivationScreen.jsx`: Prominenter Button `[ ⌨️ Manuell anmelden ]` direkt unter dem Kamerasucher des QR-Code-Scanners platziert.
+    - `ActivationScreen.jsx`: Manuelles 2-Feld-Eingabeformular mit „Firmen-ID / Lizenzschlüssel“ (z. B. `M6-2N94`), „Passwort / PIN“ (mit Sichtbarkeits-Toggle) und Button „Verbinden & Anmelden“ implementiert.
+    - `authService.js` / `syncService.js` / `apiService.js`: Joker-/Reviewer-Backdoor (`activateDemoAccount`) implementiert: Bei Eingabe des Reviewer-Codes `M6-2N94` (sowie `DEMO`, `DEMO2026`, `APPLE` oder Backdoor-Passwörtern wie `see_attached_pdf`) wird bei einem Backend-Fehler automatisch eine vollständige lokale Demo-Sitzung mit allen Projekten, Räumen und Materialien aktiviert. Synchronisations-Bypass für `p12-demo` verhindert Firestore-Berechtigungsfehler.
+    - `app.json` & `version.js`: iOS `buildNumber` auf `"4"` erhöht, `APP_VERSION` auf `v2.59` gesetzt, `NSCameraUsageDescription` neutralisiert.
+  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
 
 - **2026-11-20 (v2.58)**
   - **Ziel / Anlass:** Klare Trennung zwischen App-Sperre (Passwort-LoginScreen für aktivierte Monteure ohne Einladungscode-Verlust) und vollständigem Gerät-Trennen.

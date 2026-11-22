@@ -129,7 +129,7 @@ async function uploadPhotoToFirebase(localUri, projectId, bookingId, photoIndex,
  * Real-time listener for the active room (< 5s updates from Web Portal)
  */
 export function subscribeToRoomLive(tenantId, projectId, roomId, onUpdate) {
-  if (!tenantId || !projectId || !roomId) return () => {};
+  if (!tenantId || !projectId || !roomId || tenantId === 'p12-demo') return () => {};
   try {
     const roomRef = doc(db, 'tenants', tenantId, 'projects', projectId, 'rooms', roomId);
     return onSnapshot(
@@ -179,6 +179,16 @@ export async function syncBookings({
       getActiveMonteur(),
       getTenantId(),
     ]);
+
+    // Demo account bypass: keep local, prevent Firestore permission-denied errors
+    if (tenantId === 'p12-demo') {
+      return {
+        success: true,
+        reason: 'demo_mode',
+        pushed: { bookings: 0, addendums: 0, rooms: 0 },
+        pulled: { positions: 0, rooms: 0 },
+      };
+    }
 
     const projectId = targetProjectId || monteur?.projectId || monteur?.assignedProjectIds?.[0] || DEFAULT_PROJECT_ID;
     const lastSyncedAt = await getLastSyncedAt(projectId);
