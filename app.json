@@ -9,7 +9,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.vibefactory.ttapp",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "infoPlist": {
         "NSCameraUsageDescription": "Die Kamera wird zum Scannen des Firmen-Verbindungs-QR-Codes sowie zum Aufnehmen von Nachweisfotos für Baustellen und Räume benötigt.",
         "NSPhotoLibraryUsageDescription": "Der Zugriff auf die Fotomediathek wird benötigt, um Nachweisfotos für Baustellen und Räume auszuwählen.",
