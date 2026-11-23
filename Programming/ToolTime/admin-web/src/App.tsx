@@ -9,7 +9,8 @@ import { RoomManager } from './components/RoomManager';
 import { LiveFeed } from './components/LiveFeed';
 import { AddendumsView } from './components/AddendumsView';
 import { AnalyticsView } from './components/AnalyticsView';
-import { ReordersView } from './components/ReordersView';
+import { UnifiedDeviationsView } from './components/deviations/UnifiedDeviationsView';
+import { MeasurementSectionsView } from './components/sections/MeasurementSectionsView';
 import { AufmassView } from './components/AufmassView';
 import { ProjectSettingsView } from './components/ProjectSettingsView';
 import { TenantMembersView } from './components/TenantMembersView';
@@ -334,6 +335,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
           onExport={handleExport}
           hasActiveProject={Boolean(activeProject)}
           onDeleteProject={handleRequestDeleteProject}
+          measurementMode={activeProject?.measurementMode}
         />
 
         {/* Content Area */}
@@ -376,11 +378,14 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                     bookings={bookings}
                     rooms={rooms}
                     searchTerm={searchTerm}
+                    projectId={selectedProjectId}
+                    currentUser={currentUser}
+                    project={activeProject}
                   />
                 )}
 
-                {/* TAB: GAEB vs DWG (Planungsvergleich) */}
-                {activeTab === 'gaeb_vs_dwg' && (
+                {/* TAB: GAEB vs DWG (Planungsvergleich - only ROOM_BASED) */}
+                {activeTab === 'gaeb_vs_dwg' && activeProject?.measurementMode !== 'LV_BASED' && (
                   <GaebVsDwgView
                     projectId={selectedProjectId}
                     projectName={activeProject?.name}
@@ -392,14 +397,24 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                   />
                 )}
 
-                {/* TAB: Rooms & Floors */}
-                {activeTab === 'rooms' && (
+                {/* TAB: Rooms & Floors - only ROOM_BASED */}
+                {activeTab === 'rooms' && activeProject?.measurementMode !== 'LV_BASED' && (
                   <RoomManager
                     projectId={selectedProjectId}
                     projectName={activeProject?.name}
                     rooms={rooms}
                     positions={positions}
                     bookings={bookings}
+                  />
+                )}
+
+                {/* TAB: Eingereichte Aufmaß-Abschnitte (LV_BASED Mode) */}
+                {activeTab === 'sections' && (
+                  <MeasurementSectionsView
+                    projectId={selectedProjectId}
+                    projectName={activeProject?.name}
+                    positions={positions}
+                    currentUser={currentUser}
                   />
                 )}
 
@@ -428,16 +443,16 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                   />
                 )}
 
-                {/* TAB: Reorders Log (NEW) */}
+                {/* TAB: Abweichungen (Zentraler Abweichungs-Pool) */}
                 {activeTab === 'reorders' && (
-                  <ReordersView
+                  <UnifiedDeviationsView
                     projectId={selectedProjectId}
-                    projectName={activeProject?.name || 'Neues Projekt'}
-                    rooms={rooms}
+                    project={activeProject}
                     positions={positions}
+                    rooms={rooms}
                     bookings={bookings}
                     alerts={alerts}
-                    project={activeProject}
+                    currentUser={currentUser}
                   />
                 )}
 

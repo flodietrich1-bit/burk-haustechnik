@@ -29,6 +29,7 @@ import {
 } from '../services/dwgParser';
 import { createProject, uploadPlanFile, getActiveTenantId } from '../services/firestoreService';
 import { uploadToApi } from '../services/apiClient';
+import { ProjectModeSelectionModal } from './ProjectModeSelectionModal';
 import type { Project, Position, Room, User, PlanDocument, PlanLevel } from '../types';
 
 const LANGUAGE_CONFIG: Record<string, { flag: string; label: string }> = {
@@ -124,6 +125,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [isDraggingPlans, setIsDraggingPlans] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<{ [planId: string]: number }>({});
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const [showModeDialog, setShowModeDialog] = useState<boolean>(false);
 
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -404,7 +406,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     }
   };
 
-  // Final Submit
+  // Final Submit check
   const handleCreate = async () => {
     if (!name || !startDate) {
       setCurrentStep(1);
@@ -412,6 +414,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       return;
     }
 
+    const hasCadPlans = uploadedPlans.length > 0;
+    if (!hasCadPlans) {
+      // Szenario A: Nur GAEB/Excel -> automatisch LV_BASED, keine Dummy-Räume
+      await executeCreate('LV_BASED');
+    } else {
+      // Szenario B: GAEB + DWG -> Verbindlicher Auswahldialog für Projektleiter
+      setShowModeDialog(true);
+    }
+  };
+
+  const executeCreate = async (mode: 'ROOM_BASED' | 'LV_BASED') => {
     setLoading(true);
 
     try {
@@ -477,7 +490,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         })
       );
 
-      setUploadStatusText(`Speichere ${parsedPositions.length} Positionen & ${dwgRooms.length} Räume in Firestore...`);
+      // In LV_BASED mode, no rooms are forced or saved
+      const roomsToSave = mode === 'LV_BASED' ? [] : dwgRooms;
+
+      setUploadStatusText(`Speichere ${parsedPositions.length} Positionen & ${roomsToSave.length} Räume in Firestore...`);
 
       const newProject: Project = {
         id: projectId,
@@ -503,16 +519,17 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         deputyCommercialManagerEmail: deputyCommercialManagerEmail || '',
         assignedMonteurIds: assignedMonteurIds,
         status: derivedStatus,
+        measurementMode: mode,
         currency: 'EUR',
         totalPositions: parsedPositions.length,
-        hasDwg: uploadedPlans.length > 0,
+        hasDwg: mode === 'ROOM_BASED' && uploadedPlans.length > 0,
         dwgFileName: uploadedPlans[0]?.name || '',
         plansCount: planDocuments.length,
         plans: planDocuments,
         createdAt: new Date().toISOString()
       };
 
-      await createProject(newProject, parsedPositions, dwgRooms, planDocuments);
+      await createProject(newProject, parsedPositions, roomsToSave, planDocuments);
       onProjectCreated(projectId);
       onClose();
     } catch (err: any) {
@@ -1366,6 +1383,15 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
         </div>
 
       </div>
+
+      <ProjectModeSelectionModal
+        isOpen={showModeDialog}
+        onSelectMode={(mode) => {
+          setShowModeDialog(false);
+          executeCreate(mode);
+        }}
+        onCancel={() => setShowModeDialog(false)}
+      />
     </div>
   );
 };

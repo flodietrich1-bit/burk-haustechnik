@@ -145,12 +145,14 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
       }
 
       const isCut = (shortText.toLowerCase().includes('rohr') || shortText.toLowerCase().includes('leitung')) && (qu === 'm' || qu === 'Meter');
+      const group = inferGroupFromPosNr(posNr, shortText);
+      const cleanedTitle = cleanShortText(shortText);
 
       positions.push({
         id: `pos_${posNr.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
         posNr: posNr,
-        group: inferGroupFromPosNr(posNr, shortText),
-        shortText: cleanShortText(shortText),
+        group: group,
+        shortText: cleanedTitle,
         longText: cleanHtml(longText),
         qty: qty,
         qu: qu,
@@ -159,7 +161,17 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
         isCutMaterial: isCut,
         status: 'open',
         assignedRoomNames: assignedRoomNames.length > 0 ? assignedRoomNames : undefined,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        originalCode: posNr,
+        displayCode: posNr,
+        sortOrder: counter * 10,
+        sourceType: 'ORIGINAL_GAEB',
+        officialTitle: cleanedTitle,
+        aliasTitle: null,
+        monteurInfo: null,
+        tradeCategory: group,
+        unitPriceVK: 0,
+        orderStatus: 'OPEN'
       });
     }
   }
@@ -192,12 +204,13 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
                           'Position ohne Text';
         
         const longText = extractText(item?.Description?.CompleteText?.DetailTxt) || shortText;
+        const cleanedTitle = cleanShortText(shortText);
 
         positions.push({
           id: `pos_${posNr.replace(/\./g, '_')}`,
           posNr: posNr,
           group: categoryTitle,
-          shortText: cleanShortText(shortText),
+          shortText: cleanedTitle,
           longText: cleanHtml(longText),
           qty: qty,
           qu: qu,
@@ -205,7 +218,17 @@ export function parseGaebXml(xmlString: string, fileName: string = ''): GaebPars
           unitPrice: 0,
           isCutMaterial: shortText.toLowerCase().includes('m') && (qu === 'm' || qu === 'Meter'),
           status: 'open',
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          originalCode: posNr,
+          displayCode: posNr,
+          sortOrder: counter * 10,
+          sourceType: 'ORIGINAL_GAEB',
+          officialTitle: cleanedTitle,
+          aliasTitle: null,
+          monteurInfo: null,
+          tradeCategory: categoryTitle,
+          unitPriceVK: 0,
+          orderStatus: 'OPEN'
         });
       }
     }
@@ -293,6 +316,7 @@ export function parseGaeb90(content: string, fileName: string = ''): GaebParseRe
         }
       }
 
+      posCounter++;
       shortText = cleanShortText(shortText) || `Position ${posNr}`;
 
       positions.push({
@@ -307,7 +331,17 @@ export function parseGaeb90(content: string, fileName: string = ''): GaebParseRe
         unitPrice: 0,
         isCutMaterial: shortText.toLowerCase().includes('m') && (qu === 'm' || qu === 'Meter'),
         status: 'open',
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        originalCode: posNr,
+        displayCode: posNr,
+        sortOrder: posCounter * 10,
+        sourceType: 'ORIGINAL_GAEB',
+        officialTitle: shortText,
+        aliasTitle: null,
+        monteurInfo: null,
+        tradeCategory: currentGroup,
+        unitPriceVK: 0,
+        orderStatus: 'OPEN'
       });
     }
   }
@@ -512,12 +546,13 @@ function parseExcelOrCsvBuffer(buffer: ArrayBuffer, fileName: string): GaebParse
     const qu = rawQu || 'Stk';
     const shortText = rawText || `Position ${posNr}`;
     const group = rawGroup || inferGroupFromPosNr(posNr, shortText) || currentGroup;
+    const cleanedTitle = cleanShortText(shortText);
 
     positions.push({
       id: `pos_${posNr.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
       posNr,
       group,
-      shortText: cleanShortText(shortText),
+      shortText: cleanedTitle,
       longText: cleanHtml(shortText),
       qty,
       qu,
@@ -525,7 +560,17 @@ function parseExcelOrCsvBuffer(buffer: ArrayBuffer, fileName: string): GaebParse
       unitPrice,
       isCutMaterial: (shortText.toLowerCase().includes('rohr') || shortText.toLowerCase().includes('leitung')) && (qu === 'm' || qu === 'Meter'),
       status: 'open',
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      originalCode: posNr,
+      displayCode: posNr,
+      sortOrder: counter * 10,
+      sourceType: 'ORIGINAL_GAEB',
+      officialTitle: cleanedTitle,
+      aliasTitle: null,
+      monteurInfo: null,
+      tradeCategory: group,
+      unitPriceVK: unitPrice,
+      orderStatus: 'OPEN'
     });
   }
 

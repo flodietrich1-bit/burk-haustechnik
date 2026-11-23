@@ -788,6 +788,7 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
   positions.forEach(p => p.id && mergedMap.set(p.id, p));
   const mergedList = Array.from(mergedMap.values());
   dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(mergedList));
+  notifyPositionsSubscribers(projectId, mergedList as Position[]);
 
   // Also update project totalPositions
   const projects = getLocalProjects().map(p => {

@@ -111,6 +111,7 @@ export interface Project {
   deputyCommercialManagerEmail?: string;
   assignedMonteurIds?: string[]; // IDs of assigned installers
   status: 'draft' | 'in_progress' | 'completed' | 'archived' | 'deleted';
+  measurementMode?: 'ROOM_BASED' | 'LV_BASED';
   currency: string;
   totalPositions: number;
   totalDeliveredPercentage?: number;
@@ -140,6 +141,63 @@ export interface Position {
   updatedAt?: string;
   isAddendum?: boolean;
   addendumId?: string;
+
+  // Erweiterungen für duale Projekt-Architektur & LV-Editor
+  originalCode?: string; // Unveränderliche Positionsnummer aus GAEB (z. B. "04.07")
+  displayCode?: string; // Frei editierbare Positionsnummer für Sortierung (z. B. "04.07.1")
+  sortOrder?: number; // Numerischer Index für Reihenfolge
+  sourceType?: 'ORIGINAL_GAEB' | 'CUSTOM_ADDED'; // Original oder manuell ergänzt
+  officialTitle?: string; // Exakter Kurztext für 1:1 Rechnungsstellung
+  aliasTitle?: string | null; // Anzeigename für Monteur
+  monteurInfo?: string | null; // Montagehinweis für App
+  tradeCategory?: string; // Gewerk / Haupttitel
+  unitPriceVK?: number | null; // Verkaufspreis (nur für KAUFMANN/PROJEKTLEITER)
+  orderStatus?: 'OPEN' | 'ORDERED' | 'DELIVERED'; // Bestell-/Lieferstatus
+}
+
+export interface MeasurementSectionItem {
+  lvItemId: string;
+  quantity: number;
+  isUnplannedMaterial?: boolean;
+  customDescription?: string;
+  qu?: string;
+  posNr?: string;
+  shortText?: string;
+  unitPriceVK?: number;
+}
+
+export interface MeasurementSectionPhoto {
+  url: string;
+  timestamp: string;
+  caption?: string;
+}
+
+export interface MeasurementSection {
+  id: string;
+  projectId: string;
+  createdAt: string;
+  createdBy: string;
+  createdByUid?: string;
+  sectionTitle: string; // z. B. "KW 48 UG Trinkwasserbereitung"
+  items: MeasurementSectionItem[];
+  photos: MeasurementSectionPhoto[];
+  status: 'SUBMITTED' | 'APPROVED';
+  approvedAt?: string;
+  approvedBy?: string;
+  notes?: string;
+}
+
+export interface CatalogArticle {
+  id: string;
+  tenantId?: string;
+  title: string;
+  aliasTitle?: string | null;
+  monteurInfo?: string | null;
+  tradeCategory?: string;
+  qu?: string;
+  defaultUnitPriceVK?: number;
+  usageCount?: number;
+  lastUsedAt?: string;
 }
 
 export interface RoomMaterialRequirement {

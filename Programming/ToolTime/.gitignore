@@ -15,3 +15,5 @@ yarn-debug.log*
 *.mov
 _intern/
 .firebase/
+.~lock.*
+drive-download-*/

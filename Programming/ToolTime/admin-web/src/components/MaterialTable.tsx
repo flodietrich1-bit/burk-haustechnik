@@ -1,16 +1,29 @@
 import React, { useState, useMemo } from 'react';
-import type { Position, Booking, Room } from '../types';
-import { Package, CheckCircle, TrendingUp, TrendingDown, Filter } from 'lucide-react';
+import type { Position, Booking, Room, User, Project } from '../types';
+import { Package, CheckCircle, TrendingUp, TrendingDown, Filter, Sparkles } from 'lucide-react';
 import { getMaterialActualQty } from '../services/firestoreService';
+import { LvEditorTable } from './lv/LvEditorTable';
 
 interface MaterialTableProps {
   positions: Position[];
   bookings?: Booking[];
   rooms?: Room[];
   searchTerm: string;
+  projectId?: string;
+  currentUser?: User | null;
+  project?: Project | null;
 }
 
-export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, bookings = [], rooms = [], searchTerm }) => {
+export const MaterialTable: React.FC<MaterialTableProps> = ({ 
+  positions, 
+  bookings = [], 
+  rooms = [], 
+  searchTerm,
+  projectId = '',
+  currentUser = null,
+  project = null
+}) => {
+  const [viewMode, setViewMode] = useState<'editor' | 'balance'>('editor');
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [onlyInstalled, setOnlyInstalled] = useState<boolean>(false);
@@ -200,9 +213,51 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
 
   return (
     <div className="space-y-6">
-      
-      {/* Top Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Top View Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm gap-2">
+        <div className="flex items-center space-x-1">
+          <button
+            type="button"
+            onClick={() => setViewMode('editor')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+              viewMode === 'editor'
+                ? 'bg-[#3B82C4] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>LV-Editor (Excel-Ersatz & Stammdaten)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('balance')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
+              viewMode === 'balance'
+                ? 'bg-[#3B82C4] text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Soll/Ist Material-Bilanz</span>
+          </button>
+        </div>
+        <span className="text-xs text-slate-400 px-2 hidden sm:inline">
+          {viewMode === 'editor' ? 'Excel-Tabellenansicht mit Aliases, Zusatzinfos & Preisen' : 'Raumbezogene Mengenverbräuche & Baustellenbestand'}
+        </span>
+      </div>
+
+      {viewMode === 'editor' && projectId ? (
+        <LvEditorTable
+          projectId={projectId}
+          positions={positions}
+          currentUser={currentUser}
+          project={project}
+          searchTerm={searchTerm}
+        />
+      ) : (
+        <>
+          {/* Top Stat Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-medium text-slate-500">Gesamt LV-Positionen</p>
@@ -463,6 +518,8 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({ positions, booking
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

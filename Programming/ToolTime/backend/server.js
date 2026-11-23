@@ -19,6 +19,7 @@ import { generateAufmassPdf } from './aufmassPdfService.js';
 import { tenantRouter } from './routes/tenantRoutes.js';
 import { publicInviteRouter } from './routes/publicInviteRoutes.js';
 import { publicBrandingRouter } from './routes/publicBrandingRoutes.js';
+import { publicContactRouter } from './routes/publicContactRoutes.js';
 import { cleanupAllRedeemedInvites } from './services/inviteService.js';
 import { authenticateFirebaseUser, requireTenantRole } from './middleware/auth.js';
 
@@ -42,6 +43,7 @@ app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use('/api/tenants', tenantRouter);
 app.use('/api/public/invites', publicInviteRouter);
 app.use('/api/public/branding', publicBrandingRouter);
+app.use('/api/public/contact', publicContactRouter);
 
 // Multer in-memory storage for high-speed streaming
 const upload = multer({

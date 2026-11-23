@@ -24,6 +24,7 @@ export type TabType =
   | 'positions' 
   | 'gaeb_vs_dwg'
   | 'rooms' 
+  | 'sections'
   | 'bookings' 
   | 'addendums' 
   | 'reorders'
@@ -46,6 +47,7 @@ interface SidebarProps {
   onExport: () => void;
   onDeleteProject?: () => void;
   hasActiveProject?: boolean;
+  measurementMode?: 'ROOM_BASED' | 'LV_BASED';
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -61,8 +63,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   onExport,
   onDeleteProject,
-  hasActiveProject = false
+  hasActiveProject = false,
+  measurementMode
 }) => {
+  const isLvMode = measurementMode === 'LV_BASED';
+
   const projectItems = [
     {
       id: 'positions' as TabType,
@@ -70,19 +75,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Package,
       badge: totalPositionsCount > 0 ? String(totalPositionsCount) : undefined
     },
-    {
-      id: 'gaeb_vs_dwg' as TabType,
-      label: 'GAEB vs. DWG',
-      icon: Scale,
-      badge: gaebVsDwgDeviationsCount > 0 ? String(gaebVsDwgDeviationsCount) : undefined,
-      badgeColor: 'bg-amber-500 text-white'
-    },
-    {
-      id: 'rooms' as TabType,
-      label: 'Räume & Etagen',
-      icon: LayoutGrid,
-      badge: totalRoomsCount > 0 ? String(totalRoomsCount) : undefined
-    },
+    ...(!isLvMode ? [
+      {
+        id: 'gaeb_vs_dwg' as TabType,
+        label: 'GAEB vs. DWG',
+        icon: Scale,
+        badge: gaebVsDwgDeviationsCount > 0 ? String(gaebVsDwgDeviationsCount) : undefined,
+        badgeColor: 'bg-amber-500 text-white'
+      },
+      {
+        id: 'rooms' as TabType,
+        label: 'Räume & Etagen',
+        icon: LayoutGrid,
+        badge: totalRoomsCount > 0 ? String(totalRoomsCount) : undefined
+      }
+    ] : [
+      {
+        id: 'sections' as TabType,
+        label: 'Aufmaß-Abschnitte',
+        icon: FileSpreadsheet,
+        badge: 'LV'
+      }
+    ]),
     {
       id: 'bookings' as TabType,
       label: 'Live-Buchungsfeed',
