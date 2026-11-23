@@ -181,10 +181,10 @@ export default function LvCartScreen({
 
           {cart.length === 0 ? (
             <View style={styles.emptyCartBox}>
-              <Text style={styles.emptyCartIcon}>🛒</Text>
+              <Text style={styles.emptyCartIcon}>📋</Text>
               <Text style={styles.emptyCartText}>{t('lvEmptyCart', currentLang)}</Text>
               <TouchableOpacity style={styles.backToTradesBtn} onPress={onBack}>
-                <Text style={styles.backToTradesBtnText}>{t('lvBackToTrades', currentLang)}</Text>
+                <Text style={styles.backToTradesBtnText}>{t('lvBackToPositions', currentLang)}</Text>
               </TouchableOpacity>
             </View>
           ) : (

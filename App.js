@@ -1503,9 +1503,7 @@ export default function App() {
         projectName={project?.name || ''}
         subTitle={
           isLvProject(project)
-            ? currentScreen === 'lv_positions'
-              ? (selectedTrade || t('lvPositions', currentLang))
-              : currentScreen === 'lv_cart'
+            ? currentScreen === 'lv_cart'
               ? t('lvCartTitle', currentLang)
               : [project?.projectNumber, t('lvTitle', currentLang)].filter(Boolean).join(' · ')
             : [project?.projectNumber, selectedRoom?.name || project?.client].filter(Boolean).join(' · ')
@@ -1519,10 +1517,8 @@ export default function App() {
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
         onBackToRooms={
           isLvProject(project)
-            ? currentScreen === 'lv_positions'
+            ? currentScreen === 'lv_cart'
               ? () => setCurrentScreen('lv_overview')
-              : currentScreen === 'lv_cart'
-              ? () => setCurrentScreen(previousLvScreen || 'lv_overview')
               : null
             : currentScreen === 'book'
             ? handleLeaveRoomDraft

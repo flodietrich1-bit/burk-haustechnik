@@ -124,15 +124,15 @@ export default function LvPositionsScreen({
         )}
       </ScrollView>
 
-      {/* Floating Action Button for Aufmaß-Warenkorb */}
+      {/* Floating Action Button for Aufmaß vorbereiten */}
       <TouchableOpacity
         style={[styles.fab, totalCartCount > 0 && styles.fabActive]}
         onPress={onOpenCart}
         activeOpacity={0.8}
         hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
       >
-        <Text style={styles.fabIcon}>🛒</Text>
-        <Text style={styles.fabText}>{t('lvCartFab', currentLang)}</Text>
+        <Text style={styles.fabIcon}>📋</Text>
+        <Text style={styles.fabText}>{t('lvPrepareMeasurementBtn', currentLang)}</Text>
         {totalCartCount > 0 && (
           <View style={styles.fabBadge}>
             <Text style={styles.fabBadgeText}>{totalCartCount}</Text>

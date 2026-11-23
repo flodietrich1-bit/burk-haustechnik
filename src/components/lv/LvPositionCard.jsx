@@ -100,7 +100,7 @@ export default function LvPositionCard({
           )}
         </View>
 
-        {/* Stepper Pill for Aufmaß-Warenkorb */}
+        {/* Stepper Pill for Aufmaß-Erfassung */}
         <View style={[styles.stepperContainer, cartQty > 0 && styles.stepperActive]}>
           <TouchableOpacity
             style={[styles.stepperBtn, cartQty === 0 && styles.stepperBtnDisabled]}

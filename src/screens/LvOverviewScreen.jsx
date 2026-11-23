@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  SafeAreaView,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
@@ -18,72 +17,53 @@ export default function LvOverviewScreen({
   cart = [],
   project = {},
   currentLang = 'de',
-  onSelectTrade,
   onOpenCart,
   onQuantityChange,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTrade, setSelectedTrade] = useState('Alle');
   const [modalPos, setModalPos] = useState(null);
 
-  // Group positions by tradeCategory
-  const { trades, totalPositionsCount, filteredPositions } = useMemo(() => {
+  // Group positions by tradeCategory and calculate counts
+  const { trades, totalPositionsCount, tradeCounts, tradeCartCounts, displayedPositions } = useMemo(() => {
     const tradeMap = new Map();
+    const tCounts = { Alle: positions.length };
+    const tCartCounts = { Alle: 0 };
 
     positions.forEach((p) => {
       const tradeName = p.tradeCategory || p.group || 'Allgemein';
       if (!tradeMap.has(tradeName)) {
-        tradeMap.set(tradeName, {
-          name: tradeName,
-          positions: [],
-          totalPlannedQty: 0,
-          totalInstalledQty: 0,
-          itemsWithProgress: 0,
-        });
+        tradeMap.set(tradeName, []);
       }
-      const trade = tradeMap.get(tradeName);
-      trade.positions.push(p);
+      tradeMap.get(tradeName).push(p);
 
-      const qty = Number(p.qty || 0);
-      const installed = Number(p.installedQty || 0);
-      trade.totalPlannedQty += qty;
-      trade.totalInstalledQty += installed;
-      if (installed > 0) {
-        trade.itemsWithProgress += 1;
+      tCounts[tradeName] = (tCounts[tradeName] || 0) + 1;
+
+      // Check if position is in cart
+      const cartItem = cart.find(
+        (it) => it.lvItemId === p.id || (p.displayCode && it.posNr === p.displayCode)
+      );
+      if (cartItem && Number(cartItem.quantity) > 0) {
+        tCartCounts[tradeName] = (tCartCounts[tradeName] || 0) + 1;
+        tCartCounts.Alle = (tCartCounts.Alle || 0) + 1;
       }
     });
 
-    // Convert map to sorted array
-    const sortedTrades = Array.from(tradeMap.values()).map((tr) => {
-      // Sort positions within trade by sortOrder then displayCode
-      tr.positions.sort((a, b) => {
-        const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 999999;
-        const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 999999;
-        if (orderA !== orderB) return orderA - orderB;
-        return String(a.displayCode || a.posNr || '').localeCompare(String(b.displayCode || b.posNr || ''), undefined, { numeric: true });
-      });
+    // List of unique trade names sorted alphabetically
+    const tradeNames = Array.from(tradeMap.keys()).sort((a, b) => a.localeCompare(b));
 
-      const pct = tr.totalPlannedQty > 0
-        ? Math.min(100, Math.round((tr.totalInstalledQty / tr.totalPlannedQty) * 100))
-        : (tr.itemsWithProgress > 0 ? 100 : 0);
-
-      // Count how many items of this trade are in current cart
-      const cartCount = cart.filter((item) =>
-        tr.positions.some((p) => p.id === item.lvItemId || (p.displayCode && p.displayCode === item.posNr))
-      ).length;
-
-      return {
-        ...tr,
-        count: tr.positions.length,
-        progressPercent: pct,
-        cartCount,
-      };
-    });
-
-    // Filtered positions when search is active
+    // Filter positions based on selectedTrade and searchQuery
     const q = searchQuery.trim().toLowerCase();
-    let filtered = [];
+    let filtered = positions;
+
+    if (selectedTrade !== 'Alle') {
+      filtered = filtered.filter(
+        (p) => (p.tradeCategory || p.group || 'Allgemein') === selectedTrade
+      );
+    }
+
     if (q) {
-      filtered = positions.filter((p) => {
+      filtered = filtered.filter((p) => {
         const displayCode = String(p.displayCode || p.posNr || '').toLowerCase();
         const aliasTitle = String(p.aliasTitle || '').toLowerCase();
         const officialTitle = String(p.officialTitle || p.shortText || p.name || '').toLowerCase();
@@ -95,23 +75,30 @@ export default function LvOverviewScreen({
           trade.includes(q)
         );
       });
-      // Sort filtered
-      filtered.sort((a, b) => {
-        const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 999999;
-        const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 999999;
-        if (orderA !== orderB) return orderA - orderB;
-        return String(a.displayCode || a.posNr || '').localeCompare(String(b.displayCode || b.posNr || ''), undefined, { numeric: true });
-      });
     }
 
-    return {
-      trades: sortedTrades,
-      totalPositionsCount: positions.length,
-      filteredPositions: filtered,
-    };
-  }, [positions, cart, searchQuery]);
+    // Stable sort: sortOrder then displayCode
+    const sorted = [...filtered].sort((a, b) => {
+      const orderA = typeof a.sortOrder === 'number' ? a.sortOrder : 999999;
+      const orderB = typeof b.sortOrder === 'number' ? b.sortOrder : 999999;
+      if (orderA !== orderB) return orderA - orderB;
+      return String(a.displayCode || a.posNr || '').localeCompare(
+        String(b.displayCode || b.posNr || ''),
+        undefined,
+        { numeric: true }
+      );
+    });
 
-  // Total cart items count & quantity
+    return {
+      trades: ['Alle', ...tradeNames],
+      totalPositionsCount: positions.length,
+      tradeCounts: tCounts,
+      tradeCartCounts: tCartCounts,
+      displayedPositions: sorted,
+    };
+  }, [positions, cart, selectedTrade, searchQuery]);
+
+  // Total cart items count
   const totalCartCount = useMemo(() => {
     return cart.reduce((acc, it) => acc + (Number(it.quantity) > 0 ? 1 : 0), 0);
   }, [cart]);
@@ -126,7 +113,7 @@ export default function LvOverviewScreen({
 
   return (
     <View style={styles.container}>
-      {/* Global Search Bar */}
+      {/* 1. Global Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -140,139 +127,145 @@ export default function LvOverviewScreen({
             autoCorrect={false}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
               <Text style={styles.searchClear}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {searchQuery.trim().length > 0 ? (
-          /* Search Results Mode */
-          <View style={styles.resultsContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeading}>
-                {t('foundPositionsHeader', currentLang)} ({filteredPositions.length})
-              </Text>
-            </View>
+      {/* 2. Horizontal Trade Filter Chip Pills */}
+      <View style={styles.filterSection}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterPillsScroll}
+        >
+          {trades.map((tradeName) => {
+            const isSelected = selectedTrade === tradeName;
+            const count = tradeCounts[tradeName] || 0;
+            const inCart = tradeCartCounts[tradeName] || 0;
 
-            {filteredPositions.length === 0 ? (
-              <View style={styles.emptyStateBox}>
-                <Text style={styles.emptyStateIcon}>🔎</Text>
-                <Text style={styles.emptyStateText}>{t('lvNoPositionsFound', currentLang)}</Text>
-              </View>
-            ) : (
-              filteredPositions.map((pos) => (
-                <LvPositionCard
-                  key={pos.id}
-                  position={pos}
-                  cartQty={getCartQty(pos)}
-                  onQuantityChange={onQuantityChange}
-                  onOpenQuantityModal={(p, q) => setModalPos({ position: p, qty: q })}
-                  currentLang={currentLang}
-                />
-              ))
+            return (
+              <TouchableOpacity
+                key={tradeName}
+                style={[styles.filterPill, isSelected && styles.filterPillActive]}
+                onPress={() => setSelectedTrade(tradeName)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}
+                >
+                  {tradeName === 'Alle' ? t('lvAllTrades', currentLang) : tradeName}
+                  {count > 0 ? ` (${count})` : ''}
+                </Text>
+
+                {/* Badge if positions in this trade have quantities entered */}
+                {inCart > 0 && (
+                  <View
+                    style={[
+                      styles.pillBadge,
+                      isSelected ? styles.pillBadgeActive : styles.pillBadgeInactive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.pillBadgeText,
+                        isSelected ? styles.pillBadgeTextActive : styles.pillBadgeTextInactive,
+                      ]}
+                    >
+                      {inCart}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* 3. Section Info Header */}
+      <View style={styles.listHeaderRow}>
+        <Text style={styles.listHeaderText}>
+          {selectedTrade === 'Alle'
+            ? t('lvPositions', currentLang).toUpperCase()
+            : selectedTrade.toUpperCase()}
+          {` · ${displayedPositions.length} `}
+          {displayedPositions.length === 1 ? 'Position' : 'Positionen'}
+        </Text>
+        {selectedTrade !== 'Alle' && (
+          <TouchableOpacity onPress={() => setSelectedTrade('Alle')}>
+            <Text style={styles.clearFilterText}>✕ {t('lvAllTrades', currentLang)}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* 4. Positions List */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {displayedPositions.length === 0 ? (
+          <View style={styles.emptyStateBox}>
+            <Text style={styles.emptyStateIcon}>🔎</Text>
+            <Text style={styles.emptyStateText}>
+              {t('lvNoPositionsFound', currentLang)}
+            </Text>
+            {(selectedTrade !== 'Alle' || searchQuery.length > 0) && (
+              <TouchableOpacity
+                style={styles.resetBtn}
+                onPress={() => {
+                  setSelectedTrade('Alle');
+                  setSearchQuery('');
+                }}
+              >
+                <Text style={styles.resetBtnText}>Filter zurücksetzen</Text>
+              </TouchableOpacity>
             )}
           </View>
         ) : (
-          /* Trades Overview (Gewerke-Kacheln) */
-          <View style={styles.tradesContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <View>
-                <Text style={styles.sectionHeading}>{t('lvTrades', currentLang)}</Text>
-                <Text style={styles.sectionSubHeading}>
-                  {project?.name || ''} · {t('lvItemCount', currentLang, { count: totalPositionsCount })}
-                </Text>
-              </View>
-            </View>
-
-            {trades.map((trade) => {
-              const hasProgress = trade.progressPercent > 0;
-              return (
-                <TouchableOpacity
-                  key={trade.name}
-                  style={[styles.tradeCard, trade.cartCount > 0 && styles.tradeCardCartActive]}
-                  onPress={() => onSelectTrade && onSelectTrade(trade.name)}
-                  activeOpacity={0.75}
-                >
-                  <View style={styles.tradeCardHeader}>
-                    <View style={styles.tradeTitleRow}>
-                      <View style={styles.tradeIconPill}>
-                        <Text style={styles.tradeIconText}>📦</Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.tradeTitle} numberOfLines={2}>
-                          {trade.name}
-                        </Text>
-                        <Text style={styles.tradeSubtitle}>
-                          {t('lvItemCount', currentLang, { count: trade.count })}
-                          {trade.itemsWithProgress > 0
-                            ? ` · ${trade.itemsWithProgress}/${trade.count} erfasst`
-                            : ''}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {trade.cartCount > 0 && (
-                      <View style={styles.cartBadgeInTrade}>
-                        <Text style={styles.cartBadgeInTradeText}>
-                          🛒 {trade.cartCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Progress Bar & Percentage */}
-                  <View style={styles.progressRow}>
-                    <View style={styles.progressBarTrack}>
-                      <View
-                        style={[
-                          styles.progressBarFill,
-                          {
-                            width: `${Math.min(100, Math.max(0, trade.progressPercent))}%`,
-                            backgroundColor: trade.progressPercent >= 100 ? '#10B981' : '#3B82F6',
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        styles.progressPercentText,
-                        trade.progressPercent >= 100 && { color: '#059669' },
-                      ]}
-                    >
-                      {trade.progressPercent}%
-                    </Text>
-                  </View>
-
-                  {/* Right Arrow / Action hint */}
-                  <View style={styles.tradeCardFooter}>
-                    <Text style={styles.viewPositionsLink}>{t('lvPositions', currentLang)} ansehen</Text>
-                    <Text style={styles.chevronArrow}>›</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          displayedPositions.map((pos) => (
+            <LvPositionCard
+              key={pos.id}
+              position={pos}
+              cartQty={getCartQty(pos)}
+              onQuantityChange={onQuantityChange}
+              onOpenQuantityModal={(p, q) => setModalPos({ position: p, qty: q })}
+              currentLang={currentLang}
+            />
+          ))
         )}
       </ScrollView>
 
-      {/* Floating Action Button for Aufmaß-Warenkorb */}
-      <TouchableOpacity
-        style={[styles.fab, totalCartCount > 0 && styles.fabActive]}
-        onPress={onOpenCart}
-        activeOpacity={0.8}
-        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-      >
-        <Text style={styles.fabIcon}>🛒</Text>
-        <Text style={styles.fabText}>{t('lvCartFab', currentLang)}</Text>
-        {totalCartCount > 0 && (
-          <View style={styles.fabBadge}>
-            <Text style={styles.fabBadgeText}>{totalCartCount}</Text>
+      {/* 5. Sticky Bottom Bar: "Zum Aufmaß vorbereiten"-Button */}
+      <View style={styles.bottomBarContainer}>
+        <TouchableOpacity
+          style={[styles.prepareBtn, totalCartCount > 0 && styles.prepareBtnActive]}
+          onPress={onOpenCart}
+          activeOpacity={0.8}
+        >
+          <View style={styles.prepareBtnLeft}>
+            <Text style={styles.prepareBtnIcon}>📋</Text>
+            <Text style={styles.prepareBtnText}>
+              {t('lvPrepareMeasurementBtn', currentLang)}
+            </Text>
           </View>
-        )}
-      </TouchableOpacity>
+
+          <View style={styles.prepareBtnRight}>
+            {totalCartCount > 0 ? (
+              <View style={styles.cartCountPill}>
+                <Text style={styles.cartCountPillText}>
+                  {totalCartCount} {totalCartCount === 1 ? 'Position' : 'Positionen'}
+                </Text>
+              </View>
+            ) : null}
+            <Text style={styles.prepareBtnArrow}>›</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Direct Numeric Input Modal */}
       {modalPos && (
@@ -297,10 +290,8 @@ const styles = StyleSheet.create({
   searchContainer: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   searchBar: {
     flexDirection: 'row',
@@ -308,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 42,
   },
   searchIcon: {
     fontSize: 16,
@@ -316,7 +307,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14.5,
     color: '#0F172A',
     paddingVertical: 0,
   },
@@ -326,194 +317,200 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: 6,
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 90, // Leave room for FAB
-  },
-  sectionHeaderRow: {
-    marginBottom: 14,
-  },
-  sectionHeading: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.3,
-  },
-  sectionSubHeading: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  tradesContainer: {
-    gap: 12,
-  },
-  tradeCard: {
+
+  /* Filter Section (Horizontal Trade Chip Pills) */
+  filterSection: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  filterPillsScroll: {
+    paddingHorizontal: 16,
+    gap: 8,
+    alignItems: 'center',
+  },
+  filterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
+    borderColor: '#CBD5E1',
+    gap: 6,
+  },
+  filterPillActive: {
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.25,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
     shadowRadius: 4,
     elevation: 2,
   },
-  tradeCardCartActive: {
-    borderColor: '#93C5FD',
-    backgroundColor: '#FBFDFF',
-  },
-  tradeCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 10,
-    marginBottom: 12,
-  },
-  tradeTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  tradeIconPill: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tradeIconText: {
-    fontSize: 20,
-  },
-  tradeTitle: {
-    fontSize: 17,
+  filterPillText: {
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#0F172A',
-    lineHeight: 22,
+    color: '#334155',
   },
-  tradeSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '500',
-    marginTop: 2,
+  filterPillTextActive: {
+    color: '#FFFFFF',
   },
-  cartBadgeInTrade: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  pillBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 10,
   },
-  cartBadgeInTradeText: {
-    fontSize: 12,
+  pillBadgeActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  pillBadgeInactive: {
+    backgroundColor: '#0284C7',
+  },
+  pillBadgeText: {
+    fontSize: 11,
     fontWeight: '800',
-    color: '#1D4ED8',
   },
-  progressRow: {
+  pillBadgeTextActive: {
+    color: '#0284C7',
+  },
+  pillBadgeTextInactive: {
+    color: '#FFFFFF',
+  },
+
+  /* List Header */
+  listHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
-  progressBarTrack: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#F1F5F9',
-    overflow: 'hidden',
+  listHeaderText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
   },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressPercentText: {
+  clearFilterText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
-    width: 38,
-    textAlign: 'right',
+    color: '#0284C7',
   },
-  tradeCardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F8FAFC',
+
+  /* Scroll Content */
+  scrollContent: {
+    padding: 16,
+    paddingTop: 8,
+    paddingBottom: 95, // Room for sticky bottom bar
+    gap: 12,
   },
-  viewPositionsLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  chevronArrow: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#94A3B8',
-  },
-  resultsContainer: {
-    gap: 8,
-  },
+
+  /* Empty State */
   emptyStateBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     marginTop: 20,
-  },
-  emptyStateIcon: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  emptyStateText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748B',
-    textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0F172A',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
     gap: 8,
   },
-  fabActive: {
-    backgroundColor: '#2563EB',
+  emptyStateIcon: {
+    fontSize: 36,
   },
-  fabIcon: {
+  emptyStateText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  resetBtn: {
+    marginTop: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 10,
+  },
+  resetBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+
+  /* Sticky Bottom Bar ("Zum Aufmaß vorbereiten") */
+  bottomBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  prepareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#334155',
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 16,
+  },
+  prepareBtnActive: {
+    backgroundColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  prepareBtnLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  prepareBtnIcon: {
     fontSize: 18,
   },
-  fabText: {
-    color: '#FFFFFF',
+  prepareBtnText: {
     fontSize: 15,
-    fontWeight: '700',
-  },
-  fabBadge: {
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginLeft: 2,
-  },
-  fabBadgeText: {
+    fontWeight: '800',
     color: '#FFFFFF',
+  },
+  prepareBtnRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cartCountPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  cartCountPillText: {
     fontSize: 12,
     fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  prepareBtnArrow: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    lineHeight: 22,
   },
 });
