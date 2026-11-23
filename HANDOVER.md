@@ -203,7 +203,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `src/services/syncService.js`: Push-Synchronisation von `measurement_sections` inklusive automatischem Foto-Upload nach Cloud Storage unter `tenants/{tenantId}/projects/{projectId}/proofs/...`; Erweiterung von `mapRemotePos` um `displayCode`, `sortOrder`, `sourceType`, `aliasTitle`, `officialTitle`, `monteurInfo`, `tradeCategory` und strikte Preislöschung (`unitPriceVK` & `unitPrice` gelöscht).
     - `src/locales/i18n.js`: Alle neuen LV-Texte in allen 4 Sprachen (DE, RO, PL, HR) hinzugefügt.
     - `src/constants/version.js`: Versions-Bump auf `v2.60`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` erfolgreich gebündelt (825 Module), `git diff --check` fehlerfrei.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` erfolgreich gebündelt (825 Module); EAS Update für `preview` veröffentlicht (Group `78c28e32-ee38-4b26-a862-d14d3189fa46`); EAS Build (iOS Production, Build `5`) erfolgreich kompiliert und an TestFlight übermittelt (`https://appstoreconnect.apple.com/apps/6836813921/testflight/ios`). `git diff --check` fehlerfrei.
 
 - **2026-11-22 (v2.59)**
   - **Ziel / Anlass:** Behebung der Apple App Store Review Beanstandungen nach Reject für Guideline 3.1.1 (IAP-Verdacht durch Registrierungs-Wording & Links) und Guideline 2.1 (Prüfer-Anmeldung ohne physischen QR-Scan).
