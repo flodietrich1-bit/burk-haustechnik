@@ -10,8 +10,9 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.60` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
+- App version `v2.61` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
 - Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet: Gewerke-Kacheln mit Fortschritt, globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`, Positionslisten sortiert nach `sortOrder` / `displayCode`, Positionskarten mit fettem `aliasTitle`, farbigem Montagehinweis-Kasten (`monteurInfo`), Zusatzposition-Badge (`CUSTOM_ADDED`), schnellen Mengenzählern (inkl. Direkt-Eingabe-Modal) und striktem Ausschluss aller VK-Preise; permanenter Warenkorb-FAB, Warenkorb-Screen mit Mengenanpassung, Freitext-Nachtrag für Material nicht im LV, Abschnitts-Pflichtbezeichnung, Baustellen-Fotodokumentation und verbindlicher Einreichung in Subcollection `measurement_sections` mit Outbox-Pufferung (`@ttapp:outbox_sections:${tenantId}:${userId}:${projectId}`) und Zwei-Wege-Sync.
+- Intelligente Fallback-Erkennung (`src/utils/projectMode.js`): Projekte ohne DWG/CAD-Pläne und ohne Räume, aber mit LV-Positionen werden automatisch als `LV_BASED` erkannt, selbst wenn das Firestore-Flag `measurementMode` fehlt oder `undefined` war. In Firestore für das Projekt Sigmaringen wurde `measurementMode: 'LV_BASED'` nachträglich gesetzt.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -189,6 +190,16 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 
 ## 18. Last Updated
 
+- **2026-11-23 (v2.61)**
+  - **Ziel / Anlass:** Absicherung der LV-Modus-Erkennung gegen fehlende Flags in Firestore und automatische Umschaltung bei Projekten ohne Räume/DWG.
+  - **Änderungen:**
+    - `src/utils/projectMode.js`: Intelligente Erkennungsfunktion `isLvProject(project)` erstellt. Projekte ohne DWG/CAD-Pläne (`hasDwg === false`) und ohne Räume (`rooms.length === 0`), aber mit vorhandenen LV-Positionen (`totalPositions > 0`) werden automatisch als `LV_BASED` eingestuft.
+    - `App.js`: Alle `measurementMode === 'LV_BASED'`-Abfragen durch `isLvProject()` ersetzt. In `refreshData` schaltet die App bei Eintreffen von Projektdaten automatisch von `rooms` auf `lv_overview` um, falls es ein LV-Projekt ist.
+    - `src/screens/ProjectSelectScreen.jsx`: LV-Badge-Anzeige auf `isLvProject(proj)` umgestellt.
+    - `Firestore`: Für das neu erstellte Projekt „Sigmaringen“ (`tenants/burk/projects/proj_1795473167634`) wurde das Flag `measurementMode: 'LV_BASED'` in Firestore gesetzt.
+    - `src/constants/version.js`: Versions-Bump auf `v2.61`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git commit & push auf `origin/Monteur` (`337f1ca`); EAS Update für `preview` erfolgreich veröffentlicht (`5ebe9f17-e77e-4b71-a20e-adaa0afc8dfa`).
+
 - **2026-11-23 (v2.60)**
   - **Ziel / Anlass:** Implementierung der dualen Projekt-Architektur (LV-basiertes Aufmaß vs. Raum-Aufmaß) anhand des Projekt-Steuerungs-Flags `measurementMode: 'ROOM_BASED' | 'LV_BASED'`.
   - **Änderungen:**
@@ -256,91 +267,4 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `eas.json`: Neu angelegt mit Build-Profilen (`development`, `preview`, `production` mit `autoIncrement: true`) und `submit`-Konfiguration.
     - `src/constants/version.js`: Bump auf `v2.54`.
   - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
-
-- **2026-11-16 (v2.53)**
-  - **Ziel / Anlass:** Große, leicht treffbare Klickflächen für `+` und `−`, stabile feste Breite für die Stepper-Box (kein Wachsen/Schrumpfen beim Slider-Ziehen) und Aktivierung des Tastatur-Modals auch bei Stückzahlen (ohne Komma).
-  - **Änderungen:**
-    - `materialCardStyles.js`: `installedStepperPill` mit stabiler fester Breite (`width: 172`, `height: 48`) gegen Resizing beim Slider-Ziehen. `stepperInlineBtn` auf `46x48px` vergrößert (`fontSize: 24`). `installedValCenter` als flexibler, vollflächiger Touchbereich.
-    - `MaterialBookingCard.jsx`: `canOpenCalculator` für alle Einheiten freigegeben (`isMeter` oder Stück). Bei Stückzahlen öffnet sich der Ziffernblock (`0-9`, `⌫`, `C`), während die Komma-Taste optisch und funktional deaktiviert ist. `hitSlop`-Erweiterung auf Plus, Minus und Zahlenmitte für zuverlässiges Tippen.
-    - `src/constants/version.js`: Bump auf `v2.53`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.52)**
-  - **Ziel / Anlass:** Redesign der Positionskarte in der Raumansicht gemäß Wunsch/Screenshot und Anpassung der Stepper-Rundungslogik auf die nächste volle Ganzzahl.
-  - **Änderungen:**
-    - `MaterialBookingCard.jsx` & `materialCardStyles.js`:
-      - Entfernen der mittleren Spalte „VERFÜGBAR (Offen)“, Sublabels („Raum“, „In Raum“) und vertikalen Trennlinie in der grauen Mengen-Box.
-      - Zweispaltiger Aufbau: „GEPLANT“ links mit formatierter Menge/Einheit, „VERBAUT“ rechts als integrierte Stepper-Pille `[ − | VERBAUT +X m | + ]` mit weißem Hintergrund, blauem Label und blauer Mengenangabe (Mitte weiterhin antippbar für Taschenrechner-Modal bei Meter-Einheiten).
-      - Durchgehender, dezent grün hinterlegter Balken als unterer Abschluss der Mengen-Box mit zentriertem Text `Noch übrig: {geplant - verbaut} m` (bzw. bei Mehrverbrauch zentrierter Amber/Rot-Hinweis `Mehrverbrauch: +X m`).
-      - Separaten Stepper unten rechts auf der Karte entfernt (`cardFooterRow` entfällt).
-      - Mehr Abstand nach oben (`marginTop: 14`) vom Fortschrittsbalken zur Mengen-Box und reduziertes unteres Padding der Kachel (`paddingBottom: 10`) für einen bündigen und leerraumfreien Abschluss.
-    - `BookingScreen.jsx`:
-      - `handleStep`: Stepper-Rundung springt bei Klick auf `+` oder `−` immer zuerst zur nächsten vollen Ganzzahl (z. B. `15,7` -> `+` -> `16,0`; `15,7` -> `−` -> `15,0`; `16,0` -> `+` -> `17,0`; `15,0` -> `−` -> `14,0`).
-    - `i18n.js`: Neue lokalisierte Keys `remainingLeft`, `overConsumptionRemaining`, `siteStockRemaining` in allen 4 Sprachen (DE, RO, PL, HR).
-    - `src/constants/version.js`: Bump auf `v2.52`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.51)**
-  - **Ziel / Anlass:** Drei Mengeneingabe-Wege auf den Raum-Materialkacheln: (1) ziehbarer „Verbaut“-Slider bis max. 100%, (2) Plus/Minus-Stepper immer in Ganzzahl-Schritten (über 100% nur via `+`), (3) direktes Antippen der Zahl für exakte Taschenrechner-Eingabe (`0`–`9` und `,` bis 2 Nachkommastellen) ausschließlich bei Meter-Einheiten (`m`).
-  - **Änderungen:**
-    - `ProgressBar.jsx`: Interaktiver PanResponder-Slider mit Thumb-Griff und präzisem Einrasten bei 0% und 100%.
-    - `bookingHelpers.js`: `isMeterUnit(qu)` und erweitertes `formatQty(val, isMeter, forceTwoDecimals)` für 2 Nachkommastellen bei Meter-Einheiten.
-    - `MaterialBookingCard.jsx` & `materialCardStyles.js`: Slider-Kopplung (bis max. 100%, bei Meter in `0,01`-Schritten, bei Stückzahlen in Ganzzahlen); antippen von „Verbaut“ oder der Stepper-Zahl öffnet bei Meter-Einheiten ein Taschenrechner-Modal (`0`–`9`, `,`, `⌫`, `C`, `✓ Übernehmen`).
-    - `BookingScreen.jsx` & `CompleteRoomModal.jsx`: `handleStep` (immer `±1` Ganzzahl-Schritte), `handleSetDelta` und Scroll-Lock während aktivem Slider-Ziehen.
-    - `src/constants/version.js`: Bump auf `v2.51`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.50)**
-  - **Ziel / Anlass:** Behebung der schwarzen Kamera-Vorschau beim QR-Scan auf iOS (Expo Go / Fabric).
-  - **Änderungen:**
-    - `ActivationScreen.jsx`: Primärer Start über den nativen System-Barcode-Scanner `CameraView.launchScanner` (`DataScannerViewController` unter iOS 16+ / Google Code Scanner unter Android) inkl. `CameraView.onModernBarcodeScanned`-Listener und automatischem `CameraView.dismissScanner()`. Zusätzlich Fallback-`<CameraView>` repariert: konstante `BARCODE_SCANNER_SETTINGS`-Referenz, direkte Übergabe von `onBarcodeScanned` ab Initial-Render (keine nachträgliche Session-Rekonfiguration durch `cameraReady`-Toggle), explizites `flex: 1, width: '100%', height: '100%'` Layout für `CameraView` und `StyleSheet.absoluteFillObject` für das Overlay.
-    - `src/constants/version.js`: Bump auf `v2.50`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.49)**
-  - **Ziel / Anlass:** Beseitigung der falschen Beschriftung „‹ Räume“ auf dem manuellen Aktivierungs-Screen und Bereitstellung eines sauberen Zurück-Buttons mit Vektor-Chevron-Icon und lokalisiertem Text „Zurück“ (`backShort`).
-  - **Änderungen:**
-    - `ActivationScreen.jsx`: `ChevronLeftIcon` SVG-Komponente hinzugefügt; Button-Text von `back` („Räume“) auf `backShort` („Zurück“) umgestellt; `backBtnPill`-Styling mit `flexDirection: 'row'`, `alignItems: 'center'` und `gap: 4` verfeinert.
-    - `src/constants/version.js`: Bump auf `v2.49`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.48)**
-  - **Ziel / Anlass:** Redesign des Aktivierungs-Screens: Vertikal zentriertes, elegantes Layout; Burk-Logo (aus Admin-Panel) oder P12-Aufmaß-Vektorlogo als Standard-Fallback; 2 klare Buttons („Einladung scannen (QR-Code)“ / „Code manuell eingeben“); Vollbild-Eingabemodus für manuellen Code ohne Scan-Button und mit direktem „Jetzt aktivieren“.
-  - **Änderungen:**
-    - `P12AufmassLogo.jsx`: Neues hochauflösendes Vektorlogo-Komponenten-SVG für P12 Aufmaß.
-    - `ActivationScreen.jsx`: Modus-Umschaltung (`choice` vs `manual`). Screen 1: Großes Firmenlogo (Burk oder P12 Aufmaß), Titel „Geräteaktivierung“, Subtext „Scanne jetzt deine Einladung (QR-Code) oder gib deinen 6-stelligen Code ein.“ und zwei vertikal zentrierte Haupt-Buttons. Screen 2: Reiner manueller Eingabemodus im Vollbild mit Code-Eingabefeld, „Jetzt aktivieren“-Button und Zurück-Navigation (ohne Scan-Button).
-    - `App.js`: Frühes Laden von `tenantBranding` auch vor Geräteaktivierung und Übergabe als Prop an `ActivationScreen`.
-    - `i18n.js`: Neue Übersetzungen für `activationTitle`, `activationSubtitle`, `enterCodeManuallyBtn`, `manualCodePrompt`, `backToChoice` in allen 4 Sprachen.
-    - `src/constants/version.js`: Bump auf `v2.48`.
-  - **Verifikation:** `npx expo-doctor` (20/20 Checks bestanden), `npx expo export --platform ios` (819 Module erfolgreich gebündelt), `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.47)**
-  - **Ziel / Anlass:** Klarer Leerzustand bei nicht zugeordneten Projekten („Dir wurde noch kein Projekt zugeordnet. Bitte melde dich gegebenenfalls bei deinem zuständigen Projektleiter.“) ohne irreführende Projektauswahl-Überschrift, inkl. Pull-to-Refresh und Neuladen-Button.
-  - **Änderungen:**
-    - `i18n.js`: `noProjectsAvailable` und `noProjectsSub` mit der exakten Wunschformulierung in allen 4 Sprachen (DE, RO, PL, HR) aktualisiert. Neuen Übersetzungs-Key `refreshProjectsBtn` ergänzt.
-    - `ProjectSelectScreen.jsx`: `sectionHeader` ausgeblendet, wenn `projects.length === 0`. Prominenter Neuladen-Button (`refreshBtn`) und `RefreshControl` auf der ScrollView integriert.
-    - `App.js`: `handleRefreshProjects` implementiert und als `onRefresh`-Prop an `ProjectSelectScreen` übergeben; leitet bei 1 neu zugeordnetem Projekt sofort in die Raumliste weiter.
-    - `src/constants/version.js`: Versions-Bump auf `v2.47`.
-  - **Verifikation:** `npx expo-doctor` 20/20 Checks bestanden, `npx expo export --platform ios` (818 Module) fehlerfrei gebündelt, `git diff --check` fehlerfrei.
-
-- **2026-11-16 (v2.46)**
-  - **Ziel / Anlass:** Saubere User- und Google-Auth-Löschung, Signalerkennung gelöschter User in TTApp, Abmelde-Icon im Header mit Passwort-Sperre/LoginScreen und Bereinigung gelöschter Projekte.
-  - **Änderungen:**
-    - `ToolTime/backend`: In `DELETE /:tenantId/members/:uid` wird der Benutzer nun vollständig aus Firebase Auth (`adminAuth.deleteUser`) und der Profilsammlung gelöscht, aus `assignedMonteurIds` aller Projekte entfernt und offene Einladungen bereinigt. In `GET /:tenantId/projects` werden gelöschte Projekte (`status: 'deleted' || isDeleted`) serverseitig gefiltert. Neuer Endpoint `POST /api/public/invites/login` für Passwort-Login und Übergabe von `password` bei `POST /api/public/invites/redeem`.
-    - `ToolTime/admin-web`: In `TenantMembersView.tsx` Löschen-Button für Mitglieder mit Bestätigungsdialog ergänzt. Versions-Bump auf `v40`.
-    - `TTApp`:
-      - `Header.jsx`: Abmelde-Button (`🚪`) neben Online/Sync-Status im Header mit Bestätigungsdialog („Bist du sicher, dass du dich abmelden willst?“).
-      - `LoginScreen.jsx` & `authService.js`: Neues Entsperr-Screen mit Monteurname, Passwortfeld und Entsperren per individuellem Passwort. `hashHelper.js` für offline-fähigen SHA-256-Abgleich.
-      - `ActivationScreen.jsx`: Schritt „Passwort festlegen“ bei neuer Geräteaktivierung integriert.
-      - `syncService.js` & `App.js`: Automatische Erkennung im Admin gelöschter/inaktiver Benutzer (`isUserDeleted` -> Sofort-Abmeldung & Hinweis). Automatische Erkennung gelöschter Projekte (`isProjectDeleted` -> Cache-Purge, Weiterleitung auf verbleibendes Projekt oder Projektauswahl-Empty-State).
-      - `i18n.js`: Alle neuen Meldungen, Buttons und Dialoge in allen 4 Sprachen (DE, RO, PL, HR) übersetzt.
-  - **Verifikation:** `npx expo-doctor` 20/20, `npx expo export --platform ios` (818 Module) erfolgreich gebündelt; `ToolTime/backend` auf Cloud Run deployed (`tooltime-api-00011-c7q`), `ToolTime/admin-web` erfolgreich gebaut (`tsc -b && vite build`).
-
-- **2026-11-14 (v2.45)**
-  - **Anlass:** Kachel „Wöchentliches Aufmaß“ aus `RoomListScreen` entfernt; floor filters und room cards starten direkt. App-Anzeigeversion v2.45.
-  - **Verifikation:** `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden.
-
-- **2026-11-14 (v2.44)**
-  - **Anlass:** Tappbares Netzwerk-Symbol oben rechts als manueller Sync-Auslöser; rotierendes Sync-Symbol während Sync; Raum-Zurücknavigation im Header. App-Anzeigeversion v2.44.
-  - **Verifikation:** `npx expo-doctor` 20/20, iOS-Export und `git diff --check` bestanden.
 
