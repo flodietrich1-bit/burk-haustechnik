@@ -13,6 +13,7 @@ import {
 import { COLORS } from '../constants/theme';
 import { APP_VERSION } from '../constants/version';
 import { t, LANGUAGES } from '../locales/i18n';
+import { isLvProject } from '../utils/projectMode';
 
 export default function ProjectSelectScreen({
   monteur,
@@ -169,7 +170,7 @@ export default function ProjectSelectScreen({
                       : t('projectSingle', currentLang)}
                   </Text>
                 </View>
-                {proj.measurementMode === 'LV_BASED' && (
+                {isLvProject(proj) && (
                   <View style={styles.lvModeChip}>
                     <Text style={styles.lvModeChipText}>
                       📋 {t('lvModeLvBased', currentLang)}

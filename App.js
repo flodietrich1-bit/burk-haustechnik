@@ -60,6 +60,7 @@ import DoneScreen from './src/screens/DoneScreen';
 import LvOverviewScreen from './src/screens/LvOverviewScreen';
 import LvPositionsScreen from './src/screens/LvPositionsScreen';
 import LvCartScreen from './src/screens/LvCartScreen';
+import { isLvProject } from './src/utils/projectMode';
 import { DEFAULT_PROJECT, DEFAULT_PROJECT_ID } from './src/constants/initialData';
 
 export default function App() {
@@ -180,7 +181,7 @@ export default function App() {
         } else {
           const targetProj = assigned[0];
           setProject(targetProj);
-          const isLvMode = targetProj?.measurementMode === 'LV_BASED';
+          const isLvMode = isLvProject(targetProj);
           if (targetProj?.id) {
             await setActiveProjectId(targetProj.id);
             await refreshData(targetProj.id);
@@ -253,7 +254,7 @@ export default function App() {
     } else if (remaining.length === 1) {
       const nextProj = remaining[0];
       setProject(nextProj);
-      const isLvMode = nextProj?.measurementMode === 'LV_BASED';
+      const isLvMode = isLvProject(nextProj);
       await setActiveProjectId(nextProj.id);
       await refreshData(nextProj.id);
       const cartDraft = await getLvCartDraft(nextProj.id);
@@ -297,7 +298,7 @@ export default function App() {
       if (activeList.length === 1) {
         const targetProj = activeList[0];
         setProject(targetProj);
-        const isLvMode = targetProj?.measurementMode === 'LV_BASED';
+        const isLvMode = isLvProject(targetProj);
         if (targetProj?.id) {
           await setActiveProjectId(targetProj.id);
           await refreshData(targetProj.id);
@@ -370,7 +371,13 @@ export default function App() {
       setLvCart(cartDraft);
     }
     if (pInfo && Object.keys(pInfo).length > 0) {
-      setProject((prev) => ({ ...prev, ...pInfo }));
+      setProject((prev) => {
+        const merged = { ...prev, ...pInfo };
+        if (isLvProject(merged)) {
+          setCurrentScreen((curr) => (curr === 'rooms' ? 'lv_overview' : curr));
+        }
+        return merged;
+      });
     }
   };
 
@@ -408,7 +415,7 @@ export default function App() {
     } else {
       const targetProj = projectsList[0];
       setProject(targetProj);
-      const isLvMode = targetProj?.measurementMode === 'LV_BASED';
+      const isLvMode = isLvProject(targetProj);
       if (targetProj?.id) {
         await setActiveProjectId(targetProj.id);
         await refreshData(targetProj.id);
@@ -467,7 +474,7 @@ export default function App() {
       } else {
         const targetProj = projectsList[0];
         setProject(targetProj);
-        const isLvMode = targetProj?.measurementMode === 'LV_BASED';
+        const isLvMode = isLvProject(targetProj);
         // Persist project ID and load its cached data
         if (targetProj?.id) {
           await setActiveProjectId(targetProj.id);
@@ -528,7 +535,7 @@ export default function App() {
   const handleSelectProject = async (chosenProject) => {
     setProject(chosenProject);
     const pId = chosenProject?.id;
-    const isLvMode = chosenProject?.measurementMode === 'LV_BASED';
+    let isLvMode = isLvProject(chosenProject);
     // Persist chosen project ID and immediately load its rooms & positions
     if (pId) {
       await setActiveProjectId(pId);
@@ -544,7 +551,11 @@ export default function App() {
       setPendingCount(delta.totalPendingCount);
       if (Array.isArray(cartDraft)) setLvCart(cartDraft);
       if (pInfo && Object.keys(pInfo).length > 0) {
-        setProject((prev) => ({ ...prev, ...pInfo }));
+        setProject((prev) => {
+          const merged = { ...prev, ...pInfo };
+          if (isLvProject(merged)) isLvMode = true;
+          return merged;
+        });
       }
     }
     setAppPhase('app');
@@ -1491,7 +1502,7 @@ export default function App() {
       <Header
         projectName={project?.name || ''}
         subTitle={
-          project?.measurementMode === 'LV_BASED'
+          isLvProject(project)
             ? currentScreen === 'lv_positions'
               ? (selectedTrade || t('lvPositions', currentLang))
               : currentScreen === 'lv_cart'
@@ -1507,7 +1518,7 @@ export default function App() {
         isSyncing={isSyncing}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
         onBackToRooms={
-          project?.measurementMode === 'LV_BASED'
+          isLvProject(project)
             ? currentScreen === 'lv_positions'
               ? () => setCurrentScreen('lv_overview')
               : currentScreen === 'lv_cart'
@@ -1522,7 +1533,7 @@ export default function App() {
 
       {/* Screen Router */}
       <View style={styles.body}>
-        {project?.measurementMode === 'LV_BASED' ? (
+        {isLvProject(project) ? (
           <>
             {(currentScreen === 'lv_overview' ||
               currentScreen === 'rooms' ||
