@@ -1,8 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import type { Position, Booking, Room, User, Project } from '../types';
-import { Package, CheckCircle, TrendingUp, TrendingDown, Filter, Sparkles } from 'lucide-react';
-import { getMaterialActualQty } from '../services/firestoreService';
-import { LvEditorTable } from './lv/LvEditorTable';
+import type { Position, Booking, Room, User, Project, MeasurementSection } from '../types';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { useMaterialMetrics } from './material/useMaterialMetrics';
+import { MaterialStatsCards } from './material/MaterialStatsCards';
+import { MaterialFilterBar, type SourceFilterType } from './material/MaterialFilterBar';
+import { MaterialBalanceRow } from './material/MaterialBalanceRow';
+import { MaterialTableModals } from './material/MaterialTableModals';
+import { addCustomPosition, updatePositionFields } from '../services/lvPositionService';
+import { savePositionsBatch } from '../services/firestoreService';
 
 interface MaterialTableProps {
   positions: Position[];
@@ -12,6 +17,7 @@ interface MaterialTableProps {
   projectId?: string;
   currentUser?: User | null;
   project?: Project | null;
+  sections?: MeasurementSection[];
 }
 
 export const MaterialTable: React.FC<MaterialTableProps> = ({ 
@@ -21,358 +27,154 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
   searchTerm,
   projectId = '',
   currentUser = null,
-  project = null
+  project = null,
+  sections = []
 }) => {
-  const [viewMode, setViewMode] = useState<'editor' | 'balance'>('editor');
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilterType>('all');
   const [onlyInstalled, setOnlyInstalled] = useState<boolean>(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  const getPositionMetrics = useMemo(() => {
-    return (pos: Position) => {
-      let roomInstalled = 0;
-      let totalPlannedInRooms = 0;
-      let remainingNeeded = 0;
-      let hasRoomMatches = false;
+  // Modals state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [insertAfterTarget, setInsertAfterTarget] = useState<Position | undefined>(undefined);
+  const [defaultTradeTarget, setDefaultTradeTarget] = useState<string | undefined>(undefined);
+  const [aliasModalPos, setAliasModalPos] = useState<Position | null>(null);
+  const [aliasModalMode, setAliasModalMode] = useState<'alias' | 'info'>('alias');
+  const [editOriginalPos, setEditOriginalPos] = useState<Position | null>(null);
+  const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
-      // Real confirmed deviations across rooms:
-      // - Overconsumption (act > pl) counts immediately (+ diff)
-      // - Underconsumption (act < pl) counts ONLY if room is completed (- diff)
-      // - Unfinished room with act < pl is NOT an underconsumption, it's just remaining work (remainingNeeded)
-      let confirmedOverconsumption = 0;
-      let confirmedUnderconsumption = 0;
-      let allRoomsCompleted = true;
-      let matchedRoomsCount = 0;
+  const getPositionMetrics = useMaterialMetrics(rooms, bookings);
 
-      rooms.forEach(r => {
-        const isUnlocked = r.isCompleted === false || r.status === 'in_progress';
-        const isDone = !isUnlocked && (r.status === 'completed' || r.isCompleted === true || ((r as any).pct === 100));
-
-        (r.materials || []).forEach(m => {
-          const isMatch = 
-            (m.positionId && m.positionId === pos.id) ||
-            (m.posNr && m.posNr === pos.posNr) ||
-            (m.shortText && pos.shortText && m.shortText.trim().toLowerCase() === pos.shortText.trim().toLowerCase());
-
-          if (isMatch) {
-            hasRoomMatches = true;
-            matchedRoomsCount++;
-            if (!isDone) {
-              allRoomsCompleted = false;
-            }
-
-            const pl = Number(m.plannedQty) || 0;
-            const act = getMaterialActualQty(m, r, bookings);
-            roomInstalled += act;
-            totalPlannedInRooms += pl;
-
-            const roomDiff = act - pl;
-            if (roomDiff > 0) {
-              // Mehrverbrauch zählt SOFORT, egal ob Raum fertig oder in Arbeit
-              confirmedOverconsumption += roomDiff;
-            } else if (roomDiff < 0) {
-              if (isDone) {
-                // Minderverbrauch zählt NUR wenn der Raum abgeschlossen ist!
-                confirmedUnderconsumption += Math.abs(roomDiff);
-              } else {
-                // Raum noch offen -> restlicher Bedarf
-                remainingNeeded += Math.abs(roomDiff);
-              }
-            }
-          }
-        });
-      });
-
-      // Also check if there are direct bookings on this position that weren't counted in rooms
-      let standaloneBookingQty = 0;
-      if (!hasRoomMatches && bookings.length > 0) {
-        bookings.forEach(b => {
-          const posId = b.positionId || (b as any).itemId;
-          const posNr = b.positionNr || (b as any).itemOz;
-          if (posId === pos.id || (posNr && posNr === pos.posNr)) {
-            standaloneBookingQty += Number(b.quantity) || 0;
-          }
-        });
-      }
-
-      const installed = hasRoomMatches ? roomInstalled : Math.max(Number(pos.installedQty) || 0, standaloneBookingQty);
-      const planned = (hasRoomMatches && totalPlannedInRooms > 0) ? totalPlannedInRooms : (Number(pos.qty) || 0);
-      const rest = hasRoomMatches ? remainingNeeded : Math.max(0, planned - installed);
-      
-      // Baustellenbestand / Vorrätig:
-      // Verfügbarkeit basiert strikt auf der GAEB-Datei (pos.qty) abzüglich bisher im Projekt verbauter Teile
-      const gaebQty = Number(pos.qty) || 0;
-      const initialStock = (pos.deliveredQty !== undefined && pos.deliveredQty !== null)
-        ? Number(pos.deliveredQty)
-        : gaebQty;
-      const stock = Math.max(0, initialStock - installed);
-      
-      // Echte netto Abweichung:
-      // Nur Mehrverbrauch (sofort) und Minderverbrauch (nur bei fertigen Räumen)
-      const netConfirmedDelta = confirmedOverconsumption - confirmedUnderconsumption;
-
-      let delta = 0;
-      let deviationType: 'over' | 'under' | 'exact' = 'exact';
-
-      if (hasRoomMatches) {
-        if (confirmedOverconsumption > 0) {
-          delta = netConfirmedDelta;
-          deviationType = netConfirmedDelta > 0 ? 'over' : (netConfirmedDelta < 0 ? 'under' : 'exact');
-        } else if (confirmedUnderconsumption > 0) {
-          delta = -confirmedUnderconsumption;
-          deviationType = 'under';
-        } else {
-          delta = 0;
-          deviationType = 'exact';
-        }
-      } else {
-        // Fallback für Positionen ohne Raumzuordnung
-        const rawDiff = installed - planned;
-        if (rawDiff > 0) {
-          delta = rawDiff;
-          deviationType = 'over';
-        } else if (rawDiff < 0 && (pos as any).isCompleted) {
-          delta = rawDiff;
-          deviationType = 'under';
-        } else {
-          delta = 0;
-          deviationType = 'exact';
-        }
-      }
-
-      // Fortschritt in % (0 - 100)
-      const percent = planned > 0 
-        ? Math.min(100, Math.max(0, Math.round((installed / planned) * 100))) 
-        : (installed > 0 ? 100 : 0);
-
-      const isCompleted = (hasRoomMatches && matchedRoomsCount > 0 && allRoomsCompleted && rest === 0) ||
-        (!hasRoomMatches && planned > 0 && installed >= planned);
-      const isPartial = installed > 0 && !isCompleted;
-      const isOpen = installed === 0;
-
-      return {
-        planned,
-        installed,
-        delta,
-        rest,
-        stock,
-        deviationType,
-        percent,
-        isCompleted,
-        isPartial,
-        isOpen
-      };
-    };
-  }, [rooms, bookings]);
+  const canEditCommercial = useMemo(() => {
+    if (!currentUser) return true;
+    const r = currentUser.role;
+    return r === 'admin' || r === 'kaufmaennisch' || r === 'projektleiter' || r === 'bauleiter';
+  }, [currentUser]);
 
   // Unique groups from data
   const groups = useMemo(() => {
     const set = new Set<string>();
-    positions.forEach(p => p.group && set.add(p.group));
+    positions.forEach(p => {
+      const g = p.tradeCategory || p.group;
+      if (g) set.add(g);
+    });
     return Array.from(set);
+  }, [positions]);
+
+  // Source Counts (Alle, Nur Original, Nicht im LV)
+  const sourceCounts = useMemo(() => {
+    let original = 0;
+    let custom = 0;
+    positions.forEach(p => {
+      if (p.sourceType === 'CUSTOM_ADDED') custom++;
+      else original++;
+    });
+    return { all: positions.length, original, custom };
   }, [positions]);
 
   // Filtered positions
   const filteredPositions = useMemo(() => {
     return positions.filter(p => {
-      const matchesSearch = 
-        !searchTerm || 
-        p.posNr.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.shortText.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.group.toLowerCase().includes(searchTerm.toLowerCase());
+      if (sourceFilter === 'original' && p.sourceType === 'CUSTOM_ADDED') return false;
+      if (sourceFilter === 'custom' && p.sourceType !== 'CUSTOM_ADDED') return false;
 
-      const matchesGroup = selectedGroup === 'all' || p.group === selectedGroup;
-
-      const m = getPositionMetrics(p);
-      if (onlyInstalled && m.installed <= 0) {
-        return false;
+      if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        const code = (p.displayCode || p.posNr).toLowerCase();
+        const title = (p.officialTitle || p.shortText || '').toLowerCase();
+        const alias = (p.aliasTitle || '').toLowerCase();
+        const grp = (p.tradeCategory || p.group || '').toLowerCase();
+        if (!code.includes(s) && !title.includes(s) && !alias.includes(s) && !grp.includes(s)) return false;
       }
 
-      const matchesStatus = 
-        selectedStatus === 'all' ||
-        (selectedStatus === 'over' && m.deviationType === 'over') ||
-        (selectedStatus === 'under' && m.deviationType === 'under') ||
-        (selectedStatus === 'exact' && m.deviationType === 'exact') ||
-        (selectedStatus === 'completed' && m.isCompleted) ||
-        (selectedStatus === 'partial' && m.isPartial) ||
-        (selectedStatus === 'open' && m.isOpen);
+      const posGroup = p.tradeCategory || p.group;
+      if (selectedGroup !== 'all' && posGroup !== selectedGroup) return false;
 
-      return matchesSearch && matchesGroup && matchesStatus;
+      const m = getPositionMetrics(p);
+      if (onlyInstalled && m.installed <= 0) return false;
+
+      if (selectedStatus === 'over' && m.deviationType !== 'over') return false;
+      if (selectedStatus === 'under' && m.deviationType !== 'under') return false;
+      if (selectedStatus === 'exact' && (m.deviationType !== 'exact' || !m.isCompleted)) return false;
+      if (selectedStatus === 'partial' && !m.isPartial) return false;
+      if (selectedStatus === 'completed' && !m.isCompleted) return false;
+      if (selectedStatus === 'open' && !m.isOpen) return false;
+
+      return true;
     });
-  }, [positions, searchTerm, selectedGroup, selectedStatus, onlyInstalled, getPositionMetrics]);
+  }, [positions, searchTerm, sourceFilter, selectedGroup, selectedStatus, onlyInstalled, getPositionMetrics]);
+
+  // Grouped by Trade
+  const groupedPositions = useMemo(() => {
+    const map: { [trade: string]: Position[] } = {};
+    filteredPositions.forEach(p => {
+      const g = p.tradeCategory || p.group || 'Allgemeine Positionen';
+      if (!map[g]) map[g] = [];
+      map[g].push(p);
+    });
+    Object.keys(map).forEach(g => {
+      map[g].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    });
+    return map;
+  }, [filteredPositions]);
 
   // Totals & KPI Metrics
-  const totalItems = positions.length;
-  const exactItems = positions.filter(p => {
+  const exactItems = useMemo(() => positions.filter(p => {
     const m = getPositionMetrics(p);
     return m.isCompleted && m.delta === 0 && m.installed > 0;
-  }).length;
-  const overItems = positions.filter(p => getPositionMetrics(p).deviationType === 'over').length;
-  const underItems = positions.filter(p => getPositionMetrics(p).deviationType === 'under').length;
-  const totalValue = positions.reduce((acc, p) => acc + (getPositionMetrics(p).installed * (p.unitPrice || 0)), 0);
+  }).length, [positions, getPositionMetrics]);
+
+  const overItems = useMemo(() => positions.filter(p => getPositionMetrics(p).deviationType === 'over').length, [positions, getPositionMetrics]);
+  const underItems = useMemo(() => positions.filter(p => getPositionMetrics(p).deviationType === 'under').length, [positions, getPositionMetrics]);
+  const totalValue = useMemo(() => {
+    return positions.reduce((acc, p) => acc + (getPositionMetrics(p).installed * (p.unitPriceVK ?? p.unitPrice ?? 0)), 0);
+  }, [positions, getPositionMetrics]);
+
+  const handleUpdateFields = async (positionId: string, updates: Partial<Position>) => {
+    if (!projectId) return;
+    await updatePositionFields(projectId, positionId, positions, updates);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Top View Switcher */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-2.5 rounded-2xl border border-slate-200 shadow-sm gap-2">
-        <div className="flex items-center space-x-1">
-          <button
-            type="button"
-            onClick={() => setViewMode('editor')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
-              viewMode === 'editor'
-                ? 'bg-[#3B82C4] text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            <span>LV-Editor (Excel-Ersatz & Stammdaten)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('balance')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center space-x-2 ${
-              viewMode === 'balance'
-                ? 'bg-[#3B82C4] text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <Package className="w-4 h-4" />
-            <span>Soll/Ist Material-Bilanz</span>
-          </button>
-        </div>
-        <span className="text-xs text-slate-400 px-2 hidden sm:inline">
-          {viewMode === 'editor' ? 'Excel-Tabellenansicht mit Aliases, Zusatzinfos & Preisen' : 'Raumbezogene Mengenverbräuche & Baustellenbestand'}
-        </span>
-      </div>
+    <div className="space-y-5">
+      {/* KPI Stat Cards */}
+      <MaterialStatsCards
+        totalItems={positions.length}
+        exactItems={exactItems}
+        overItems={overItems}
+        underItems={underItems}
+      />
 
-      {viewMode === 'editor' && projectId ? (
-        <LvEditorTable
-          projectId={projectId}
-          positions={positions}
-          currentUser={currentUser}
-          project={project}
-          searchTerm={searchTerm}
-        />
-      ) : (
-        <>
-          {/* Top Stat Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Gesamt LV-Positionen</p>
-            <p className="text-2xl font-bold text-slate-800">{totalItems}</p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-blue-50 text-[#3B82C4] flex items-center justify-center">
-            <Package className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Punktgenau / Planmäßig</p>
-            <p className="text-2xl font-bold text-slate-700">{exactItems}</p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center">
-            <CheckCircle className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Mehrverbrauch (Abweichung)</p>
-            <p className="text-2xl font-bold text-rose-600">{overItems}</p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center">
-            <TrendingUp className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs font-medium text-slate-500">Minderverbrauch / Ersparnis</p>
-            <p className="text-2xl font-bold text-[#2FA36B]">{underItems}</p>
-          </div>
-          <div className="w-10 h-10 rounded-lg bg-emerald-50 text-[#2FA36B] flex items-center justify-center">
-            <TrendingDown className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-600">
-            <Filter className="w-4 h-4 text-[#3B82C4]" />
-            <span>Gewerk:</span>
-          </div>
-          <select
-            value={selectedGroup}
-            onChange={(e) => setSelectedGroup(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-          >
-            <option value="all">Alle Titel / Gewerke ({groups.length})</option>
-            {groups.map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
-
-          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-600 ml-2">
-            <span>Filter / Status:</span>
-          </div>
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
-          >
-            <option value="all">Alle Positionen</option>
-            <option value="over">Nur Mehrverbrauch (+ Rot)</option>
-            <option value="under">Nur Minderverbrauch (- Grün)</option>
-            <option value="exact">Nur Punktgenau (Planmäßig)</option>
-            <option value="partial">In Montage (Teilverbaut)</option>
-            <option value="completed">Vollständig verbaut</option>
-            <option value="open">Noch offen</option>
-          </select>
-
-          {/* Radio Button: Nur verbaute Teile */}
-          <div className="flex items-center space-x-3 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 ml-1">
-            <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
-              <input
-                type="radio"
-                name="pos_installed_filter"
-                value="all"
-                checked={!onlyInstalled}
-                onChange={() => setOnlyInstalled(false)}
-                className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
-              />
-              <span>Alle Teile</span>
-            </label>
-            <label className="flex items-center space-x-1.5 cursor-pointer hover:text-slate-900">
-              <input
-                type="radio"
-                name="pos_installed_filter"
-                value="installed"
-                checked={onlyInstalled}
-                onChange={() => setOnlyInstalled(true)}
-                className="w-3.5 h-3.5 text-[#3B82C4] focus:ring-[#3B82C4] cursor-pointer"
-              />
-              <span>Nur verbaute Teile</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-4 text-xs text-slate-500 font-medium">
-          {totalValue > 0 && (
-            <span className="hidden sm:inline text-slate-600">
-              Verbauter Wert: <strong className="text-slate-900">{totalValue.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</strong>
-            </span>
-          )}
-          <span>
-            Zeige <span className="font-bold text-slate-800">{filteredPositions.length}</span> von <span className="font-bold text-slate-800">{positions.length}</span> Positionen
-          </span>
-        </div>
-      </div>
+      {/* Filter Bar with Source Chips & Edit Mode Toggle */}
+      <MaterialFilterBar
+        groups={groups}
+        selectedGroup={selectedGroup}
+        setSelectedGroup={setSelectedGroup}
+        selectedStatus={selectedStatus}
+        setSelectedStatus={setSelectedStatus}
+        sourceFilter={sourceFilter}
+        setSourceFilter={setSourceFilter}
+        sourceCounts={sourceCounts}
+        onlyInstalled={onlyInstalled}
+        setOnlyInstalled={setOnlyInstalled}
+        totalFilteredCount={filteredPositions.length}
+        totalPositionsCount={positions.length}
+        totalValue={totalValue}
+        isEditMode={isEditMode}
+        setIsEditMode={setIsEditMode}
+        onOpenAddModal={() => {
+          setInsertAfterTarget(undefined);
+          setDefaultTradeTarget(undefined);
+          setIsAddModalOpen(true);
+        }}
+        onOpenExcelModal={() => setIsExcelModalOpen(true)}
+        onOpenExportModal={() => setIsExportModalOpen(true)}
+        canEditCommercial={canEditCommercial}
+      />
 
       {/* Main Material Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -380,137 +182,80 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-[11px] font-semibold uppercase border-b border-slate-200">
-                <th className="py-3 px-4 w-20">Pos-Nr</th>
-                <th className="py-3 px-4">Gewerk / Beschreibung</th>
-                <th className="py-3 px-4 w-24 text-right">Geplant</th>
-                <th className="py-3 px-4 w-32 text-center">Abweichung bisher</th>
-                <th className="py-3 px-4 w-28 text-right">Gesamt Verbaut</th>
-                <th className="py-3 px-4 w-24 text-right">Noch offen</th>
-                <th className="py-3 px-4 w-24 text-right">Vorrätig</th>
-                <th className="py-3 px-4 w-36">Fortschritt</th>
-                <th className="py-3 px-4 w-24 text-right">Einzelpreis</th>
-                <th className="py-3 px-4 w-28 text-center">Status</th>
+                <th className="py-3 px-3 w-28">Pos-Nr & Typ</th>
+                <th className="py-3 px-3">Gewerk / Beschreibung</th>
+                <th className="py-3 px-3 w-24 text-right">Geplant</th>
+                <th className="py-3 px-3 w-32 text-center">Abweichung</th>
+                <th className="py-3 px-3 w-28 text-right">Verbaut</th>
+                <th className="py-3 px-3 w-24 text-right">Offen</th>
+                <th className="py-3 px-3 w-24 text-right">Vorrätig</th>
+                <th className="py-3 px-3 w-32">Fortschritt</th>
+                <th className="py-3 px-3 w-28 text-right">VK-Preis</th>
+                <th className="py-3 px-3 w-28 text-center">{isEditMode ? 'Bestellstatus' : 'Status'}</th>
+                {isEditMode && <th className="py-3 px-3 w-36 text-right">Aktionen</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredPositions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-8 text-center text-slate-400">
-                    Keine LV-Positionen für diesen Filter gefunden.
+                  <td colSpan={isEditMode ? 11 : 10} className="py-12 text-center text-slate-400">
+                    Keine Positionen für diesen Filter gefunden.
                   </td>
                 </tr>
               ) : (
-                filteredPositions.map((pos) => {
-                  const m = getPositionMetrics(pos);
-
-                  // Dynamic color transition from Red (1%) through Amber to Green (100%)
-                  const currentHue = Math.min(142, Math.max(0, Math.round((m.percent / 100) * 142)));
-                  const progressColor = m.percent === 100 
-                    ? '#10B981' 
-                    : (m.percent === 0 ? '#E2E8F0' : `hsl(${currentHue}, 85%, 44%)`);
-
+                Object.entries(groupedPositions).map(([grp, items]) => {
+                  const isCollapsed = collapsedGroups[grp];
                   return (
-                    <tr key={pos.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-[#3B82C4]">
-                        <div className="flex items-center space-x-1.5">
-                          <span>{pos.posNr}</span>
-                          {(pos.isAddendum || pos.group === 'Nachträge') && (
-                            <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0">
-                              Nachtrag
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-slate-800 line-clamp-1">{pos.shortText}</div>
-                        <div className="text-[11px] text-slate-400 flex items-center space-x-2 mt-0.5">
-                          <span>{pos.group}</span>
-                          {pos.isCutMaterial && (
-                            <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.2 rounded font-medium">
-                              Verschnitt (m)
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-medium text-slate-700">
-                        {m.planned} {pos.qu}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {m.delta > 0 ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200">
-                            +{m.delta} {pos.qu}
-                          </span>
-                        ) : m.delta < 0 ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            {m.delta} {pos.qu}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 font-mono text-[11px]">–</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold text-slate-900">
-                        {m.installed} {pos.qu}
-                      </td>
-                      <td className="py-3 px-4 text-right font-semibold text-slate-600">
-                        {m.rest > 0 ? `${m.rest} ${pos.qu}` : <span className="text-slate-400">–</span>}
-                      </td>
-                      <td className="py-3 px-4 text-right font-bold">
-                        {m.stock < m.rest ? (
-                          <span className="text-amber-600" title="Vorrätiger Bestand reicht nicht für Restbedarf">
-                            {m.stock} {pos.qu}
-                          </span>
-                        ) : (
-                          <span className="text-slate-700">
-                            {m.stock} {pos.qu}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] text-slate-900 font-black">
-                            <span>{m.percent}%</span>
+                    <React.Fragment key={grp}>
+                      <tr className="bg-slate-100/90 border-t border-b border-slate-200 font-bold text-slate-700 text-xs">
+                        <td colSpan={isEditMode ? 11 : 10} className="py-2 px-3">
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setCollapsedGroups(prev => ({ ...prev, [grp]: !prev[grp] }))}
+                              className="flex items-center space-x-2 text-left hover:text-[#3B82C4] transition-colors"
+                            >
+                              {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                              <span className="uppercase tracking-wider">{grp}</span>
+                              <span className="text-[11px] font-normal text-slate-500">({items.length})</span>
+                            </button>
+                            {isEditMode && canEditCommercial && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDefaultTradeTarget(grp);
+                                  setInsertAfterTarget(items[items.length - 1]);
+                                  setIsAddModalOpen(true);
+                                }}
+                                className="text-[11px] font-bold text-[#3B82C4] hover:text-[#285d8f] flex items-center space-x-1 px-2 py-0.5 rounded hover:bg-white"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>In {grp} hinzufügen</span>
+                              </button>
+                            )}
                           </div>
-                          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{ 
-                                width: `${m.percent}%`,
-                                backgroundColor: progressColor
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 text-right text-slate-600 font-mono">
-                        {pos.unitPrice ? `${pos.unitPrice.toFixed(2)} €` : '-'}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {m.delta > 0 ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                            <TrendingUp className="w-3 h-3" />
-                            <span>Mehrverbrauch</span>
-                          </span>
-                        ) : m.deviationType === 'under' ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <TrendingDown className="w-3 h-3" />
-                            <span>Ersparnis</span>
-                          </span>
-                        ) : m.isCompleted ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                            <CheckCircle className="w-3 h-3 text-[#2FA36B]" />
-                            <span>Punktgenau</span>
-                          </span>
-                        ) : m.isPartial ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                            In Montage
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-50 text-slate-500 border border-slate-200">
-                            Offen
-                          </span>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {!isCollapsed && items.map(pos => (
+                        <MaterialBalanceRow
+                          key={pos.id}
+                          position={pos}
+                          metrics={getPositionMetrics(pos)}
+                          isEditMode={isEditMode}
+                          canEditCommercial={canEditCommercial}
+                          onOpenAlias={(p) => { setAliasModalPos(p); setAliasModalMode('alias'); }}
+                          onOpenInfo={(p) => { setAliasModalPos(p); setAliasModalMode('info'); }}
+                          onInsertBelow={(p) => {
+                            setInsertAfterTarget(p);
+                            setDefaultTradeTarget(p.tradeCategory || p.group);
+                            setIsAddModalOpen(true);
+                          }}
+                          onEditOriginal={(p) => setEditOriginalPos(p)}
+                          onUpdateStatus={(posId, status) => handleUpdateFields(posId, { orderStatus: status })}
+                          onUpdatePrice={(posId, price) => handleUpdateFields(posId, { unitPriceVK: price })}
+                        />
+                      ))}
+                    </React.Fragment>
                   );
                 })
               )}
@@ -518,9 +263,37 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
           </table>
         </div>
       </div>
-        </>
-      )}
+
+      {/* MODALS */}
+      <MaterialTableModals
+        projectId={projectId}
+        positions={positions}
+        sections={sections}
+        project={project}
+        currentUser={currentUser}
+        isAddOpen={isAddModalOpen}
+        onCloseAdd={() => { setIsAddModalOpen(false); setInsertAfterTarget(undefined); setDefaultTradeTarget(undefined); }}
+        onSaveNew={async (data, target) => { if (projectId) await addCustomPosition(projectId, positions, data, target); }}
+        insertAfterTarget={insertAfterTarget}
+        defaultTradeTarget={defaultTradeTarget}
+        aliasModalPos={aliasModalPos}
+        aliasModalMode={aliasModalMode}
+        onCloseAlias={() => setAliasModalPos(null)}
+        onSaveAlias={handleUpdateFields}
+        editOriginalPos={editOriginalPos}
+        onCloseOriginal={() => setEditOriginalPos(null)}
+        onSaveOriginal={handleUpdateFields}
+        isExcelOpen={isExcelModalOpen}
+        onCloseExcel={() => setIsExcelModalOpen(false)}
+        onImportExcel={async (imported) => {
+          if (projectId) {
+            await savePositionsBatch(projectId, imported);
+            setIsExcelModalOpen(false);
+          }
+        }}
+        isExportOpen={isExportModalOpen}
+        onCloseExport={() => setIsExportModalOpen(false)}
+      />
     </div>
   );
 };
-

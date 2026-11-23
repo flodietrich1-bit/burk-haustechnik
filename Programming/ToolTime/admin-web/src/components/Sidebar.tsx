@@ -71,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const projectItems = [
     {
       id: 'positions' as TabType,
-      label: 'LV Material-Bilanz',
+      label: 'Materialbilanz',
       icon: Package,
       badge: totalPositionsCount > 0 ? String(totalPositionsCount) : undefined
     },
