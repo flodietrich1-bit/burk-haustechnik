@@ -599,6 +599,7 @@ export async function getLocalUnsyncedDelta(projectId) {
   const pId = ctx.projectId;
   const allBookings = await getPendingBookings();
   const allAddendums = await getPendingAddendums();
+  const pendingSections = await getOutboxSections(pId);
   const pendingBookings = allBookings.filter((b) => !b.projectId || b.projectId === pId);
   const pendingAddendums = allAddendums.filter((a) => !a.projectId || a.projectId === pId);
   const rooms = await getRooms(pId);
@@ -620,10 +621,122 @@ export async function getLocalUnsyncedDelta(projectId) {
   return {
     pendingBookings,
     pendingAddendums,
+    pendingSections,
     pendingRooms,
-    hasLocalDelta: pendingBookings.length > 0 || pendingAddendums.length > 0 || pendingRooms.length > 0,
-    totalPendingCount: pendingBookings.length + pendingAddendums.length + pendingRooms.length,
+    hasLocalDelta: pendingBookings.length > 0 || pendingAddendums.length > 0 || pendingRooms.length > 0 || pendingSections.length > 0,
+    totalPendingCount: pendingBookings.length + pendingAddendums.length + pendingRooms.length + pendingSections.length,
   };
+}
+
+// -------------------------------------------------------------
+// 7b. Measurement Sections Outbox (LV-Aufmaß)
+// Scoped strictly under @ttapp:outbox_sections:${tenantId}:${userId}:${projectId}
+// -------------------------------------------------------------
+export async function getOutboxSections(projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('outbox_sections', ctx);
+    const data = await AsyncStorage.getItem(key);
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Error reading outbox_sections:', e);
+  }
+  return [];
+}
+
+export async function enqueueSection(section, projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('outbox_sections', ctx);
+    const existing = await getOutboxSections(projectId);
+    const newSection = {
+      ...section,
+      id: section.id || `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      projectId: projectId || ctx.projectId,
+      createdAt: section.createdAt || new Date().toISOString(),
+      status: 'SUBMITTED',
+      items: Array.isArray(section.items) ? section.items : [],
+      photos: Array.isArray(section.photos) ? section.photos : [],
+    };
+    const updated = [newSection, ...existing.filter((s) => s.id !== newSection.id)];
+    await AsyncStorage.setItem(key, JSON.stringify(updated));
+
+    // Optimistically update locally installedQty for positions
+    try {
+      if (Array.isArray(newSection.items) && newSection.items.length > 0) {
+        const materials = await getMaterials(projectId);
+        let modified = false;
+        const updatedMaterials = materials.map((m) => {
+          const item = newSection.items.find(
+            (it) => !it.isUnplannedMaterial && (it.lvItemId === m.id || it.posNr === m.displayCode || it.posNr === m.pos)
+          );
+          if (item && Number(item.quantity) > 0) {
+            modified = true;
+            return {
+              ...m,
+              installedQty: Math.max(0, (Number(m.installedQty) || 0) + Number(item.quantity)),
+            };
+          }
+          return m;
+        });
+        if (modified) {
+          await saveMaterials(updatedMaterials, projectId);
+        }
+      }
+    } catch (e) {
+      console.warn('Error optimistically updating installedQty for section:', e);
+    }
+
+    return newSection;
+  } catch (e) {
+    console.error('Error enqueuing section:', e);
+    throw e;
+  }
+}
+
+export async function removeOutboxSection(sectionId, projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('outbox_sections', ctx);
+    const existing = await getOutboxSections(projectId);
+    const remaining = existing.filter((s) => s.id !== sectionId);
+    await AsyncStorage.setItem(key, JSON.stringify(remaining));
+  } catch (e) {
+    console.warn('Error removing outbox section:', e);
+  }
+}
+
+// -------------------------------------------------------------
+// 7c. LV Cart Draft Persistence
+// -------------------------------------------------------------
+export async function getLvCartDraft(projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('lv_cart_draft', ctx);
+    const data = await AsyncStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveLvCartDraft(cart, projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('lv_cart_draft', ctx);
+    await AsyncStorage.setItem(key, JSON.stringify(cart || []));
+  } catch {}
+}
+
+export async function clearLvCartDraft(projectId) {
+  try {
+    const ctx = await getStorageContext(projectId);
+    const key = buildScopedKey('lv_cart_draft', ctx);
+    await AsyncStorage.removeItem(key);
+  } catch {}
 }
 
 /**
@@ -647,6 +760,8 @@ export async function clearProjectCache(projectId) {
     const scopedProjKey = buildScopedKey('project', ctx);
     const scopedPlansKey = buildScopedKey('plans', ctx);
     const scopedSyncKey = buildScopedKey('last_synced', ctx);
+    const scopedSectionsKey = buildScopedKey('outbox_sections', ctx);
+    const scopedCartDraftKey = buildScopedKey('lv_cart_draft', ctx);
 
     await Promise.all([
       AsyncStorage.removeItem(scopedRoomsKey),
@@ -654,6 +769,8 @@ export async function clearProjectCache(projectId) {
       AsyncStorage.removeItem(scopedProjKey),
       AsyncStorage.removeItem(scopedPlansKey),
       AsyncStorage.removeItem(scopedSyncKey),
+      AsyncStorage.removeItem(scopedSectionsKey),
+      AsyncStorage.removeItem(scopedCartDraftKey),
       AsyncStorage.removeItem(`${KEYS.ROOMS}_${pId}`),
       AsyncStorage.removeItem(`${KEYS.MATERIALS}_${pId}`),
       AsyncStorage.removeItem(`${KEYS.PROJECT}_${pId}`),

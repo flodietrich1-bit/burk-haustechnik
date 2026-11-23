@@ -35,6 +35,10 @@ import {
   computeRoomPercentage,
   getCachedPlans,
   clearProjectCache,
+  getLvCartDraft,
+  saveLvCartDraft,
+  clearLvCartDraft,
+  enqueueSection,
 } from './src/services/storageService';
 import { syncBookings as runSyncBookings, checkOnlineStatus, subscribeToRoomLive } from './src/services/syncService';
 import { t } from './src/locales/i18n';
@@ -53,12 +57,20 @@ import RoomListScreen from './src/screens/RoomListScreen';
 import BookingScreen from './src/screens/BookingScreen';
 import PhotoCaptureScreen from './src/screens/PhotoCaptureScreen';
 import DoneScreen from './src/screens/DoneScreen';
+import LvOverviewScreen from './src/screens/LvOverviewScreen';
+import LvPositionsScreen from './src/screens/LvPositionsScreen';
+import LvCartScreen from './src/screens/LvCartScreen';
 import { DEFAULT_PROJECT, DEFAULT_PROJECT_ID } from './src/constants/initialData';
 
 export default function App() {
   // App Phase: 'loading' | 'pin' | 'project_select' | 'app'
   const [appPhase, setAppPhase] = useState('loading');
-  const [currentScreen, setCurrentScreen] = useState('rooms'); // 'rooms' | 'book' | 'photos' | 'done'
+  const [currentScreen, setCurrentScreen] = useState('rooms'); // 'rooms' | 'book' | 'photos' | 'done' | 'lv_overview' | 'lv_positions' | 'lv_cart'
+
+  // LV-Aufmaß State (Dual Architecture)
+  const [lvCart, setLvCart] = useState([]);
+  const [selectedTrade, setSelectedTrade] = useState(null);
+  const [previousLvScreen, setPreviousLvScreen] = useState('lv_overview');
 
   // User & Localization
   const [monteur, setMonteur] = useState(null);
@@ -168,12 +180,15 @@ export default function App() {
         } else {
           const targetProj = assigned[0];
           setProject(targetProj);
+          const isLvMode = targetProj?.measurementMode === 'LV_BASED';
           if (targetProj?.id) {
             await setActiveProjectId(targetProj.id);
             await refreshData(targetProj.id);
+            const cartDraft = await getLvCartDraft(targetProj.id);
+            if (Array.isArray(cartDraft)) setLvCart(cartDraft);
           }
           setAppPhase('app');
-          setCurrentScreen('rooms');
+          setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
 
           // Trigger silent background sync
           syncBookings({ silent: true, projectId: targetProj?.id })
@@ -238,10 +253,13 @@ export default function App() {
     } else if (remaining.length === 1) {
       const nextProj = remaining[0];
       setProject(nextProj);
+      const isLvMode = nextProj?.measurementMode === 'LV_BASED';
       await setActiveProjectId(nextProj.id);
       await refreshData(nextProj.id);
+      const cartDraft = await getLvCartDraft(nextProj.id);
+      if (Array.isArray(cartDraft)) setLvCart(cartDraft);
       setAppPhase('app');
-      setCurrentScreen('rooms');
+      setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
     } else {
       setProject(null);
       setAppPhase('project_select');
@@ -279,12 +297,15 @@ export default function App() {
       if (activeList.length === 1) {
         const targetProj = activeList[0];
         setProject(targetProj);
+        const isLvMode = targetProj?.measurementMode === 'LV_BASED';
         if (targetProj?.id) {
           await setActiveProjectId(targetProj.id);
           await refreshData(targetProj.id);
+          const cartDraft = await getLvCartDraft(targetProj.id);
+          if (Array.isArray(cartDraft)) setLvCart(cartDraft);
         }
         setAppPhase('app');
-        setCurrentScreen('rooms');
+        setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
       }
     } catch (err) {
       console.warn('Error refreshing assigned projects:', err);
@@ -335,14 +356,22 @@ export default function App() {
 
   const refreshData = async (targetProjectId) => {
     const pId = targetProjectId || project?.id;
-    const [r, m, delta] = await Promise.all([
+    const [r, m, delta, pInfo, cartDraft] = await Promise.all([
       getRooms(pId),
       getMaterials(pId),
       getLocalUnsyncedDelta(pId),
+      getProjectInfo(pId),
+      getLvCartDraft(pId),
     ]);
     setRooms(r);
     setMaterials(m);
     setPendingCount(delta.totalPendingCount);
+    if (Array.isArray(cartDraft)) {
+      setLvCart(cartDraft);
+    }
+    if (pInfo && Object.keys(pInfo).length > 0) {
+      setProject((prev) => ({ ...prev, ...pInfo }));
+    }
   };
 
   // Live onSnapshot listener for the active room (< 5s updates from Web Portal)
@@ -379,12 +408,15 @@ export default function App() {
     } else {
       const targetProj = projectsList[0];
       setProject(targetProj);
+      const isLvMode = targetProj?.measurementMode === 'LV_BASED';
       if (targetProj?.id) {
         await setActiveProjectId(targetProj.id);
         await refreshData(targetProj.id);
+        const cartDraft = await getLvCartDraft(targetProj.id);
+        if (Array.isArray(cartDraft)) setLvCart(cartDraft);
       }
       setAppPhase('app');
-      setCurrentScreen('rooms');
+      setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
 
       // Initial seamless sync
       setSyncProgress({
@@ -435,22 +467,29 @@ export default function App() {
       } else {
         const targetProj = projectsList[0];
         setProject(targetProj);
+        const isLvMode = targetProj?.measurementMode === 'LV_BASED';
         // Persist project ID and load its cached data
         if (targetProj?.id) {
           await setActiveProjectId(targetProj.id);
-          const [r, m, delta, pl] = await Promise.all([
+          const [r, m, delta, pl, pInfo, cartDraft] = await Promise.all([
             getRooms(targetProj.id),
             getMaterials(targetProj.id),
             getLocalUnsyncedDelta(targetProj.id),
             getCachedPlans(targetProj.id),
+            getProjectInfo(targetProj.id),
+            getLvCartDraft(targetProj.id),
           ]);
           setRooms(r);
           setMaterials(m);
           setPendingCount(delta.totalPendingCount);
           if (Array.isArray(pl)) setPlans(pl);
+          if (Array.isArray(cartDraft)) setLvCart(cartDraft);
+          if (pInfo && Object.keys(pInfo).length > 0) {
+            setProject((prev) => ({ ...prev, ...pInfo }));
+          }
         }
         setAppPhase('app');
-        setCurrentScreen('rooms');
+        setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
       }
     };
 
@@ -489,20 +528,27 @@ export default function App() {
   const handleSelectProject = async (chosenProject) => {
     setProject(chosenProject);
     const pId = chosenProject?.id;
+    const isLvMode = chosenProject?.measurementMode === 'LV_BASED';
     // Persist chosen project ID and immediately load its rooms & positions
     if (pId) {
       await setActiveProjectId(pId);
-      const [r, m, delta] = await Promise.all([
+      const [r, m, delta, pInfo, cartDraft] = await Promise.all([
         getRooms(pId),
         getMaterials(pId),
         getLocalUnsyncedDelta(pId),
+        getProjectInfo(pId),
+        getLvCartDraft(pId),
       ]);
       setRooms(r);
       setMaterials(m);
       setPendingCount(delta.totalPendingCount);
+      if (Array.isArray(cartDraft)) setLvCart(cartDraft);
+      if (pInfo && Object.keys(pInfo).length > 0) {
+        setProject((prev) => ({ ...prev, ...pInfo }));
+      }
     }
     setAppPhase('app');
-    setCurrentScreen('rooms');
+    setCurrentScreen(isLvMode ? 'lv_overview' : 'rooms');
     // Immediately sync data from cloud for the selected project
     setTimeout(async () => {
       try {
@@ -535,6 +581,158 @@ export default function App() {
     if (res.success) setIsOnline(true);
     handleSyncResult(res, pId);
   };
+
+  // 6b. LV-Aufmaß Handlers (Dual Architecture)
+  const handleSelectTrade = useCallback((tradeName) => {
+    setSelectedTrade(tradeName);
+    setCurrentScreen('lv_positions');
+  }, []);
+
+  const handleOpenLvCart = useCallback(() => {
+    setPreviousLvScreen(currentScreen === 'lv_positions' ? 'lv_positions' : 'lv_overview');
+    setCurrentScreen('lv_cart');
+  }, [currentScreen]);
+
+  const handleLvQuantityChange = useCallback(async (position, newQty) => {
+    const safeQty = Math.max(0, Number(newQty) || 0);
+    const posId = position.id || position.lvItemId;
+    const posCode = position.displayCode || position.posNr || position.pos || '';
+
+    setLvCart((prevCart) => {
+      let updatedCart;
+      if (safeQty > 0) {
+        const exists = prevCart.some((it) => it.lvItemId === posId || (posCode && it.posNr === posCode));
+        if (exists) {
+          updatedCart = prevCart.map((it) =>
+            it.lvItemId === posId || (posCode && it.posNr === posCode)
+              ? { ...it, quantity: safeQty }
+              : it
+          );
+        } else {
+          const newItem = {
+            lvItemId: posId,
+            posNr: posCode,
+            shortText: position.aliasTitle || position.officialTitle || position.shortText || position.name || '',
+            quantity: safeQty,
+            qu: position.qu || 'Stk',
+            isUnplannedMaterial: false,
+            sourceType: position.sourceType || 'ORIGINAL_GAEB',
+          };
+          updatedCart = [...prevCart, newItem];
+        }
+      } else {
+        updatedCart = prevCart.filter((it) => it.lvItemId !== posId && (!posCode || it.posNr !== posCode));
+      }
+      if (project?.id) {
+        saveLvCartDraft(updatedCart, project.id).catch(() => {});
+      }
+      return updatedCart;
+    });
+  }, [project?.id]);
+
+  const handleLvCartItemQuantityChange = useCallback(async (item, newQty) => {
+    const safeQty = Math.max(0, Number(newQty) || 0);
+    setLvCart((prevCart) => {
+      let updatedCart;
+      if (safeQty > 0) {
+        updatedCart = prevCart.map((it) =>
+          it.lvItemId === item.lvItemId ? { ...it, quantity: safeQty } : it
+        );
+      } else {
+        updatedCart = prevCart.filter((it) => it.lvItemId !== item.lvItemId);
+      }
+      if (project?.id) {
+        saveLvCartDraft(updatedCart, project.id).catch(() => {});
+      }
+      return updatedCart;
+    });
+  }, [project?.id]);
+
+  const handleRemoveFromLvCart = useCallback(async (lvItemId) => {
+    setLvCart((prevCart) => {
+      const updatedCart = prevCart.filter((it) => it.lvItemId !== lvItemId);
+      if (project?.id) {
+        saveLvCartDraft(updatedCart, project.id).catch(() => {});
+      }
+      return updatedCart;
+    });
+  }, [project?.id]);
+
+  const handleAddUnplannedToLvCart = useCallback(async (unplannedData) => {
+    const newItem = {
+      lvItemId: `unplanned_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      posNr: 'EXT',
+      shortText: unplannedData.customDescription,
+      quantity: Number(unplannedData.quantity) || 1,
+      qu: unplannedData.qu || 'Stk',
+      isUnplannedMaterial: true,
+      customDescription: unplannedData.customDescription,
+    };
+    setLvCart((prevCart) => {
+      const updatedCart = [...prevCart, newItem];
+      if (project?.id) {
+        saveLvCartDraft(updatedCart, project.id).catch(() => {});
+      }
+      return updatedCart;
+    });
+  }, [project?.id]);
+
+  const handleSubmitSection = useCallback(async ({ sectionTitle, photos }) => {
+    const pId = project?.id;
+    if (!pId) return;
+
+    const sectionId = `sec_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+    const currentUid = monteur?.id || 'monteur';
+
+    const newSection = {
+      id: sectionId,
+      projectId: pId,
+      sectionTitle: sectionTitle.trim(),
+      createdAt: now,
+      createdBy: monteur?.name || 'Monteur',
+      createdByUid: currentUid,
+      status: 'SUBMITTED',
+      items: lvCart.map((item) => ({
+        lvItemId: item.lvItemId,
+        posNr: item.posNr,
+        shortText: item.shortText,
+        quantity: Number(item.quantity) || 0,
+        qu: item.qu || 'Stk',
+        isUnplannedMaterial: !!item.isUnplannedMaterial,
+        ...(item.customDescription ? { customDescription: item.customDescription } : {}),
+      })),
+      photos: (photos || []).map((uri) => ({
+        url: uri,
+        timestamp: now,
+        caption: '',
+      })),
+    };
+
+    // 1. Enqueue to local outbox
+    await enqueueSection(newSection, pId);
+
+    // 2. Clear cart & local draft
+    setLvCart([]);
+    await clearLvCartDraft(pId);
+
+    // 3. Navigate back to overview
+    setCurrentScreen('lv_overview');
+
+    // 4. Alert user
+    Alert.alert(
+      t('lvSuccessTitle', currentLang),
+      t('lvSuccessMsg', currentLang)
+    );
+
+    // 5. Trigger immediate background sync
+    syncBookings({ silent: true, projectId: pId })
+      .then((res) => handleSyncResult(res, pId))
+      .catch(() => {});
+
+    // Refresh materials to show updated installedQty
+    refreshData(pId);
+  }, [project?.id, monteur, lvCart, currentLang, syncBookings, handleSyncResult]);
 
   // 7. Room Navigation & Draft Restoration
   const handleSelectRoom = (room) => {
@@ -1292,7 +1490,15 @@ export default function App() {
       {/* Persistent Global Header */}
       <Header
         projectName={project?.name || ''}
-        subTitle={[project?.projectNumber, selectedRoom?.name || project?.client].filter(Boolean).join(' · ')}
+        subTitle={
+          project?.measurementMode === 'LV_BASED'
+            ? currentScreen === 'lv_positions'
+              ? (selectedTrade || t('lvPositions', currentLang))
+              : currentScreen === 'lv_cart'
+              ? t('lvCartTitle', currentLang)
+              : [project?.projectNumber, t('lvTitle', currentLang)].filter(Boolean).join(' · ')
+            : [project?.projectNumber, selectedRoom?.name || project?.client].filter(Boolean).join(' · ')
+        }
         branding={tenantBranding}
         isOnline={isOnline}
         currentLang={currentLang}
@@ -1300,68 +1506,126 @@ export default function App() {
         onSyncPress={handleManualSync}
         isSyncing={isSyncing}
         onSwitchProject={availableProjects.length > 1 ? handleSwitchProject : null}
-        onBackToRooms={currentScreen === 'book' ? handleLeaveRoomDraft : null}
+        onBackToRooms={
+          project?.measurementMode === 'LV_BASED'
+            ? currentScreen === 'lv_positions'
+              ? () => setCurrentScreen('lv_overview')
+              : currentScreen === 'lv_cart'
+              ? () => setCurrentScreen(previousLvScreen || 'lv_overview')
+              : null
+            : currentScreen === 'book'
+            ? handleLeaveRoomDraft
+            : null
+        }
         onLogout={handleLogout}
       />
 
       {/* Screen Router */}
       <View style={styles.body}>
-        {currentScreen === 'rooms' && (
-          <RoomListScreen
-            rooms={rooms}
-            materials={materials}
-            plans={plans}
-            project={project}
-            currentLang={currentLang}
-            onSelectRoom={handleSelectRoom}
-          />
-        )}
+        {project?.measurementMode === 'LV_BASED' ? (
+          <>
+            {(currentScreen === 'lv_overview' ||
+              currentScreen === 'rooms' ||
+              currentScreen === 'book' ||
+              currentScreen === 'photos' ||
+              currentScreen === 'done') && (
+              <LvOverviewScreen
+                positions={materials}
+                cart={lvCart}
+                project={project}
+                currentLang={currentLang}
+                onSelectTrade={handleSelectTrade}
+                onOpenCart={handleOpenLvCart}
+                onQuantityChange={handleLvQuantityChange}
+              />
+            )}
 
-        {currentScreen === 'book' && selectedRoom && (
-          <BookingScreen
-            room={selectedRoom}
-            materials={materials}
-            plans={plans}
-            project={project}
-            monteur={monteur}
-            currentLang={currentLang}
-            sessionQuantities={sessionQuantities}
-            sessionPhotos={sessionPhotos}
-            onQuantityChange={handleQuantityChange}
-            photoCount={sessionPhotos.length || (selectedRoom.photos?.length || 0)}
-            onGoToPhotos={() => setCurrentScreen('photos')}
-            unclearItems={unclearItems}
-            onAddUnclearItem={handleAddUnclearItem}
-            onAddNachtrag={handleAddNachtrag}
-            onCompleteRoom={handleCompleteRoom}
-            onReopenRoom={handleReopenRoomWithoutPhotos}
-            onOverConsumptionAlert={handleOverConsumptionAlert}
-          />
-        )}
+            {currentScreen === 'lv_positions' && (
+              <LvPositionsScreen
+                tradeName={selectedTrade}
+                positions={materials}
+                cart={lvCart}
+                currentLang={currentLang}
+                onBack={() => setCurrentScreen('lv_overview')}
+                onOpenCart={handleOpenLvCart}
+                onQuantityChange={handleLvQuantityChange}
+              />
+            )}
 
-        {currentScreen === 'photos' && selectedRoom && (
-          <PhotoCaptureScreen
-            room={selectedRoom}
-            photos={sessionPhotos.length > 0 ? sessionPhotos : (selectedRoom.photos || [])}
-            onAddPhoto={handleAddPhoto}
-            onRemovePhoto={handleRemovePhoto}
-            onSavePhotos={handleSavePhotos}
-            onBackToBook={() => setCurrentScreen('book')}
-            currentLang={currentLang}
-          />
-        )}
+            {currentScreen === 'lv_cart' && (
+              <LvCartScreen
+                cart={lvCart}
+                project={project}
+                monteur={monteur}
+                currentLang={currentLang}
+                onBack={() => setCurrentScreen(previousLvScreen || 'lv_overview')}
+                onQuantityChange={handleLvCartItemQuantityChange}
+                onRemoveItem={handleRemoveFromLvCart}
+                onAddUnplannedItem={handleAddUnplannedToLvCart}
+                onSubmitSection={handleSubmitSection}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {currentScreen === 'rooms' && (
+              <RoomListScreen
+                rooms={rooms}
+                materials={materials}
+                plans={plans}
+                project={project}
+                currentLang={currentLang}
+                onSelectRoom={handleSelectRoom}
+              />
+            )}
 
-        {currentScreen === 'done' && (
-          <DoneScreen
-            room={selectedRoom}
-            summaryItems={lastSummary}
-            photoCount={sessionPhotos.length}
-            onBackToRooms={() => {
-              setCurrentScreen('rooms');
-              setSelectedRoom(null);
-            }}
-            currentLang={currentLang}
-          />
+            {currentScreen === 'book' && selectedRoom && (
+              <BookingScreen
+                room={selectedRoom}
+                materials={materials}
+                plans={plans}
+                project={project}
+                monteur={monteur}
+                currentLang={currentLang}
+                sessionQuantities={sessionQuantities}
+                sessionPhotos={sessionPhotos}
+                onQuantityChange={handleQuantityChange}
+                photoCount={sessionPhotos.length || (selectedRoom.photos?.length || 0)}
+                onGoToPhotos={() => setCurrentScreen('photos')}
+                unclearItems={unclearItems}
+                onAddUnclearItem={handleAddUnclearItem}
+                onAddNachtrag={handleAddNachtrag}
+                onCompleteRoom={handleCompleteRoom}
+                onReopenRoom={handleReopenRoomWithoutPhotos}
+                onOverConsumptionAlert={handleOverConsumptionAlert}
+              />
+            )}
+
+            {currentScreen === 'photos' && selectedRoom && (
+              <PhotoCaptureScreen
+                room={selectedRoom}
+                photos={sessionPhotos.length > 0 ? sessionPhotos : (selectedRoom.photos || [])}
+                onAddPhoto={handleAddPhoto}
+                onRemovePhoto={handleRemovePhoto}
+                onSavePhotos={handleSavePhotos}
+                onBackToBook={() => setCurrentScreen('book')}
+                currentLang={currentLang}
+              />
+            )}
+
+            {currentScreen === 'done' && (
+              <DoneScreen
+                room={selectedRoom}
+                summaryItems={lastSummary}
+                photoCount={sessionPhotos.length}
+                onBackToRooms={() => {
+                  setCurrentScreen('rooms');
+                  setSelectedRoom(null);
+                }}
+                currentLang={currentLang}
+              />
+            )}
+          </>
         )}
       </View>
 

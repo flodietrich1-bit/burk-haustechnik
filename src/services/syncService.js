@@ -28,6 +28,8 @@ import {
   PLANS_DIR,
   getCachedPlans,
   saveCachedPlans,
+  saveProjectInfo,
+  removeOutboxSection,
 } from './storageService';
 import { getActiveMonteur, syncMonteurToFirebase, getTenantId } from './authService';
 import { DEFAULT_PROJECT_ID } from '../constants/initialData';
@@ -243,6 +245,9 @@ export async function syncBookings({
           projectId,
           reason: 'project_unavailable',
         };
+      } else {
+        const projData = projSnap.data();
+        await saveProjectInfo({ id: projectId, ...projData }, projectId);
       }
     } catch (projErr) {
       console.warn('Project check notice in sync:', projErr.message);
@@ -488,6 +493,72 @@ export async function syncBookings({
           console.error(`Failed to push room status update for ${room.id}:`, err);
         }
       }
+
+      // 1d. Upload pending measurement sections (LV-Aufmaß)
+      if (Array.isArray(localDelta.pendingSections) && localDelta.pendingSections.length > 0) {
+        for (const section of localDelta.pendingSections) {
+          processed++;
+          if (onProgress) {
+            onProgress(
+              `${t('syncUploading', currentLang)} (${processed}/${totalPending})`,
+              0.2 + 0.4 * (processed / totalPending)
+            );
+          }
+
+          try {
+            // Upload photos for this section
+            const uploadedPhotos = [];
+            if (Array.isArray(section.photos)) {
+              for (let pIdx = 0; pIdx < section.photos.length; pIdx++) {
+                const photoItem = section.photos[pIdx];
+                const photoUri = typeof photoItem === 'string' ? photoItem : photoItem.url || photoItem.uri;
+                if (!photoUri) continue;
+
+                let finalUrl = photoUri;
+                if (
+                  typeof photoUri === 'string' &&
+                  !photoUri.startsWith('http://') &&
+                  !photoUri.startsWith('https://') &&
+                  !photoUri.startsWith('data:')
+                ) {
+                  finalUrl = await uploadPhotoToFirebase(photoUri, projectId, section.id, pIdx, tenantId);
+                }
+
+                uploadedPhotos.push({
+                  url: finalUrl,
+                  timestamp: photoItem.timestamp || new Date().toISOString(),
+                  caption: photoItem.caption || '',
+                });
+              }
+            }
+
+            // Write document to measurement_sections
+            const sectionDocRef = tenantId
+              ? doc(db, 'tenants', tenantId, 'projects', projectId, 'measurement_sections', section.id)
+              : doc(db, 'projects', projectId, 'measurement_sections', section.id);
+
+            const sectionPayload = {
+              id: section.id,
+              projectId: section.projectId || projectId,
+              sectionTitle: section.sectionTitle || '',
+              createdAt: section.createdAt || new Date().toISOString(),
+              createdBy: section.createdBy || monteur?.name || 'Monteur',
+              createdByUid: section.createdByUid || currentUid,
+              status: 'SUBMITTED',
+              items: Array.isArray(section.items) ? section.items : [],
+              photos: uploadedPhotos,
+            };
+
+            await setDoc(sectionDocRef, sectionPayload, { merge: true });
+
+            // Successfully written to Firestore: remove from local outbox
+            await removeOutboxSection(section.id, projectId);
+            pushedCount++;
+          } catch (secErr) {
+            console.error(`Failed to push measurement section ${section.id}:`, secErr);
+          }
+        }
+      }
     } else {
       console.log('Sync Push: No local delta to push.');
     }
@@ -529,28 +600,48 @@ export async function syncBookings({
 
       if (remotePositionsDelta.length > 0 || needsFullPositionsFetch) {
         const mapRemotePos = (remote) => {
-          const name = remote.shortText || remote.name || remote.longText || (remote.posNr ? `Pos ${remote.posNr}` : 'Material');
-          const pos = remote.posNr || remote.pos || 'neu';
+          const displayCode = remote.displayCode || remote.posNr || remote.pos || '';
+          const pos = displayCode || 'neu';
+          const aliasTitle = remote.aliasTitle || null;
+          const officialTitle = remote.officialTitle || remote.shortText || remote.name || remote.longText || '';
+          const name = aliasTitle || officialTitle || (displayCode ? `Pos ${displayCode}` : 'Material');
           const qty = Number(remote.qty || 0);
           const deliveredQty = Number(
             remote.deliveredQty !== undefined && remote.deliveredQty !== null && Number(remote.deliveredQty) > 0
               ? remote.deliveredQty
               : (qty > 0 ? qty : 0)
           );
+          const tradeCategory = remote.tradeCategory || remote.group || 'Allgemein';
+          const sortOrder = typeof remote.sortOrder === 'number' ? remote.sortOrder : 999999;
+          const sourceType = remote.sourceType || 'ORIGINAL_GAEB';
+          const monteurInfo = remote.monteurInfo || null;
+
+          // STRICT SECURITY: Remove unitPriceVK, unitPrice and billing prices completely
+          const cleanRemote = { ...remote };
+          delete cleanRemote.unitPriceVK;
+          delete cleanRemote.unitPrice;
+          delete cleanRemote.price;
+          delete cleanRemote.billingPrice;
+
           return {
+            ...cleanRemote,
             id: remote.id,
             pos,
+            displayCode,
+            sortOrder,
+            sourceType,
+            aliasTitle,
+            officialTitle,
+            monteurInfo,
+            tradeCategory,
             name,
             cleanName: name,
-            shortText: remote.shortText || name,
-            group: remote.group || 'Allgemein',
+            shortText: officialTitle || name,
+            group: tradeCategory,
             qu: remote.qu || remote.unit || 'Stk',
             deliveredQty,
             installedQty: Number(remote.installedQty || 0),
-            unitPrice: Number(remote.unitPrice || 0),
-            ...remote,
-            cleanName: name,
-            name,
+            qty,
           };
         };
 
@@ -572,7 +663,9 @@ export async function syncBookings({
           });
         } else {
           updated = localPositions.map((local) => {
-            const remote = remotePositionsDelta.find((rp) => rp.id === local.id || rp.posNr === local.pos);
+            const remote = remotePositionsDelta.find(
+              (rp) => rp.id === local.id || (rp.displayCode && rp.displayCode === (local.displayCode || local.pos)) || rp.posNr === local.pos
+            );
             if (remote) {
               const mapped = mapRemotePos(remote);
               return {
@@ -585,7 +678,7 @@ export async function syncBookings({
           });
 
           remotePositionsDelta.forEach((remote) => {
-            if (!updated.some((m) => m.id === remote.id || m.pos === remote.posNr)) {
+            if (!updated.some((m) => m.id === remote.id || (remote.displayCode && (m.displayCode === remote.displayCode || m.pos === remote.displayCode)) || m.pos === remote.posNr)) {
               updated.push(mapRemotePos(remote));
             }
           });

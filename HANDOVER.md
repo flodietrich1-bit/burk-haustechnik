@@ -10,9 +10,10 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.59` (`src/constants/version.js`) [code]. iOS native `buildNumber: "4"` in `app.json` [config].
-- Implemented [code]: PIN/Passwort login with lockout, multi-project selection, per-project offline cache, room list with capped 0–100% progress rings and completion badges only for explicitly completed rooms, room booking with unplanned items pinned above planned material cards, floor filter pills `[Alle, UG, EG, OG, DG, Strangschema]`, floor grouping, nahtlose Mehrverbrauchserfassung ohne störende Dialoge/Folgeseite (Alerts & Abweichungen automatisch an Admin repliziert, Prozentwert > 100%, Fortschrittsbalken wechselt zu Gelb bis 110% und Rot ab 110%, Kacheln bleiben neutral weiß), alert replication to `projects/{projectId}/alerts` for admin banner, material booking per room with stock checks, rein materialbezogener "Mehrbedarf"-Nachtrag (ohne blockierenden Begründungszwang, ohne Arbeitszeit-Umschaltung), unplanned/außerplanmäßig material modal mit Erfassername und Pflichtbegründung, photo capture (camera/gallery, compress < 1000 KB), room completion (explicit confirmation and saved photo required; then locks room), delta two-way sync, auto-sync on reconnect/after actions, EAS OTA update check at startup. Header places a tappable online/offline icon and a logout button (`🚪` mit Bestätigungsdialog) in the top right; LoginScreen mit persönlichem Passwort (beim Sign-up gewählt) zum bequemen Wiedereinloggen; automatische Signalerkennung und Cache-Purge bei im Admin gelöschten Projekten (Weiterleitung auf verbleibendes Projekt oder Projektauswahl) sowie bei gelöschten Benutzern (sofortige Abmeldung und Reset zur Aktivierung). Redesign der Materialkachel mit stabilem, fix breitem Stepper-Pill `[ − | VERBAUT +X m | + ]` (46x48px Touchflächen, hitSlop, kein Resizing beim Slider-Ziehen), Antippen auch bei Stückzahlen zum genauen Editieren (Komma deaktiviert) und durchgehendem „Noch übrig“-Balken.
-- The room overview starts with the floor filters and room cards. The former “Wöchentliches Aufmaß” KPI card (overall percentage, installed and delivered values) was removed in v2.45; project switching for users with multiple projects remains in the common header [code].
+- App version `v2.60` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
+- Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet: Gewerke-Kacheln mit Fortschritt, globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`, Positionslisten sortiert nach `sortOrder` / `displayCode`, Positionskarten mit fettem `aliasTitle`, farbigem Montagehinweis-Kasten (`monteurInfo`), Zusatzposition-Badge (`CUSTOM_ADDED`), schnellen Mengenzählern (inkl. Direkt-Eingabe-Modal) und striktem Ausschluss aller VK-Preise; permanenter Warenkorb-FAB, Warenkorb-Screen mit Mengenanpassung, Freitext-Nachtrag für Material nicht im LV, Abschnitts-Pflichtbezeichnung, Baustellen-Fotodokumentation und verbindlicher Einreichung in Subcollection `measurement_sections` mit Outbox-Pufferung (`@ttapp:outbox_sections:${tenantId}:${userId}:${projectId}`) und Zwei-Wege-Sync.
+- Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
+
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
 - Whether the app is deployed to real users / which EAS channel is used: Unknown / needs confirmation.
 
@@ -187,6 +188,22 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-23 (v2.60)**
+  - **Ziel / Anlass:** Implementierung der dualen Projekt-Architektur (LV-basiertes Aufmaß vs. Raum-Aufmaß) anhand des Projekt-Steuerungs-Flags `measurementMode: 'ROOM_BASED' | 'LV_BASED'`.
+  - **Änderungen:**
+    - `App.js`: Dynamische Weiche beim Öffnen eines Projekts (bei `measurementMode === 'LV_BASED'` wird der Raum-Workflow übersprungen und direkt `lv_overview` geöffnet). Header-Rücknavigation und Subtitel an LV-Modus angepasst. State-Management für Aufmaß-Warenkorb (`lvCart`), Mengenanpassung, Freitext-Nachträge nicht im LV und verbindliche Einreichung.
+    - `src/screens/LvOverviewScreen.jsx`: Gewerke-Kacheln mit Positionsanzahl, Erfassungsfortschritt und Warenkorb-Badge; globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`; permanenter FAB-Warenkorb-Button.
+    - `src/screens/LvPositionsScreen.jsx`: Positionsliste des ausgewählten Gewerks, sortiert nach `sortOrder` / `displayCode`, Suchfilter innerhalb des Gewerks, FAB-Button.
+    - `src/components/lv/LvPositionCard.jsx`: Positionskarte mit `displayCode`, Gewerk-Tag, prominentem/fettem `aliasTitle` + `officialTitle`, gelbem Infokasten für Montagehinweise (`monteurInfo`), Zusatzposition-Badge (`CUSTOM_ADDED`), schnellem Stepper `[ − | X | + ]` mit Mengenerfassungsmodal und Bisher-Verbucht-Anzeige. Vollständiger Ausschluss/Sicherheit: keine VK-/Abrechnungspreise.
+    - `src/components/lv/LvQuantityModal.jsx` & `LvUnplannedModal.jsx`: Modals zur schnellen Direkt-Mengeneingabe und zur Freitext-Erfassung von Material außerhalb des LV.
+    - `src/screens/LvCartScreen.jsx`: Aufmaß-Warenkorb-Screen mit Positionsübersicht, Mengenänderung, Löschung, Pflichtfeld-Bezeichnung des Abschnitts (`sectionTitle`), Foto-Dokumentation (Kamera/Galerie) und verbindlicher Einreichung in Firestore `measurement_sections`.
+    - `src/screens/ProjectSelectScreen.jsx`: Badge `📋 LV-Aufmaß` auf Projektkarten im LV-Modus.
+    - `src/services/storageService.js`: Outbox-Pufferung unter `@ttapp:outbox_sections:${tenantId}:${userId}:${projectId}` (`getOutboxSections`, `enqueueSection`, `removeOutboxSection`), Cart-Draft-Persistenz (`getLvCartDraft`, `saveLvCartDraft`, `clearLvCartDraft`) und Einbindung in `getLocalUnsyncedDelta`.
+    - `src/services/syncService.js`: Push-Synchronisation von `measurement_sections` inklusive automatischem Foto-Upload nach Cloud Storage unter `tenants/{tenantId}/projects/{projectId}/proofs/...`; Erweiterung von `mapRemotePos` um `displayCode`, `sortOrder`, `sourceType`, `aliasTitle`, `officialTitle`, `monteurInfo`, `tradeCategory` und strikte Preislöschung (`unitPriceVK` & `unitPrice` gelöscht).
+    - `src/locales/i18n.js`: Alle neuen LV-Texte in allen 4 Sprachen (DE, RO, PL, HR) hinzugefügt.
+    - `src/constants/version.js`: Versions-Bump auf `v2.60`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` erfolgreich gebündelt (825 Module), `git diff --check` fehlerfrei.
 
 - **2026-11-22 (v2.59)**
   - **Ziel / Anlass:** Behebung der Apple App Store Review Beanstandungen nach Reject für Guideline 3.1.1 (IAP-Verdacht durch Registrierungs-Wording & Links) und Guideline 2.1 (Prüfer-Anmeldung ohne physischen QR-Scan).

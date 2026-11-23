@@ -169,6 +169,13 @@ export default function ProjectSelectScreen({
                       : t('projectSingle', currentLang)}
                   </Text>
                 </View>
+                {proj.measurementMode === 'LV_BASED' && (
+                  <View style={styles.lvModeChip}>
+                    <Text style={styles.lvModeChipText}>
+                      📋 {t('lvModeLvBased', currentLang)}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               <Text style={styles.projectTitle}>{proj.name}</Text>
@@ -380,6 +387,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.amberDark,
+  },
+  lvModeChip: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+  },
+  lvModeChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
   },
   projectTitle: {
     fontSize: 17,
