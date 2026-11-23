@@ -208,7 +208,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
       - Leerer Zustand: „Noch keine Positionen erfasst. Trage Mengen in der Liste ein.“ und Rücksprung-Button „‹ Zurück zur Positionsliste“.
     - `src/locales/i18n.js`: Alle 4 Sprachen aktualisiert (`lvCartTitle`, `lvCartFab`, `lvPrepareMeasurementBtn`, `lvEmptyCart`, `lvItemsInCart`, `lvBackToPositions`).
     - `src/constants/version.js`: Bump auf `v2.62`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`f6f42eb`, `cab72df`); EAS Update für `preview` veröffentlicht (`ab2efc9d-a439-4122-9197-562c938dc2d6`); EAS iOS Production Build `6` mit Auto-Submit für TestFlight gestartet (Build ID `bed5b9b9-371f-415a-a357-fc1d342f5207`).
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`f6f42eb`, `cab72df`); EAS Update für `preview` veröffentlicht (`ab2efc9d-a439-4122-9197-562c938dc2d6`); EAS iOS Production Build `6` (Build ID `bed5b9b9-371f-415a-a357-fc1d342f5207`) erfolgreich gebaut und an Apple App Store Connect / TestFlight übermittelt.
 
 - **2026-11-23 (v2.61)**
   - **Ziel / Anlass:** Absicherung der LV-Modus-Erkennung gegen fehlende Flags in Firestore und automatische Umschaltung bei Projekten ohne Räume/DWG.
