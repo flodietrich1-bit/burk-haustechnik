@@ -10,9 +10,14 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.61` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
-- Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet: Gewerke-Kacheln mit Fortschritt, globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`, Positionslisten sortiert nach `sortOrder` / `displayCode`, Positionskarten mit fettem `aliasTitle`, farbigem Montagehinweis-Kasten (`monteurInfo`), Zusatzposition-Badge (`CUSTOM_ADDED`), schnellen Mengenzählern (inkl. Direkt-Eingabe-Modal) und striktem Ausschluss aller VK-Preise; permanenter Warenkorb-FAB, Warenkorb-Screen mit Mengenanpassung, Freitext-Nachtrag für Material nicht im LV, Abschnitts-Pflichtbezeichnung, Baustellen-Fotodokumentation und verbindlicher Einreichung in Subcollection `measurement_sections` mit Outbox-Pufferung (`@ttapp:outbox_sections:${tenantId}:${userId}:${projectId}`) und Zwei-Wege-Sync.
-- Intelligente Fallback-Erkennung (`src/utils/projectMode.js`): Projekte ohne DWG/CAD-Pläne und ohne Räume, aber mit LV-Positionen werden automatisch als `LV_BASED` erkannt, selbst wenn das Firestore-Flag `measurementMode` fehlt oder `undefined` war. In Firestore für das Projekt Sigmaringen wurde `measurementMode: 'LV_BASED'` nachträglich gesetzt.
+- App version `v2.62` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
+- Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet:
+  - Gewerke-Filterung über handliche horizontale Chipkacheln (`[ Alle (195) ]`, `[ Sanitärinstallation (42) ]`, `[ Frischwasserstation (12) ]`, ...).
+  - Alle Positionen des LVs (inkl. der manuell hinzugefügten Materialien/Zusatzpositionen `sourceType === 'CUSTOM_ADDED'`) werden direkt in einer fortlaufenden Liste angezeigt.
+  - Globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`.
+  - Positionskarten mit fettem `aliasTitle`, GAEB-Kurztext, Montagehinweis-Kasten (`monteurInfo`), Zusatzposition-Badge (`★ Zusatzposition`) und Stepper `[ − | X | + ]` mit Direkt-Eingabe-Modal; strikter Ausschluss aller VK-Preise.
+  - Völliger Verzicht auf das Wort „Warenkorb“: Ersetzt durch die neue, feste Aktionsleiste **„Zum Aufmaß vorbereiten (X Positionen) ›“** und Screen **„Aufmaß vorbereiten“** mit Abschnittsbezeichnung, Baustellen-Fotodokumentation, Freitext-Nachtrag und verbindlicher Einreichung in `measurement_sections`.
+- Intelligente Fallback-Erkennung (`src/utils/projectMode.js`): Projekte ohne DWG/CAD-Pläne und ohne Räume, aber mit LV-Positionen werden automatisch als `LV_BASED` erkannt.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -189,6 +194,21 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-23 (v2.62)**
+  - **Ziel / Anlass:** Neugestaltung der LV-Hauptansicht: Handliche Gewerke-Chipkacheln als Filter, direkte Anzeige aller LV-Positionen inkl. hinzugefügter Materialien und Umbenennung von „Warenkorb“ in „Zum Aufmaß vorbereiten“.
+  - **Änderungen:**
+    - `src/screens/LvOverviewScreen.jsx`:
+      - Gewerke-Auswahl als horizontal scrollbare Filter-Pills (`[ Alle (195) ]`, `[ Sanitärinstallation (42) ]`, `[ Frischwasserstation (12) ]`, ...).
+      - Direkte Auflistung aller Positionen laut LV (inkl. `sourceType === 'CUSTOM_ADDED'` bzw. manuell hinzugefügter Materialien), filterbar per Chip und Suchfeld.
+      - Wort „Warenkorb“ und Warenkorb-Icons (`🛒`) vollständig entfernt.
+      - Feste/schwebende Aktionsleiste unten: **`[ 📋 Zum Aufmaß vorbereiten ({count} Positionen) › ]`**.
+    - `src/screens/LvCartScreen.jsx`:
+      - Umbenannt in **„Aufmaß vorbereiten“**, `t('lvCartTitle')` und Header entsprechend angepasst.
+      - Leerer Zustand: „Noch keine Positionen erfasst. Trage Mengen in der Liste ein.“ und Rücksprung-Button „‹ Zurück zur Positionsliste“.
+    - `src/locales/i18n.js`: Alle 4 Sprachen aktualisiert (`lvCartTitle`, `lvCartFab`, `lvPrepareMeasurementBtn`, `lvEmptyCart`, `lvItemsInCart`, `lvBackToPositions`).
+    - `src/constants/version.js`: Bump auf `v2.62`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`f6f42eb`); EAS Update für `preview` veröffentlicht (`ab2efc9d-a439-4122-9197-562c938dc2d6`).
 
 - **2026-11-23 (v2.61)**
   - **Ziel / Anlass:** Absicherung der LV-Modus-Erkennung gegen fehlende Flags in Firestore und automatische Umschaltung bei Projekten ohne Räume/DWG.
