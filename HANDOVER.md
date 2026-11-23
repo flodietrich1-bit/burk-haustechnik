@@ -10,7 +10,7 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.62` (`src/constants/version.js`) [code]. iOS native `buildNumber: "5"` in `app.json` [config].
+- App version `v2.62` (`src/constants/version.js`) [code]. iOS native `buildNumber: "6"` in `app.json` [config].
 - Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet:
   - Gewerke-Filterung über handliche horizontale Chipkacheln (`[ Alle (195) ]`, `[ Sanitärinstallation (42) ]`, `[ Frischwasserstation (12) ]`, ...).
   - Alle Positionen des LVs (inkl. der manuell hinzugefügten Materialien/Zusatzpositionen `sourceType === 'CUSTOM_ADDED'`) werden direkt in einer fortlaufenden Liste angezeigt.
@@ -208,7 +208,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
       - Leerer Zustand: „Noch keine Positionen erfasst. Trage Mengen in der Liste ein.“ und Rücksprung-Button „‹ Zurück zur Positionsliste“.
     - `src/locales/i18n.js`: Alle 4 Sprachen aktualisiert (`lvCartTitle`, `lvCartFab`, `lvPrepareMeasurementBtn`, `lvEmptyCart`, `lvItemsInCart`, `lvBackToPositions`).
     - `src/constants/version.js`: Bump auf `v2.62`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`f6f42eb`); EAS Update für `preview` veröffentlicht (`ab2efc9d-a439-4122-9197-562c938dc2d6`).
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`f6f42eb`, `cab72df`); EAS Update für `preview` veröffentlicht (`ab2efc9d-a439-4122-9197-562c938dc2d6`); EAS iOS Production Build `6` mit Auto-Submit für TestFlight gestartet (Build ID `bed5b9b9-371f-415a-a357-fc1d342f5207`).
 
 - **2026-11-23 (v2.61)**
   - **Ziel / Anlass:** Absicherung der LV-Modus-Erkennung gegen fehlende Flags in Firestore und automatische Umschaltung bei Projekten ohne Räume/DWG.
