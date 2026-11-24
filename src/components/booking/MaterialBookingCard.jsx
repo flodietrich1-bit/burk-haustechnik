@@ -215,6 +215,26 @@ export default function MaterialBookingCard({
 
   const formattedDelta = formatQty(safeDelta, isMeter, isDraggingSlider && isMeter);
 
+  const aliasTitle = mat?.aliasTitle || roomPlan?.aliasTitle || null;
+  const officialTitle =
+    mat?.officialTitle ||
+    roomPlan?.officialTitle ||
+    (mat?.shortText !== aliasTitle ? mat?.shortText : '') ||
+    (mat?.name !== aliasTitle ? mat?.name : '') ||
+    '';
+  const transTitle = currentLang !== 'de' && (mat?.translations?.[currentLang] || roomPlan?.translations?.[currentLang]);
+  const monteurInfo =
+    mat?.monteurInfo ||
+    roomPlan?.monteurInfo ||
+    mat?.containsHint ||
+    mat?.notes ||
+    mat?.note ||
+    mat?.montagehinweis ||
+    mat?.hinweis ||
+    mat?.sonderhinweis ||
+    mat?.specialInfo ||
+    mat?.info;
+
   return (
     <View
       style={[
@@ -233,19 +253,12 @@ export default function MaterialBookingCard({
         <View style={styles.cardHeaderCol}>
           <View style={styles.posRow}>
             <View style={styles.posChip}>
-              <Text style={styles.posChipText}>Pos {mat.pos}</Text>
+              <Text style={styles.posChipText}>Pos {mat.pos || mat.displayCode || '–'}</Text>
             </View>
             {finalIsUnplanned ? (
               <View style={styles.unplannedBadgeChip}>
                 <Text style={styles.unplannedBadgeChipText}>
                   🏷️ {t('unplannedBadge', currentLang)}
-                </Text>
-              </View>
-            ) : null}
-            {mat.containsHint ? (
-              <View style={styles.hintChip}>
-                <Text style={styles.hintChipText} numberOfLines={1}>
-                  {mat.containsHint}
                 </Text>
               </View>
             ) : null}
@@ -272,11 +285,32 @@ export default function MaterialBookingCard({
 
           <Text style={styles.matName}>
             {displayName}
-            {gloss ? <Text style={styles.matGloss}> ({gloss})</Text> : null}
+            {transTitle ? <Text style={styles.transSub}> ({transTitle})</Text> : null}
+            {!transTitle && gloss ? <Text style={styles.matGloss}> ({gloss})</Text> : null}
           </Text>
+          {aliasTitle && officialTitle && officialTitle !== aliasTitle ? (
+            <Text style={styles.officialTitleSubtitle} numberOfLines={2}>
+              {officialTitle}
+            </Text>
+          ) : null}
           <Text style={styles.matGroup}>{displayGroup}</Text>
         </View>
       </View>
+
+      {/* Prominent Highlighted Info Box for Special Notes (e.g. "Schellen inklusive") */}
+      {monteurInfo ? (
+        <View style={styles.monteurInfoBox}>
+          <View style={styles.monteurInfoIconWrap}>
+            <Text style={styles.monteurInfoIcon}>💡</Text>
+          </View>
+          <View style={styles.monteurInfoContent}>
+            <Text style={styles.monteurInfoLabel}>
+              {t('lvMontagehinweis', currentLang)}
+            </Text>
+            <Text style={styles.monteurInfoText}>{monteurInfo}</Text>
+          </View>
+        </View>
+      ) : null}
 
       {userReason ? (
         <View style={styles.reasonBadgeRow}>

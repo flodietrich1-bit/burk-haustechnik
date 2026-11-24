@@ -10,12 +10,14 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.64` (`src/constants/version.js`) [code]. iOS native `buildNumber: "8"` in `app.json` [config].
+- App version `v2.65` (`src/constants/version.js`) [code]. iOS native `buildNumber: "9"` in `app.json` [config].
 - Implemented [code]:
-  - **Sonderinfo / Montagehinweise prominent hervorgehoben:** Vom Projektleiter hinterlegte Sonderinfos (z. B. „Schellen inklusive“, „Sanpress Edelstahl, Schellen in Position enthalten“) werden in einer warm gehighlighteten Infobox (`💡 MONTAGEHINWEIS`) direkt unter dem Titel der Position auf der Karte (`LvPositionCard`) sowie in der Aufmaß-Vorbereitung (`LvCartScreen`) dargestellt.
-  - **Kein gesonderter Zusatzposition-Hinweis für Monteure:** Der Badge `★ Zusatzposition` wurde auf Positionskarten und im Aufmaß-Screen vollständig entfernt. Nachträglich erfasste Positionen erscheinen für Monteure als reguläre LV-Positionen.
-  - **Globaler Suchfilter erweitert:** Die Suchleiste in `LvOverviewScreen` und `LvPositionsScreen` durchsucht nun neben `displayCode`, `aliasTitle` und `officialTitle` auch die Sonderinfos/Montagehinweise (`monteurInfo`).
-  - **Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`):** Gewerke-Filterung über horizontale Chipkacheln, fortlaufende Liste aller Positionen, feste Aktionsleiste „Zum Aufmaß vorbereiten“ und verbindliche Einreichung in `measurement_sections`.
+  - **Identisches Kachel-Design in beiden Strecken (Raum-Aufmaß & LV-Aufmaß):**
+    - Die Material-Erfassen-Kacheln (`MaterialBookingCard`) sind in beiden Strecken vollständig vereinheitlicht: Jede Kachel verfügt über den interaktiven Schieberegler (Slider bis 100%), das Stepper-Pill `[ − | VERBAUT | + ]` und das direkte manuelle Eingabefeld (Rechner-Keypad-Modal bei Klick auf den Verbaut-Wert).
+    - `LvPositionCard` delegiert nun direkt an `MaterialBookingCard`, wodurch Design, Slider, Rechner-Modal, Prozentbalken und Statusanzeigen („Noch übrig“) auf allen Screens exakt übereinstimmen.
+  - **Priorisierung des Alias-Namens:** Ist für eine Position ein Alias hinterlegt (`aliasTitle`), wird dieser zwingend fett und prominent als Haupttitel angezeigt. Der technische GAEB-Titel (`officialTitle`) erscheint dezent darunter.
+  - **Gewerke-Filter-Kacheln im Raum-Aufmaß:** Wenn ein Raum ausgewählt wird (`BookingScreen`), werden oberhalb der Materialliste die horizontal scrollbaren Gewerke-Chipfilter (`[ Alle (X) ]`, `[ Sanitär (Y) ]`, ...) angezeigt.
+  - **Sonderinfo / Montagehinweise:** Prominente gehighlightete Infobox (`💡 MONTAGEHINWEIS`) direkt unter dem Titel; kein gesonderter Zusatzposition-Badge für Monteure.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -192,6 +194,17 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-24 (v2.65)**
+  - **Ziel / Anlass:** Vereinheitlichung der Material-Erfassen-Kacheln über alle Strecken (Raum-Aufmaß & LV-Aufmaß mit Slider und manuellem Rechner-Eingabefeld), prominente Alias-Anzeige und Integration der Gewerke-Filter-Kacheln in der Raum-Strecke.
+  - **Änderungen:**
+    - `src/components/booking/bookingHelpers.js`: `getMaterialDisplayName` priorisiert `aliasTitle` als primären Namen.
+    - `src/components/booking/MaterialBookingCard.jsx` & `materialCardStyles.js`: `aliasTitle` wird prominent fett gerendert; `officialTitle` erscheint darunter; `monteurInfo` wird in der gehighlighteten `💡 MONTAGEHINWEIS`-Box angezeigt.
+    - `src/components/lv/LvPositionCard.jsx`: Delegiert nun direkt an `MaterialBookingCard` mit LV-Mengenmodellierung (`plannedQty`, `installedQty`, Slider, Rechner-Keypad-Modal, Stepper).
+    - `src/screens/BookingScreen.jsx`: Gewerke-Filter-Chipkacheln (`availableTrades`, `tradeCounts`, `translateGroup`) über der Materialliste im Raum eingebunden; Filterung nach Gewerk und Suchbegriff kombiniert.
+    - `src/screens/LvOverviewScreen.jsx` & `LvPositionsScreen.jsx`: Drag-Lock (`isSliderDragging`) für flüssige Schiebereglerbedienung ohne Scrollview-Konflikte integriert; veraltetes `LvQuantityModal` entfernt.
+    - `app.json` & `src/constants/version.js`: Bump auf `v2.65` und iOS `buildNumber: "9"`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (825 Module).
 
 - **2026-11-24 (v2.64)**
   - **Ziel / Anlass:** Prominente gehighlightete Infobox für Sonderinfos/Montagehinweise (z. B. „Schellen inklusive“) direkt unter dem Titel; Entfernung des gesonderten Zusatzposition-Badges für Monteure.

@@ -64,6 +64,10 @@ export const cleanMaterialName = (name) => {
 };
 
 export const getMaterialDisplayName = (mat, roomPlan = null) => {
+  const alias = mat?.aliasTitle || roomPlan?.aliasTitle;
+  if (alias && typeof alias === 'string' && alias.trim()) {
+    return alias.trim();
+  }
   let raw = '';
   if (mat?.cleanName && mat.cleanName !== 'Neues Material') {
     raw = mat.cleanName;

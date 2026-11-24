@@ -217,4 +217,40 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 15,
   },
+  tradeFilterSection: {
+    marginBottom: 12,
+    marginTop: 2,
+  },
+  tradeFilterRow: {
+    paddingHorizontal: 2,
+    gap: 8,
+    alignItems: 'center',
+  },
+  tradePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  tradePillActive: {
+    backgroundColor: '#0284C7',
+    borderColor: '#0284C7',
+    shadowColor: '#0284C7',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tradePillText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  tradePillTextActive: {
+    color: '#FFFFFF',
+  },
 });

@@ -9,7 +9,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
-import { t, formatUnit } from '../locales/i18n';
+import { t, formatUnit, translateGroup } from '../locales/i18n';
 import {
   resolveMat,
   getRoomPlannedItem,
@@ -133,25 +133,97 @@ export default function BookingScreen({
     return list;
   }, [room.materials, activeMaterialIds, materials]);
 
-  // Main screen live search filter
-  const q = searchQuery.trim().toLowerCase();
-  const filteredMaterials = q
-    ? materials.filter((m) =>
-        `${m.pos || ''} ${m.shortText || ''} ${m.name || ''} ${m.cleanName || ''} ${m.group || ''}`
-          .toLowerCase()
-          .includes(q)
-      )
-    : [];
+  // Main screen live search and trade filter
+  const [selectedTrade, setSelectedTrade] = useState('Alle');
 
-  const unplannedMaterialIds = [
+  useEffect(() => {
+    setSelectedTrade('Alle');
+  }, [room?.id]);
+
+  const q = searchQuery.trim().toLowerCase();
+
+  const unplannedMaterialIds = useMemo(() => [
     ...unclearItems.slice().reverse().map((item) => item.materialId),
     ...(Array.isArray(room.materials) ? room.materials : [])
       .filter((item) => item.isUnplanned)
       .map((item) => item.positionId || item.id),
-  ].filter(Boolean);
-  const displayMaterialIds = q
-    ? filteredMaterials.map((m) => m.id)
-    : [...new Set([...unplannedMaterialIds, ...activeMaterialIds])];
+  ].filter(Boolean), [unclearItems, room.materials]);
+
+  const baseMaterialIds = useMemo(() => {
+    return [...new Set([...unplannedMaterialIds, ...activeMaterialIds])];
+  }, [unplannedMaterialIds, activeMaterialIds]);
+
+  // Compute distinct trades present in this room
+  const { availableTrades, tradeCounts } = useMemo(() => {
+    const counts = { Alle: 0 };
+    const tradeSet = new Set();
+
+    baseMaterialIds.forEach((id) => {
+      const { mat, roomPlan } = resolveMat(id, materials, room);
+      if (!mat) return;
+      counts.Alle = (counts.Alle || 0) + 1;
+      const grp = mat?.group && mat.group !== 'Allgemein'
+        ? mat.group
+        : (roomPlan?.group || mat?.group || 'Allgemein');
+      tradeSet.add(grp);
+      counts[grp] = (counts[grp] || 0) + 1;
+    });
+
+    const sortedTrades = Array.from(tradeSet).sort((a, b) => a.localeCompare(b));
+    return {
+      availableTrades: ['Alle', ...sortedTrades],
+      tradeCounts: counts,
+    };
+  }, [baseMaterialIds, materials, room]);
+
+  // Filter materials for this room by Trade and Search query
+  const displayMaterialIds = useMemo(() => {
+    let ids = baseMaterialIds;
+
+    if (selectedTrade && selectedTrade !== 'Alle') {
+      ids = ids.filter((id) => {
+        const { mat, roomPlan } = resolveMat(id, materials, room);
+        if (!mat) return false;
+        const grp = mat?.group && mat.group !== 'Allgemein'
+          ? mat.group
+          : (roomPlan?.group || mat?.group || 'Allgemein');
+        return grp === selectedTrade;
+      });
+    }
+
+    if (q) {
+      ids = ids.filter((id) => {
+        const { mat, roomPlan } = resolveMat(id, materials, room);
+        if (!mat) return false;
+        const pos = String(mat.pos || roomPlan?.posNr || '').toLowerCase();
+        const alias = String(mat.aliasTitle || roomPlan?.aliasTitle || '').toLowerCase();
+        const short = String(mat.shortText || roomPlan?.shortText || '').toLowerCase();
+        const name = String(mat.name || roomPlan?.name || '').toLowerCase();
+        const grp = String(mat.group || roomPlan?.group || '').toLowerCase();
+        const monteurInfo = String(
+          mat.monteurInfo ||
+          roomPlan?.monteurInfo ||
+          mat.containsHint ||
+          mat.notes ||
+          mat.note ||
+          mat.montagehinweis ||
+          mat.hinweis ||
+          ''
+        ).toLowerCase();
+
+        return (
+          pos.includes(q) ||
+          alias.includes(q) ||
+          short.includes(q) ||
+          name.includes(q) ||
+          grp.includes(q) ||
+          monteurInfo.includes(q)
+        );
+      });
+    }
+
+    return ids;
+  }, [baseMaterialIds, selectedTrade, q, materials, room]);
 
   const applyNextDelta = (matId, rawNextDelta) => {
     const { mat, roomPlan } = resolveMat(matId, materials, room);
@@ -460,6 +532,41 @@ export default function BookingScreen({
             )}
           </View>
         </View>
+
+        {/* Gewerke-Filter Kacheln (Horizontal Scroll) */}
+        {availableTrades.length > 1 && (
+          <View style={styles.tradeFilterSection}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tradeFilterRow}
+            >
+              {availableTrades.map((tradeName) => {
+                const isSelected = selectedTrade === tradeName;
+                const count = tradeCounts[tradeName] || 0;
+                const translatedTradeName = tradeName === 'Alle'
+                  ? t('lvAllTrades', currentLang)
+                  : translateGroup(tradeName, currentLang);
+
+                return (
+                  <TouchableOpacity
+                    key={tradeName}
+                    style={[styles.tradePill, isSelected && styles.tradePillActive]}
+                    onPress={() => setSelectedTrade(tradeName)}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[styles.tradePillText, isSelected && styles.tradePillTextActive]}
+                    >
+                      {translatedTradeName}
+                      {count > 0 ? ` (${count})` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* Active Material Booking Rows */}
         <View style={styles.rowsWrapper}>

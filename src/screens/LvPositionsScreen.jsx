@@ -10,7 +10,6 @@ import {
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
-import LvQuantityModal from '../components/lv/LvQuantityModal';
 
 export default function LvPositionsScreen({
   tradeName,
@@ -22,7 +21,7 @@ export default function LvPositionsScreen({
   onQuantityChange,
 }) {
   const [filterText, setFilterText] = useState('');
-  const [modalPos, setModalPos] = useState(null);
+  const [isSliderDragging, setIsSliderDragging] = useState(false);
 
   // Filter positions for this trade and sort by sortOrder then displayCode
   const tradePositions = useMemo(() => {
@@ -106,7 +105,11 @@ export default function LvPositionsScreen({
       </View>
 
       {/* Positions List */}
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={!isSliderDragging}
+      >
         {tradePositions.length === 0 ? (
           <View style={styles.emptyStateBox}>
             <Text style={styles.emptyStateIcon}>📋</Text>
@@ -119,7 +122,7 @@ export default function LvPositionsScreen({
               position={pos}
               cartQty={getCartQty(pos)}
               onQuantityChange={onQuantityChange}
-              onOpenQuantityModal={(p, q) => setModalPos({ position: p, qty: q })}
+              onDragStateChange={setIsSliderDragging}
               currentLang={currentLang}
             />
           ))
@@ -141,18 +144,6 @@ export default function LvPositionsScreen({
           </View>
         )}
       </TouchableOpacity>
-
-      {/* Direct Numeric Input Modal */}
-      {modalPos && (
-        <LvQuantityModal
-          visible={!!modalPos}
-          position={modalPos.position}
-          initialQty={modalPos.qty}
-          onClose={() => setModalPos(null)}
-          onApply={onQuantityChange}
-          currentLang={currentLang}
-        />
-      )}
     </View>
   );
 }

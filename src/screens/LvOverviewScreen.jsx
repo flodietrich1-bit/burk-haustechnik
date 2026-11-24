@@ -10,7 +10,6 @@ import {
 import { COLORS } from '../constants/theme';
 import { t, translateGroup } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
-import LvQuantityModal from '../components/lv/LvQuantityModal';
 
 export default function LvOverviewScreen({
   positions = [],
@@ -22,7 +21,7 @@ export default function LvOverviewScreen({
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrade, setSelectedTrade] = useState('Alle');
-  const [modalPos, setModalPos] = useState(null);
+  const [isSliderDragging, setIsSliderDragging] = useState(false);
 
   // Group positions by tradeCategory and calculate counts
   const { trades, totalPositionsCount, tradeCounts, tradeCartCounts, displayedPositions } = useMemo(() => {
@@ -214,6 +213,7 @@ export default function LvOverviewScreen({
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        scrollEnabled={!isSliderDragging}
       >
         {displayedPositions.length === 0 ? (
           <View style={styles.emptyStateBox}>
@@ -240,7 +240,7 @@ export default function LvOverviewScreen({
               position={pos}
               cartQty={getCartQty(pos)}
               onQuantityChange={onQuantityChange}
-              onOpenQuantityModal={(p, q) => setModalPos({ position: p, qty: q })}
+              onDragStateChange={setIsSliderDragging}
               currentLang={currentLang}
             />
           ))
@@ -273,18 +273,6 @@ export default function LvOverviewScreen({
           </View>
         </TouchableOpacity>
       </View>
-
-      {/* Direct Numeric Input Modal */}
-      {modalPos && (
-        <LvQuantityModal
-          visible={!!modalPos}
-          position={modalPos.position}
-          initialQty={modalPos.qty}
-          onClose={() => setModalPos(null)}
-          onApply={onQuantityChange}
-          currentLang={currentLang}
-        />
-      )}
     </View>
   );
 }
