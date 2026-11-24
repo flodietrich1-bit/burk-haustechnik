@@ -487,6 +487,7 @@ export function calculateAufmassSnapshot(
         ? Math.max(0, qty - prevInstalled)
         : (inPeriod ? qty : 0);
 
+      const isExtra = Boolean(item.isUnplannedMaterial) || pos?.sourceType === 'CUSTOM_ADDED';
       const entry: AufmassRoomPosition = {
         positionId: pos?.id || item.lvItemId || `sec_item_${posNr}`,
         posNr,
@@ -494,13 +495,14 @@ export function calculateAufmassSnapshot(
         group,
         qu,
         unitPrice,
-        plannedQty: item.isUnplannedMaterial ? 0 : qty,
+        plannedQty: isExtra ? 0 : qty,
         totalInstalledToDate: qty,
         installedInPeriod,
         isOverconsumption: false,
-        excessQty: 0,
-        isExtraPosition: Boolean(item.isUnplannedMaterial),
-        reason: item.isUnplannedMaterial ? `Aufmaß-Abschnitt (${sec.createdBy})` : undefined,
+        excessQty: isExtra ? qty : 0,
+        isExtraPosition: isExtra,
+        specialType: isExtra ? 'zusatzmaterial' : undefined,
+        reason: isExtra ? `Aufmaß-Abschnitt (${sec.createdBy})` : undefined,
         causedBy: sec.createdBy || 'Monteur',
       };
 

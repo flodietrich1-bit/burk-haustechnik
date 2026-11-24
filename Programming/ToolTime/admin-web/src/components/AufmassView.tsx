@@ -816,29 +816,21 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                       )}
                     </div>
 
-                    {/* SECTION 2: Sonderposten (Zusätzlich verbaut) */}
-                    <div>
-                      <div className="bg-amber-50/70 px-4 py-2 border-b border-amber-200/70 flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-600" />
-                          <span className="font-bold text-xs text-amber-900 uppercase tracking-wide">
-                            2. Sonderposten (Zusätzlich verbaut / Mehrverbrauch)
+                    {/* SECTION 2: Sonderposten (Zusätzlich verbaut) - nur anzeigen wenn vorhanden */}
+                    {displayedSpecial.length > 0 && (
+                      <div>
+                        <div className="bg-amber-50/70 px-4 py-2 border-b border-amber-200/70 flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            <span className="font-bold text-xs text-amber-900 uppercase tracking-wide">
+                              2. Sonderposten (Zusätzlich verbaut / Mehrverbrauch)
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-amber-100 text-amber-800 border-amber-300">
+                            {displayedSpecial.length} Sonderposten
                           </span>
                         </div>
-                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                          displayedSpecial.length > 0
-                            ? 'bg-amber-100 text-amber-800 border-amber-300'
-                            : 'bg-white text-slate-500 border-slate-200'
-                        }`}>
-                          {displayedSpecial.length} Sonderposten
-                        </span>
-                      </div>
 
-                      {displayedSpecial.length === 0 ? (
-                        <div className="py-3.5 bg-slate-50/40 text-center text-xs text-slate-400 italic">
-                          Keine Sonderposten oder Mehrverbräuche in diesem Raum.
-                        </div>
-                      ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse text-xs table-fixed min-w-[950px]">
                             <thead>
@@ -923,8 +915,8 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
                             </tbody>
                           </table>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 );
               })
