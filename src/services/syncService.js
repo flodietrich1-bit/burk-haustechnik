@@ -14,6 +14,7 @@ import * as FileSystem from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import { Alert } from 'react-native';
 import app, { db, storage, auth } from './firebase';
+import { isPositionHiddenForMonteur } from '../utils/projectMode';
 import {
   getRooms,
   saveRooms,
@@ -694,6 +695,9 @@ export async function syncBookings({
           });
         }
 
+        // Filter out positions hidden for installers or cancelled in the web portal
+        updated = updated.filter((pos) => !isPositionHiddenForMonteur(pos));
+
         await saveMaterials(updated, projectId);
         pulledPositionsCount = remotePositionsDelta.length;
       }
@@ -727,13 +731,16 @@ export async function syncBookings({
 
       if (remoteRoomsDelta.length > 0) {
         const mapRemoteRoom = (rr, existingRoom = null) => {
-          const defaultMaterialIds = Array.isArray(rr.materials) && rr.materials.length > 0
-            ? rr.materials.map((m) => m.positionId || m.id).filter(Boolean)
+          const visibleRoomMaterials = Array.isArray(rr.materials)
+            ? rr.materials.filter((m) => !isPositionHiddenForMonteur(m))
+            : null;
+          const defaultMaterialIds = visibleRoomMaterials && visibleRoomMaterials.length > 0
+            ? visibleRoomMaterials.map((m) => m.positionId || m.id).filter(Boolean)
             : (rr.defaultMaterialIds || existingRoom?.defaultMaterialIds || []);
 
           const plannedItems = { ...(existingRoom?.plannedItems || {}), ...(rr.plannedItems || {}) };
-          if (Array.isArray(rr.materials)) {
-            rr.materials.forEach((m) => {
+          if (visibleRoomMaterials) {
+            visibleRoomMaterials.forEach((m) => {
               const pId = m.positionId || m.id;
               if (pId) {
                 plannedItems[pId] = {

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import { INITIAL_ROOMS, INITIAL_MATERIALS, DEFAULT_PROJECT, DEFAULT_PROJECT_ID, INITIAL_PLANS } from '../constants/initialData';
+import { isPositionHiddenForMonteur } from '../utils/projectMode';
 
 // Base storage keys
 const KEYS = {
@@ -266,7 +267,9 @@ export async function getMaterials(projectId) {
 
     if (data) {
       const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((m) => !isPositionHiddenForMonteur(m));
+      }
     }
 
     // STRICT RULE: No dummy materials for tenant projects
@@ -274,7 +277,9 @@ export async function getMaterials(projectId) {
       const legacyData = await AsyncStorage.getItem(KEYS.MATERIALS);
       if (legacyData) {
         const parsed = JSON.parse(legacyData);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((m) => !isPositionHiddenForMonteur(m));
+        }
       }
       return INITIAL_MATERIALS;
     }
@@ -288,7 +293,10 @@ export async function saveMaterials(materials, projectId) {
   try {
     const ctx = await getStorageContext(projectId);
     const key = buildScopedKey('materials', ctx);
-    await AsyncStorage.setItem(key, JSON.stringify(materials));
+    const visible = Array.isArray(materials)
+      ? materials.filter((m) => !isPositionHiddenForMonteur(m))
+      : [];
+    await AsyncStorage.setItem(key, JSON.stringify(visible));
   } catch (e) {
     console.warn('Error saving materials:', e);
   }

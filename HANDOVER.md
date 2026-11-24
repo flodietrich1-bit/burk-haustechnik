@@ -10,13 +10,13 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.66` (`src/constants/version.js`) [code]. iOS native `buildNumber: "10"` in `app.json` [config].
+- App version `v2.67` (`src/constants/version.js`) [code]. iOS native `buildNumber: "11"` (EAS remote) / `"10"` in `app.json` [config].
 - Implemented [code]:
-  - **„Außerplanmäßig verbaut“ direkt oben in beiden Strecken:**
-    - **Raum-Strecke (`BookingScreen.jsx`):** Button „+ Material benötigt“ entfernt (`NachtragModal` ausgehängt); oben bleibt ausschließlich der volle-Breite-Button „außerplanmäßig verbaut“.
-    - **LV-Strecke (`LvOverviewScreen.jsx`, `LvPositionsScreen.jsx`):** Button „außerplanmäßig verbaut“ direkt oben über der Suchleiste/Positionsliste integriert; öffnet `LvUnplannedModal` und fügt Positionen sofort der Aufmaß-Vorbereitung (`lvCart`) hinzu.
-  - **EAS Update-Channel (`eas.json`):** `"channel": "production"` im `production`-Profil ergänzt.
-  - **Identisches Kachel-Design in beiden Strecken (Raum-Aufmaß & LV-Aufmaß):** `MaterialBookingCard` mit Slider, Stepper, Rechner-Keypad-Modal, Alias-Priorisierung (`aliasTitle` vor `officialTitle`), `💡 MONTAGEHINWEIS`-Box und Gewerke-Filter-Chipkacheln.
+  - **Filterung ausgeblendeter & gestrichener Positionen (`hiddenForMonteur === true || isCancelled === true || status === 'cancelled'`):**
+    - App liest aus `tenants/{tenantId}/projects/{projectId}/positions` (Delta-Sync in `syncService.js`).
+    - Zentraler Helper `isPositionHiddenForMonteur(pos)` in `src/utils/projectMode.js`.
+    - Konsequentes Filtern nach Delta-Merge in `syncService.js` (inkl. `room.materials` in `mapRemoteRoom`), beim Lesen/Schreiben im Offline-Cache (`storageService.js`: `getMaterials`/`saveMaterials`) sowie in den UI-Views (`LvOverviewScreen.jsx`, `LvPositionsScreen.jsx`, `BookingScreen.jsx`).
+  - **„Außerplanmäßig verbaut“ direkt oben in beiden Strecken** (`BookingScreen.jsx`, `LvOverviewScreen.jsx`, `LvPositionsScreen.jsx`) & **einheitliches Kachel-Design (`MaterialBookingCard`)** mit Slider, Rechner-Keypad, Alias-Priorisierung und `💡 MONTAGEHINWEIS`-Box.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -193,6 +193,16 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-24 (v2.67)**
+  - **Ziel / Anlass:** Konsequente Ausblendung von `hiddenForMonteur === true`, `isCancelled === true` und `status === 'cancelled'` in Sync, Offline-Cache und UI.
+  - **Änderungen:**
+    - `src/utils/projectMode.js`: Helper `isPositionHiddenForMonteur(pos)` ergänzt.
+    - `src/services/syncService.js`: Filterung nach Delta-Merge vor `saveMaterials()` (sowie in `mapRemoteRoom` für `rr.materials`), sodass nachträglich ausgeblendete/gestrichene Positionen sofort aus dem Cache verschwinden.
+    - `src/services/storageService.js`: Filterung in `getMaterials` und `saveMaterials`.
+    - `src/screens/LvOverviewScreen.jsx`, `src/screens/LvPositionsScreen.jsx`, `src/screens/BookingScreen.jsx`: Zusätzliche UI-Filterung über `isPositionHiddenForMonteur`.
+    - `src/constants/version.js`: Bump auf `v2.67`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (823 Module).
 
 - **2026-11-24 (v2.66)**
   - **Ziel / Anlass:** Button „außerplanmäßig verbaut“ in Raum- und LV-Positionsliste vereinheitlicht; „+ Material benötigt“ entfernt; `production`-Channel in `eas.json` gesetzt.

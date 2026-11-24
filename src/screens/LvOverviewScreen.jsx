@@ -11,6 +11,7 @@ import { COLORS } from '../constants/theme';
 import { t, translateGroup } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
 import LvUnplannedModal from '../components/lv/LvUnplannedModal';
+import { isPositionHiddenForMonteur } from '../utils/projectMode';
 
 export default function LvOverviewScreen({
   positions = [],
@@ -28,11 +29,12 @@ export default function LvOverviewScreen({
 
   // Group positions by tradeCategory and calculate counts
   const { trades, totalPositionsCount, tradeCounts, tradeCartCounts, displayedPositions } = useMemo(() => {
+    const visiblePositions = positions.filter((p) => !isPositionHiddenForMonteur(p));
     const tradeMap = new Map();
-    const tCounts = { Alle: positions.length };
+    const tCounts = { Alle: visiblePositions.length };
     const tCartCounts = { Alle: 0 };
 
-    positions.forEach((p) => {
+    visiblePositions.forEach((p) => {
       const tradeName = p.tradeCategory || p.group || 'Allgemein';
       if (!tradeMap.has(tradeName)) {
         tradeMap.set(tradeName, []);
@@ -56,7 +58,7 @@ export default function LvOverviewScreen({
 
     // Filter positions based on selectedTrade and searchQuery
     const q = searchQuery.trim().toLowerCase();
-    let filtered = positions;
+    let filtered = visiblePositions;
 
     if (selectedTrade !== 'Alle') {
       filtered = filtered.filter(
@@ -95,7 +97,7 @@ export default function LvOverviewScreen({
 
     return {
       trades: ['Alle', ...tradeNames],
-      totalPositionsCount: positions.length,
+      totalPositionsCount: visiblePositions.length,
       tradeCounts: tCounts,
       tradeCartCounts: tCartCounts,
       displayedPositions: sorted,

@@ -11,6 +11,7 @@ import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
 import LvUnplannedModal from '../components/lv/LvUnplannedModal';
+import { isPositionHiddenForMonteur } from '../utils/projectMode';
 
 export default function LvPositionsScreen({
   tradeName,
@@ -29,6 +30,7 @@ export default function LvPositionsScreen({
   // Filter positions for this trade and sort by sortOrder then displayCode
   const tradePositions = useMemo(() => {
     const list = positions.filter((p) => {
+      if (isPositionHiddenForMonteur(p)) return false;
       const pTrade = p.tradeCategory || p.group || 'Allgemein';
       return pTrade.toLowerCase() === (tradeName || '').toLowerCase();
     });

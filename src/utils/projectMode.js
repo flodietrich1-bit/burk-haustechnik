@@ -20,3 +20,15 @@ export function isLvProject(project) {
 
   return false;
 }
+
+/**
+ * Returns true if a position/material is hidden from installers or cancelled in the web portal.
+ */
+export function isPositionHiddenForMonteur(pos) {
+  if (!pos) return false;
+  return (
+    pos.hiddenForMonteur === true ||
+    pos.isCancelled === true ||
+    String(pos.status || '').trim().toLowerCase() === 'cancelled'
+  );
+}

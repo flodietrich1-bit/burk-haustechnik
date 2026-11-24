@@ -22,6 +22,7 @@ import MaterialBookingCard from '../components/booking/MaterialBookingCard';
 import UnplannedInstallModal from '../components/booking/UnplannedInstallModal';
 import CompleteRoomModal from '../components/booking/CompleteRoomModal';
 import { getRoomFloor } from '../services/storageService';
+import { isPositionHiddenForMonteur } from '../utils/projectMode';
 import { styles } from '../components/booking/bookingStyles';
 
 export default function BookingScreen({
@@ -158,7 +159,7 @@ export default function BookingScreen({
 
     baseMaterialIds.forEach((id) => {
       const { mat, roomPlan } = resolveMat(id, materials, room);
-      if (!mat) return;
+      if (!mat || isPositionHiddenForMonteur(mat) || isPositionHiddenForMonteur(roomPlan)) return;
       counts.Alle = (counts.Alle || 0) + 1;
       const grp = mat?.group && mat.group !== 'Allgemein'
         ? mat.group
@@ -176,7 +177,10 @@ export default function BookingScreen({
 
   // Filter materials for this room by Trade and Search query
   const displayMaterialIds = useMemo(() => {
-    let ids = baseMaterialIds;
+    let ids = baseMaterialIds.filter((id) => {
+      const { mat, roomPlan } = resolveMat(id, materials, room);
+      return Boolean(mat) && !isPositionHiddenForMonteur(mat) && !isPositionHiddenForMonteur(roomPlan);
+    });
 
     if (selectedTrade && selectedTrade !== 'Alle') {
       ids = ids.filter((id) => {
