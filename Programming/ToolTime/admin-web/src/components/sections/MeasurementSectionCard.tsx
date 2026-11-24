@@ -15,9 +15,8 @@ interface MeasurementSectionCardProps {
   section: MeasurementSection;
   positions: Position[];
   isExpanded: boolean;
-  canApprove: boolean;
+  isIncludedInAufmass: boolean;
   onToggleExpand: () => void;
-  onApprove: (id: string) => void;
   onSelectPhoto: (url: string) => void;
 }
 
@@ -25,13 +24,10 @@ export const MeasurementSectionCard: React.FC<MeasurementSectionCardProps> = ({
   section,
   positions,
   isExpanded,
-  canApprove,
+  isIncludedInAufmass,
   onToggleExpand,
-  onApprove,
   onSelectPhoto
 }) => {
-  const isApproved = section.status === 'APPROVED';
-
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
       {/* Header Row */}
@@ -44,17 +40,17 @@ export const MeasurementSectionCard: React.FC<MeasurementSectionCardProps> = ({
             {isExpanded ? <ChevronDown className="w-5 h-5 text-[#3B82C4]" /> : <ChevronRight className="w-5 h-5" />}
           </button>
           <div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-bold text-slate-900">{section.sectionTitle}</h3>
-              {isApproved ? (
-                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Freigegeben</span>
+              {isIncludedInAufmass ? (
+                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Abschnitt bereits im Aufmaß erfasst</span>
                 </span>
               ) : (
-                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                  <Clock className="w-3 h-3" />
-                  <span>Eingereicht (Prüfung)</span>
+                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <Clock className="w-3 h-3 text-amber-600" />
+                  <span>Noch nicht im Aufmaß</span>
                 </span>
               )}
             </div>
@@ -71,24 +67,6 @@ export const MeasurementSectionCard: React.FC<MeasurementSectionCardProps> = ({
               {section.photos?.length > 0 && <span>• {section.photos.length} Fotos</span>}
             </div>
           </div>
-        </div>
-
-        <div className="flex items-center space-x-2 self-end sm:self-auto" onClick={(e) => e.stopPropagation()}>
-          {!isApproved && canApprove && (
-            <button
-              type="button"
-              onClick={() => onApprove(section.id)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Abschnitt freigeben</span>
-            </button>
-          )}
-          {isApproved && (
-            <span className="text-[11px] text-emerald-700 font-medium">
-              Geprüft von {section.approvedBy || 'Projektleiter'}
-            </span>
-          )}
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import type { Position, User, MeasurementSection, MeasurementSectionItem } from '../../types';
-import { X, Plus, Trash2, CheckCircle2, FileSpreadsheet } from 'lucide-react';
-import { saveMeasurementSection } from '../../services/measurementSectionService';
+import type { Position, User, MeasurementSection, MeasurementSectionItem, MeasurementSectionPhoto } from '../../types';
+import { X, Plus, Trash2, CheckCircle2, FileSpreadsheet, Camera } from 'lucide-react';
+import { saveMeasurementSection, uploadSectionPhoto } from '../../services/measurementSectionService';
 
 interface NewMeasurementSectionModalProps {
   isOpen: boolean;
@@ -18,9 +18,10 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
   positions,
   currentUser
 }) => {
-  const [sectionTitle, setSectionTitle] = useState('KW 48 UG Trinkwasserbereitung');
+  const [sectionTitle, setSectionTitle] = useState('');
   const [monteurName, setMonteurName] = useState(currentUser?.name || 'Monteur');
   const [items, setItems] = useState<MeasurementSectionItem[]>([]);
+  const [selectedPhotos, setSelectedPhotos] = useState<{ file: File; previewUrl: string }[]>([]);
   const [selectedPosId, setSelectedPosId] = useState('');
   const [itemQty, setItemQty] = useState<number>(1);
   const [isUnplanned, setIsUnplanned] = useState(false);
@@ -70,6 +71,25 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
     setItems(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handlePhotosSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const added = files.map(file => ({
+      file,
+      previewUrl: URL.createObjectURL(file)
+    }));
+    setSelectedPhotos(prev => [...prev, ...added]);
+    e.target.value = '';
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setSelectedPhotos(prev => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sectionTitle.trim()) {
@@ -83,25 +103,35 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
 
     setIsSubmitting(true);
     try {
+      const sectionId = `sec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const uploadedPhotos: MeasurementSectionPhoto[] = [];
+
+      for (const entry of selectedPhotos) {
+        const url = await uploadSectionPhoto(projectId, sectionId, entry.file);
+        uploadedPhotos.push({
+          url,
+          timestamp: new Date().toISOString(),
+          caption: entry.file.name
+        });
+      }
+
       const newSection: MeasurementSection = {
-        id: `sec_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: sectionId,
         projectId,
         sectionTitle: sectionTitle.trim(),
         createdAt: new Date().toISOString(),
         createdBy: monteurName.trim() || 'Monteur',
         createdByUid: currentUser?.id,
         items,
-        photos: [
-          {
-            url: 'https://images.unsplash.com/photo-1581244277943-fe4a9c777189?w=500&auto=format&fit=crop',
-            timestamp: new Date().toISOString(),
-            caption: 'Installationsnachweis'
-          }
-        ],
+        photos: uploadedPhotos,
         status: 'SUBMITTED'
       };
 
       await saveMeasurementSection(projectId, newSection);
+      selectedPhotos.forEach(p => URL.revokeObjectURL(p.previewUrl));
+      setSectionTitle('');
+      setItems([]);
+      setSelectedPhotos([]);
       onClose();
     } catch (err: any) {
       alert('Fehler beim Speichern: ' + (err.message || err));
@@ -133,8 +163,8 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
               required
               value={sectionTitle}
               onChange={(e) => setSectionTitle(e.target.value)}
-              placeholder="z. B. KW 48 UG Trinkwasserbereitung"
-              className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-emerald-500 font-semibold"
+              placeholder="z. B. Strang A / EG Bad / Technikraum (wo gearbeitet wurde)"
+              className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-emerald-500 font-semibold placeholder:text-slate-400 placeholder:font-normal"
             />
           </div>
 
@@ -244,6 +274,52 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Foto-Upload (Aufmaßzettel, Beweisfotos - mehrere möglich) */}
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800 flex items-center space-x-1.5">
+                <Camera className="w-4 h-4 text-emerald-600" />
+                <span>Fotos &amp; Aufmaßzettel (optional, mehrere möglich)</span>
+              </span>
+              <label className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-[11px] font-bold text-slate-700 cursor-pointer flex items-center space-x-1.5 transition-colors">
+                <Plus className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Fotos auswählen</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handlePhotosSelected}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            {selectedPhotos.length === 0 ? (
+              <p className="text-[11px] text-slate-400">
+                z. B. Foto vom handschriftlichen Aufmaßzettel sowie 1–2 Beweisfotos der Baustelle.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 pt-1">
+                {selectedPhotos.map((entry, idx) => (
+                  <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-200 bg-white aspect-square">
+                    <img
+                      src={entry.previewUrl}
+                      alt={entry.file.name}
+                      className="w-full h-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePhoto(idx)}
+                      title="Foto entfernen"
+                      className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white opacity-90 hover:opacity-100 shadow cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
                 ))}
               </div>

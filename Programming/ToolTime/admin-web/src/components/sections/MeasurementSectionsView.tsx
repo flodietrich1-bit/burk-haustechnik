@@ -1,10 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import type { Position, MeasurementSection, User } from '../../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import type { Position, MeasurementSection, User, AufmassDocument } from '../../types';
 import { FileSpreadsheet, Plus } from 'lucide-react';
-import { 
-  subscribeMeasurementSections, 
-  approveMeasurementSection 
-} from '../../services/measurementSectionService';
+import { subscribeMeasurementSections } from '../../services/measurementSectionService';
+import { listenToAufmasse } from '../../services/aufmassService';
 import { MeasurementSectionCard } from './MeasurementSectionCard';
 import { NewMeasurementSectionModal } from './NewMeasurementSectionModal';
 
@@ -21,10 +19,11 @@ export const MeasurementSectionsView: React.FC<MeasurementSectionsViewProps> = (
   currentUser
 }) => {
   const [sections, setSections] = useState<MeasurementSection[]>([]);
+  const [aufmasse, setAufmasse] = useState<AufmassDocument[]>([]);
   const [expandedSectionIds, setExpandedSectionIds] = useState<Record<string, boolean>>({});
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'SUBMITTED' | 'APPROVED'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'included'>('all');
 
   useEffect(() => {
     const unsub = subscribeMeasurementSections(projectId, (list) => {
@@ -36,21 +35,30 @@ export const MeasurementSectionsView: React.FC<MeasurementSectionsViewProps> = (
     return () => unsub();
   }, [projectId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    return listenToAufmasse(projectId, setAufmasse);
+  }, [projectId]);
+
+  const includedSectionIds = useMemo(() => {
+    const ids = new Set<string>();
+    aufmasse.forEach(a => {
+      (a.roomsData || []).forEach(r => {
+        if (r.roomId) ids.add(r.roomId);
+      });
+    });
+    return ids;
+  }, [aufmasse]);
+
   const toggleExpand = (id: string) => {
     setExpandedSectionIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleApprove = async (sectionId: string) => {
-    const approverName = currentUser?.name || 'Projektleiter';
-    await approveMeasurementSection(projectId, sectionId, approverName);
-  };
-
   const filtered = sections.filter(s => {
     if (statusFilter === 'all') return true;
-    return s.status === statusFilter;
+    const isIncluded = includedSectionIds.has(s.id);
+    return statusFilter === 'included' ? isIncluded : !isIncluded;
   });
-
-  const canApprove = currentUser?.role === 'admin' || currentUser?.role === 'projektleiter' || currentUser?.role === 'bauleiter';
 
   return (
     <div className="space-y-6">
@@ -67,7 +75,7 @@ export const MeasurementSectionsView: React.FC<MeasurementSectionsViewProps> = (
             Eingereichte Aufmaß-Abschnitte (Warenkörbe)
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Chronologische Liste aller vom Monteur abgeschlossenen Abschnitte mit Fotos und Freigabe-Workflow.
+            Chronologische Liste aller eingereichten Abschnitte mit Fotos. Noch nicht erfasste Abschnitte fließen automatisch ins nächste Aufmaß ein.
           </p>
         </div>
 
@@ -76,33 +84,33 @@ export const MeasurementSectionsView: React.FC<MeasurementSectionsViewProps> = (
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${statusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Alle ({sections.length})
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter('SUBMITTED')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${statusFilter === 'SUBMITTED' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => setStatusFilter('pending')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'pending' ? 'bg-white text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              Offen ({sections.filter(s => s.status === 'SUBMITTED').length})
+              Noch nicht im Aufmaß ({sections.filter(s => !includedSectionIds.has(s.id)).length})
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter('APPROVED')}
-              className={`px-3 py-1.5 rounded-lg transition-all ${statusFilter === 'APPROVED' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => setStatusFilter('included')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${statusFilter === 'included' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
-              Freigegeben ({sections.filter(s => s.status === 'APPROVED').length})
+              Im Aufmaß erfasst ({sections.filter(s => includedSectionIds.has(s.id)).length})
             </button>
           </div>
 
           <button
             type="button"
             onClick={() => setIsNewModalOpen(true)}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition-all"
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center space-x-1.5 transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>+ Abschnitt erfassen</span>
+            <span>Abschnitt erfassen</span>
           </button>
         </div>
       </div>
@@ -124,9 +132,8 @@ export const MeasurementSectionsView: React.FC<MeasurementSectionsViewProps> = (
               section={section}
               positions={positions}
               isExpanded={Boolean(expandedSectionIds[section.id])}
-              canApprove={canApprove}
+              isIncludedInAufmass={includedSectionIds.has(section.id)}
               onToggleExpand={() => toggleExpand(section.id)}
-              onApprove={handleApprove}
               onSelectPhoto={(url) => setSelectedPhoto(url)}
             />
           ))}

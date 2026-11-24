@@ -1,7 +1,8 @@
 import { 
   collection, doc, onSnapshot, setDoc, updateDoc 
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { getActiveTenantId, cleanForFirestore } from './firestoreService';
 import type { MeasurementSection } from '../types';
 
@@ -142,4 +143,34 @@ export async function approveMeasurementSection(
   } catch (err: any) {
     console.warn('Failed to approve measurement section in Firestore:', err.message);
   }
+}
+
+export async function uploadSectionPhoto(
+  projectId: string,
+  sectionId: string,
+  file: File
+): Promise<string> {
+  if (!storage) {
+    throw new Error('Firebase Storage ist nicht konfiguriert.');
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `tenants/${getActiveTenantId()}/projects/${projectId}/sections/${sectionId}/${Date.now()}_${safeName}`;
+  const storageRef = ref(storage, storagePath);
+
+  return new Promise((resolve, reject) => {
+    const uploadTask = uploadBytesResumable(storageRef, file);
+    uploadTask.on(
+      'state_changed',
+      () => {},
+      reject,
+      async () => {
+        try {
+          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          resolve(downloadUrl);
+        } catch (error) {
+          reject(error);
+        }
+      }
+    );
+  });
 }
