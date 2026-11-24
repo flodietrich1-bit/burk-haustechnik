@@ -128,7 +128,7 @@ export const MaterialFilterBar: React.FC<MaterialFilterBarProps> = ({
                 className="px-3 py-1.5 bg-[#3B82C4] hover:bg-[#2d6fa8] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>+ Position</span>
+                <span>Position</span>
               </button>
             </>
           )}
