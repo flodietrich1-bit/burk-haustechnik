@@ -204,7 +204,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `src/screens/BookingScreen.jsx`: Gewerke-Filter-Chipkacheln (`availableTrades`, `tradeCounts`, `translateGroup`) über der Materialliste im Raum eingebunden; Filterung nach Gewerk und Suchbegriff kombiniert.
     - `src/screens/LvOverviewScreen.jsx` & `LvPositionsScreen.jsx`: Drag-Lock (`isSliderDragging`) für flüssige Schiebereglerbedienung ohne Scrollview-Konflikte integriert; veraltetes `LvQuantityModal` entfernt.
     - `app.json` & `src/constants/version.js`: Bump auf `v2.65` und iOS `buildNumber: "9"`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (825 Module).
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (825 Module); Git push auf `origin/Monteur` (`b92c1d1`); EAS Update für `preview` erfolgreich veröffentlicht (`9ccdbcc1-a315-4f2d-b70a-b8b87efd12ca`); OTA-Update wird auf installierten TestFlight-Apps (Build 8/7) direkt beim App-Start geladen; EAS iOS Free Cloud Build-Kontingent für diesen Abrechnungsmonat erreicht (Reset in 6 Tagen).
 
 - **2026-11-24 (v2.64)**
   - **Ziel / Anlass:** Prominente gehighlightete Infobox für Sonderinfos/Montagehinweise (z. B. „Schellen inklusive“) direkt unter dem Titel; Entfernung des gesonderten Zusatzposition-Badges für Monteure.
