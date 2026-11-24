@@ -212,7 +212,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `src/screens/LvCartScreen.jsx`: `lvUnplannedBadge` und fremdsprachige Glosse für Cart-Items angebunden.
     - `app.json`: iOS `buildNumber` auf `"7"` erhöht.
     - `src/constants/version.js`: Bump auf `v2.63`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module).
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module); Git push auf `origin/Monteur` (`8cb916b`); EAS Update für `preview` erfolgreich veröffentlicht (`62415ee5-3ba8-4b70-865c-ee3d1b92e54e`); EAS iOS Production Build `7` (Build ID `f51dd629-d3f7-48d2-8740-77a308118aa7`) erfolgreich kompiliert und an Apple App Store Connect / TestFlight übermittelt (`https://appstoreconnect.apple.com/apps/6836813921/testflight/ios`).
 
 - **2026-11-23 (v2.62)**
   - **Ziel / Anlass:** Neugestaltung der LV-Hauptansicht: Handliche Gewerke-Chipkacheln als Filter, direkte Anzeige aller LV-Positionen inkl. hinzugefügter Materialien und Umbenennung von „Warenkorb“ in „Zum Aufmaß vorbereiten“.
