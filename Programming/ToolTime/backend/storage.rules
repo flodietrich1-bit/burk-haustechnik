@@ -17,6 +17,7 @@ service firebase.storage {
     function projectAssigned(tenantId, projectId) {
       return tenantAdmin(tenantId) || (activeMember(tenantId) && (
         member(tenantId).data.role == 'bauleiter' ||
+        member(tenantId).data.role == 'kaufmaennisch' ||
         member(tenantId).data.get('assignedProjectIds', []).hasAny([projectId]) ||
         (member(tenantId).data.role == 'monteur' && project(tenantId, projectId).data.get('assignedMonteurIds', []).hasAny([request.auth.uid]))
       ));
