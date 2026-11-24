@@ -808,23 +808,26 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
         if (!pos.id) continue;
         const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions', pos.id);
         const iRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'items', pos.id);
-        batch.set(ref, pos, { merge: true });
+        const cleanPos = Object.fromEntries(
+          Object.entries(pos).filter(([, v]) => v !== undefined)
+        );
+        batch.set(ref, cleanPos, { merge: true });
         if (pos.isCancelled || pos.status === 'cancelled') {
           // Gestrichene Position entfällt für Monteur -> aus items entfernen
           batch.delete(iRef);
         } else {
           batch.set(iRef, {
             id: pos.id,
-            oz: pos.posNr,
-            posNr: pos.posNr,
-            text: pos.shortText,
-            shortText: pos.shortText,
-            qu: pos.qu,
-            unit: pos.qu,
-            qty: pos.qty,
-            quantity: pos.qty,
+            oz: pos.posNr ?? '',
+            posNr: pos.posNr ?? '',
+            text: pos.shortText ?? '',
+            shortText: pos.shortText ?? '',
+            qu: pos.qu ?? 'Stk',
+            unit: pos.qu ?? 'Stk',
+            qty: pos.qty ?? 0,
+            quantity: pos.qty ?? 0,
             unitPrice: pos.unitPrice || 0,
-            group: pos.group,
+            group: pos.group ?? 'Allgemein',
             updatedAt: pos.updatedAt || new Date().toISOString()
           }, { merge: true });
         }

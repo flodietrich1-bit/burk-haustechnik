@@ -119,7 +119,7 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
           posCol = pIdx >= 0 ? pIdx : 0;
           textCol = tIdx;
           qtyCol = qIdx >= 0 ? qIdx : 2;
-          quCol = row.findIndex(c => c.includes('einheit') || c.includes('me') || c.includes('qu'));
+          quCol = row.findIndex(c => c.includes('einheit') || c === 'me' || c === 'einh' || c === 'einh.' || c === 'qu');
           priceCol = row.findIndex(c => c.includes('preis') || c.includes('ep') || c.includes('vk'));
           deliveredCol = row.findIndex(c => c.includes('bestellt') || c.includes('geliefert'));
           groupCol = row.findIndex(c => c.includes('gewerk') || c.includes('gruppe') || c.includes('titel'));
@@ -214,11 +214,16 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
                          existingByCode.get(rawPos) ||
                          (cleanTitle ? existingByTitle.get(cleanTitle.toLowerCase()) : undefined);
 
+        const isValidQu = Boolean(rawQu) && !/^\d+([.,]\d+)?$/.test(rawQu);
+        const normalizedQu = isValidQu
+          ? (rawQu.toLowerCase() === 'lfm' || rawQu.toLowerCase() === 'm' ? 'LFM' : rawQu === 'Stk.' ? 'Stk' : rawQu)
+          : '';
+
         if (existing) {
           // MATCHED with existing LV position!
           matched++;
           const targetQty = qty > 0 ? qty : (Number(existing.qty) || 1);
-          const finalDelivered = deliveredQty > 0 ? deliveredQty : existing.deliveredQty;
+          const finalDelivered = deliveredQty > 0 ? deliveredQty : (existing.deliveredQty ?? targetQty);
           const status = (deliveredQty > 0 && deliveredQty >= targetQty)
             ? 'DELIVERED'
             : (deliveredQty > 0 ? 'ORDERED' : (existing.orderStatus || 'OPEN'));
@@ -228,16 +233,16 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
             posNr: existing.posNr,
             displayCode: existing.displayCode || existing.posNr,
             originalCode: existing.originalCode || existing.posNr,
-            sortOrder: existing.sortOrder,
+            sortOrder: existing.sortOrder ?? (results.length + 1) * 10,
             sourceType: existing.sourceType || 'ORIGINAL_GAEB',
             group: existing.group || existing.tradeCategory || currentGroup,
             tradeCategory: existing.tradeCategory || existing.group || currentGroup,
             officialTitle: existing.officialTitle || cleanTitle,
             shortText: existing.shortText || cleanTitle,
-            aliasTitle: existing.aliasTitle || null,
-            monteurInfo: existing.monteurInfo || null,
+            aliasTitle: existing.aliasTitle ?? null,
+            monteurInfo: existing.monteurInfo ?? null,
             qty: targetQty,
-            qu: rawQu && rawQu !== 'Stk.' ? (rawQu === 'lfm' || rawQu === 'm' ? 'LFM' : rawQu) : (existing.qu || 'Stk'),
+            qu: normalizedQu || existing.qu || 'Stk',
             deliveredQty: finalDelivered,
             unitPrice: unitPriceVK > 0 ? unitPriceVK : (existing.unitPrice || 0),
             unitPriceVK: unitPriceVK > 0 ? unitPriceVK : (existing.unitPriceVK || existing.unitPrice || 0),
@@ -249,7 +254,7 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
           // Genuine new position / Nachtrag (e.g. 4.0000.1 -> 04.00.1)
           newlyAdded++;
           const posId = `pos_custom_${normalizedPos.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}`;
-          const quNorm = rawQu.toLowerCase() === 'lfm' || rawQu.toLowerCase() === 'm' ? 'LFM' : (rawQu || 'Stk');
+          const quNorm = normalizedQu || 'Stk';
           const finalQty = qty > 0 ? qty : 1;
 
           results.push({
@@ -340,7 +345,7 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
           )}
 
           <p className="text-slate-600 leading-relaxed">
-            Laden Sie Ihre Excel-Kalkulationsdatei hoch. Nummernformate (z. B. <code>4.00001</code> $\rightarrow$ <code>04.01</code>) 
+            Laden Sie Ihre Excel-Kalkulationsdatei hoch. Nummernformate (z. B. <code>4.00001</code> → <code>04.01</code>) 
             werden automatisch normalisiert, durchgestrichene Zeilen und Hinweistexte werden ignoriert.
           </p>
 
