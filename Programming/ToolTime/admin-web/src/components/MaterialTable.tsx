@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { Position, Booking, Room, User, Project, MeasurementSection } from '../types';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Check, X, AlertTriangle } from 'lucide-react';
 import { useMaterialMetrics } from './material/useMaterialMetrics';
 import { MaterialStatsCards } from './material/MaterialStatsCards';
 import { MaterialFilterBar, type SourceFilterType } from './material/MaterialFilterBar';
@@ -47,6 +47,22 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
   const [isExcelModalOpen, setIsExcelModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
+  // Staging state for Excel import preview before persisting to Firestore
+  const [pendingExcelImports, setPendingExcelImports] = useState<Partial<Position>[] | null>(null);
+  const [isSavingExcel, setIsSavingExcel] = useState(false);
+
+  const displayedPositions = useMemo(() => {
+    if (!pendingExcelImports) return positions;
+    const mergedMap = new Map<string, Position>();
+    positions.forEach(p => mergedMap.set(p.id, p));
+    pendingExcelImports.forEach(imp => {
+      if (!imp.id) return;
+      const existing = mergedMap.get(imp.id);
+      mergedMap.set(imp.id, { ...(existing || {}), ...imp } as Position);
+    });
+    return Array.from(mergedMap.values());
+  }, [positions, pendingExcelImports]);
+
   const getPositionMetrics = useMaterialMetrics(rooms, bookings);
 
   const canEditCommercial = useMemo(() => {
@@ -58,27 +74,27 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
   // Unique groups from data
   const groups = useMemo(() => {
     const set = new Set<string>();
-    positions.forEach(p => {
+    displayedPositions.forEach(p => {
       const g = p.tradeCategory || p.group;
       if (g) set.add(g);
     });
     return Array.from(set);
-  }, [positions]);
+  }, [displayedPositions]);
 
   // Source Counts (Alle, Nur Original, Nicht im LV)
   const sourceCounts = useMemo(() => {
     let original = 0;
     let custom = 0;
-    positions.forEach(p => {
+    displayedPositions.forEach(p => {
       if (p.sourceType === 'CUSTOM_ADDED') custom++;
       else original++;
     });
-    return { all: positions.length, original, custom };
-  }, [positions]);
+    return { all: displayedPositions.length, original, custom };
+  }, [displayedPositions]);
 
   // Filtered positions
   const filteredPositions = useMemo(() => {
-    return positions.filter(p => {
+    return displayedPositions.filter(p => {
       if (sourceFilter === 'original' && p.sourceType === 'CUSTOM_ADDED') return false;
       if (sourceFilter === 'custom' && p.sourceType !== 'CUSTOM_ADDED') return false;
 
@@ -107,7 +123,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
 
       return true;
     });
-  }, [positions, searchTerm, sourceFilter, selectedGroup, selectedStatus, onlyInstalled, getPositionMetrics]);
+  }, [displayedPositions, searchTerm, sourceFilter, selectedGroup, selectedStatus, onlyInstalled, getPositionMetrics]);
 
   // Grouped by Trade
   const groupedPositions = useMemo(() => {
@@ -124,16 +140,16 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
   }, [filteredPositions]);
 
   // Totals & KPI Metrics
-  const exactItems = useMemo(() => positions.filter(p => {
+  const exactItems = useMemo(() => displayedPositions.filter(p => {
     const m = getPositionMetrics(p);
     return m.isCompleted && m.delta === 0 && m.installed > 0;
-  }).length, [positions, getPositionMetrics]);
+  }).length, [displayedPositions, getPositionMetrics]);
 
-  const overItems = useMemo(() => positions.filter(p => getPositionMetrics(p).deviationType === 'over').length, [positions, getPositionMetrics]);
-  const underItems = useMemo(() => positions.filter(p => getPositionMetrics(p).deviationType === 'under').length, [positions, getPositionMetrics]);
+  const overItems = useMemo(() => displayedPositions.filter(p => getPositionMetrics(p).deviationType === 'over').length, [displayedPositions, getPositionMetrics]);
+  const underItems = useMemo(() => displayedPositions.filter(p => getPositionMetrics(p).deviationType === 'under').length, [displayedPositions, getPositionMetrics]);
   const totalValue = useMemo(() => {
-    return positions.reduce((acc, p) => acc + (getPositionMetrics(p).installed * (p.unitPriceVK ?? p.unitPrice ?? 0)), 0);
-  }, [positions, getPositionMetrics]);
+    return displayedPositions.reduce((acc, p) => acc + (getPositionMetrics(p).installed * (p.unitPriceVK ?? p.unitPrice ?? 0)), 0);
+  }, [displayedPositions, getPositionMetrics]);
 
   const handleUpdateFields = async (positionId: string, updates: Partial<Position>) => {
     if (!projectId) return;
@@ -148,11 +164,26 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
     }
   };
 
+  const handleConfirmExcelImport = async () => {
+    if (!projectId || !pendingExcelImports) return;
+    setIsSavingExcel(true);
+    try {
+      await savePositionsBatch(projectId, pendingExcelImports);
+      setPendingExcelImports(null);
+    } finally {
+      setIsSavingExcel(false);
+    }
+  };
+
+  const handleDiscardExcelImport = () => {
+    setPendingExcelImports(null);
+  };
+
   return (
     <div className="space-y-5">
       {/* KPI Stat Cards */}
       <MaterialStatsCards
-        totalItems={positions.length}
+        totalItems={displayedPositions.length}
         exactItems={exactItems}
         overItems={overItems}
         underItems={underItems}
@@ -171,7 +202,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
         onlyInstalled={onlyInstalled}
         setOnlyInstalled={setOnlyInstalled}
         totalFilteredCount={filteredPositions.length}
-        totalPositionsCount={positions.length}
+        totalPositionsCount={displayedPositions.length}
         totalValue={totalValue}
         isEditMode={isEditMode}
         setIsEditMode={setIsEditMode}
@@ -182,9 +213,46 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
         }}
         onOpenExcelModal={() => setIsExcelModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
-        onDeleteCustom={handleDeleteCustomPositions}
+        onDeleteCustom={pendingExcelImports ? undefined : handleDeleteCustomPositions}
         canEditCommercial={canEditCommercial}
       />
+
+      {/* Excel Import Confirmation Banner (Vorschau-Modus vor endgültigem Speichern) */}
+      {pendingExcelImports && (
+        <div className="p-4 bg-amber-50 border-2 border-amber-400 rounded-xl shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-150">
+          <div className="flex items-start sm:items-center space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <p className="text-sm font-bold text-amber-950">
+                Excel-Abgleich als Vorschau geladen ({pendingExcelImports.length} Positionen aktualisiert/ergänzt)
+              </p>
+              <p className="text-xs text-amber-800">
+                Prüfen Sie die aktualisierte Materialliste unten. Erst nach Bestätigung werden die Änderungen endgültig gespeichert.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2.5 shrink-0">
+            <button
+              type="button"
+              disabled={isSavingExcel}
+              onClick={handleDiscardExcelImport}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center space-x-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+              <span>Änderungen verwerfen</span>
+            </button>
+            <button
+              type="button"
+              disabled={isSavingExcel}
+              onClick={handleConfirmExcelImport}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center space-x-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>{isSavingExcel ? 'Wird gespeichert...' : 'Aktualisierte Materialliste speichern'}</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Material Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -299,12 +367,10 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
         isExcelOpen={isExcelModalOpen}
         onCloseExcel={() => setIsExcelModalOpen(false)}
         onImportExcel={async (imported) => {
-          if (projectId) {
-            await savePositionsBatch(projectId, imported);
-            setIsExcelModalOpen(false);
-          }
+          setPendingExcelImports(imported);
+          setIsExcelModalOpen(false);
         }}
-        onCleanCustom={handleDeleteCustomPositions}
+        onCleanCustom={pendingExcelImports ? undefined : handleDeleteCustomPositions}
         isExportOpen={isExportModalOpen}
         onCloseExport={() => setIsExportModalOpen(false)}
       />
