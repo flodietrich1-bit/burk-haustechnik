@@ -11,7 +11,8 @@ import type {
   AufmassDocument, 
   AufmassMaterialItem, 
   AufmassRoomData, 
-  AufmassRoomPosition 
+  AufmassRoomPosition,
+  MeasurementSection
 } from '../types';
 import { getMaterialActualQty } from './firestoreService';
 
@@ -150,7 +151,8 @@ export function calculateAufmassSnapshot(
   dateTo: string,   // YYYY-MM-DD (Stichtag)
   creatorName: string = 'Florian Burk',
   notes: string = '',
-  previousAufmass?: AufmassDocument | null
+  previousAufmass?: AufmassDocument | null,
+  sections: MeasurementSection[] = []
 ): AufmassDocument {
   const projectId = project?.id || 'default_project';
   const projectName = project?.name || 'Bauvorhaben';
@@ -454,6 +456,73 @@ export function calculateAufmassSnapshot(
         plannedPositions,
         specialPositions,
         positions: combinedPositions,
+      });
+    }
+  });
+
+  // 1b. Integrate Measurement Sections (Aufmaß-Abschnitte vom Monteur / Bauleiter)
+  sections.forEach(sec => {
+    const secTime = sec.createdAt ? new Date(sec.createdAt).getTime() : 0;
+    if (secTime > toDateEndTimestamp) return;
+    const inPeriod = !secTime || (secTime >= fromDateStartTimestamp && secTime <= toDateEndTimestamp);
+
+    const prevSecData = previousAufmass?.roomsData.find(r => r.roomId === sec.id);
+    const secPlanned: AufmassRoomPosition[] = [];
+    const secSpecial: AufmassRoomPosition[] = [];
+
+    (sec.items || []).forEach(item => {
+      const qty = Number(item.quantity) || 0;
+      if (qty <= 0) return;
+
+      const pos = posMap.get(item.lvItemId) || (item.posNr ? posByNrMap.get(item.posNr) : undefined);
+      const posNr = pos?.displayCode || pos?.posNr || item.posNr || 'Nachtrag';
+      const shortText = pos?.officialTitle || pos?.shortText || item.shortText || item.customDescription || 'Material';
+      const group = pos?.tradeCategory || pos?.group || 'Aufmaß-Abschnitt';
+      const qu = pos?.qu || item.qu || 'Stk';
+      const unitPrice = Number(pos?.unitPriceVK ?? pos?.unitPrice ?? item.unitPriceVK ?? 0);
+
+      const prevPos = prevSecData?.positions.find(p => p.positionId === item.lvItemId || p.posNr === posNr);
+      const prevInstalled = prevPos ? Number(prevPos.totalInstalledToDate || 0) : 0;
+      const installedInPeriod = prevSecData
+        ? Math.max(0, qty - prevInstalled)
+        : (inPeriod ? qty : 0);
+
+      const entry: AufmassRoomPosition = {
+        positionId: pos?.id || item.lvItemId || `sec_item_${posNr}`,
+        posNr,
+        shortText,
+        group,
+        qu,
+        unitPrice,
+        plannedQty: item.isUnplannedMaterial ? 0 : qty,
+        totalInstalledToDate: qty,
+        installedInPeriod,
+        isOverconsumption: false,
+        excessQty: 0,
+        isExtraPosition: Boolean(item.isUnplannedMaterial),
+        reason: item.isUnplannedMaterial ? `Aufmaß-Abschnitt (${sec.createdBy})` : undefined,
+        causedBy: sec.createdBy || 'Monteur',
+      };
+
+      if (entry.isExtraPosition) {
+        secSpecial.push(entry);
+      } else {
+        secPlanned.push(entry);
+      }
+    });
+
+    const combined = [...secPlanned, ...secSpecial];
+    if (combined.length > 0) {
+      roomsData.push({
+        roomId: sec.id,
+        roomName: sec.sectionTitle,
+        roomCode: 'Abschnitt',
+        floor: sec.createdAt ? new Date(sec.createdAt).toLocaleDateString('de-DE') : 'Abschnitt',
+        isCompleted: sec.status === 'APPROVED',
+        progressPercent: 100,
+        plannedPositions: secPlanned,
+        specialPositions: secSpecial,
+        positions: combined,
       });
     }
   });

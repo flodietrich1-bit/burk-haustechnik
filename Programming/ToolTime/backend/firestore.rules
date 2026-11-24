@@ -88,6 +88,12 @@ service cloud.firestore {
           allow read: if projectAssigned(tenantId, projectId);
           allow write: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch']);
         }
+        match /measurement_sections/{id} {
+          allow read: if projectAssigned(tenantId, projectId);
+          allow create: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch', 'monteur']);
+          allow update: if projectAssigned(tenantId, projectId) && hasTenantRole(tenantId, ['admin', 'bauleiter', 'kaufmaennisch', 'monteur']);
+          allow delete: if hasTenantRole(tenantId, ['admin', 'bauleiter']);
+        }
         match /{otherCollection}/{id} {
           allow read: if projectAssigned(tenantId, projectId);
           allow write: if !(otherCollection in ['addendums', 'bookings', 'materialOrders', 'aufmasse']) && hasTenantRole(tenantId, ['admin', 'bauleiter']);

@@ -8,7 +8,8 @@ import type {
   Addendum, 
   User, 
   AufmassDocument,
-  AufmassRoomPosition
+  AufmassRoomPosition,
+  MeasurementSection
 } from '../types';
 import { 
   FileSpreadsheet, 
@@ -41,6 +42,7 @@ import {
 import { exportAufmassToExcel, downloadAufmassPdf } from '../services/excelExporter';
 import { api } from '../services/apiClient';
 import { getActiveTenantId } from '../services/firestoreService';
+import { subscribeMeasurementSections } from '../services/measurementSectionService';
 
 interface AufmassViewProps {
   projectId: string;
@@ -64,7 +66,13 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   currentUser
 }) => {
   const [aufmasse, setAufmasse] = useState<AufmassDocument[]>([]);
+  const [sections, setSections] = useState<MeasurementSection[]>([]);
   const [selectedAufmass, setSelectedAufmass] = useState<AufmassDocument | null>(null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    return subscribeMeasurementSections(projectId, setSections);
+  }, [projectId]);
   const [detailTab, setDetailTab] = useState<'summary' | 'rooms'>('rooms');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoomFilter, setSelectedRoomFilter] = useState<string>('all');
@@ -167,7 +175,8 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
         dateTo,
         creatorName,
         notes,
-        latestSavedAufmass
+        latestSavedAufmass,
+        sections
       );
 
       await saveAufmassDocument(projectId, snapshot);
@@ -221,7 +230,7 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
       const previous = aufmasse.filter(item => item.id !== aufmass.id && item.dateTo < aufmass.dateTo)
         .sort((left, right) => right.dateTo.localeCompare(left.dateTo))[0] || null;
       const recalculated = calculateAufmassSnapshot(project, positions, rooms, bookings, alerts, addendums,
-        aufmass.dateFrom, aufmass.dateTo, aufmass.createdBy, aufmass.notes || '', previous);
+        aufmass.dateFrom, aufmass.dateTo, aufmass.createdBy, aufmass.notes || '', previous, sections);
       const oldRooms = new Map(aufmass.roomsData.map(room => [room.roomId, room]));
       recalculated.roomsData.forEach(room => {
         const oldRoom = oldRooms.get(room.roomId);
@@ -350,13 +359,14 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
         dateTo,
         creatorName,
         notes,
-        latestSavedAufmass
+        latestSavedAufmass,
+        sections
       );
     } catch (e) {
       console.error('Error calculating preview snapshot:', e);
       return null;
     }
-  }, [isCreateModalOpen, project, positions, rooms, bookings, alerts, addendums, customDateFrom, dateTo, creatorName, notes, latestSavedAufmass]);
+  }, [isCreateModalOpen, project, positions, rooms, bookings, alerts, addendums, customDateFrom, dateTo, creatorName, notes, latestSavedAufmass, sections]);
 
   // Filtered Summary in Detail View
   const filteredSummaryItems = useMemo(() => {
