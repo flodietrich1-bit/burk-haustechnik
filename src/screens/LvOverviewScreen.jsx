@@ -68,11 +68,13 @@ export default function LvOverviewScreen({
         const aliasTitle = String(p.aliasTitle || '').toLowerCase();
         const officialTitle = String(p.officialTitle || p.shortText || p.name || '').toLowerCase();
         const trade = String(p.tradeCategory || p.group || '').toLowerCase();
+        const monteurInfo = String(p.monteurInfo || p.containsHint || p.notes || p.note || p.montagehinweis || p.hinweis || '').toLowerCase();
         return (
           displayCode.includes(q) ||
           aliasTitle.includes(q) ||
           officialTitle.includes(q) ||
-          trade.includes(q)
+          trade.includes(q) ||
+          monteurInfo.includes(q)
         );
       });
     }

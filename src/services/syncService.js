@@ -614,7 +614,17 @@ export async function syncBookings({
           const tradeCategory = remote.tradeCategory || remote.group || 'Allgemein';
           const sortOrder = typeof remote.sortOrder === 'number' ? remote.sortOrder : 999999;
           const sourceType = remote.sourceType || 'ORIGINAL_GAEB';
-          const monteurInfo = remote.monteurInfo || null;
+          const monteurInfo =
+            remote.monteurInfo ||
+            remote.containsHint ||
+            remote.notes ||
+            remote.note ||
+            remote.montagehinweis ||
+            remote.hinweis ||
+            remote.sonderhinweis ||
+            remote.specialInfo ||
+            remote.info ||
+            null;
 
           // STRICT SECURITY: Remove unitPriceVK, unitPrice and billing prices completely
           const cleanRemote = { ...remote };

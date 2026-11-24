@@ -10,18 +10,12 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.63` (`src/constants/version.js`) [code]. iOS native `buildNumber: "7"` in `app.json` [config].
-- Implemented [code]: Mehrsprachigkeit & Übersetzung für LV-Modus vervollständigt:
-  - Dynamische Übersetzung der Gewerke-Chipfilter (`translateGroup(tradeName, currentLang)`).
-  - Dynamische Übersetzung der Gewerke-Badges und Titel-Glosse auf Positionskarten (`getForeignGloss`, `position.translations?.[currentLang]`).
-  - Übersetzung des Unplanned-Material-Badges (`t('lvUnplannedBadge', currentLang)`).
-  - Erweiterung des Sanitär-/Heizung-Glossars (`GLOSSARY`) und der Gewerke-Erkennung in `translateGroup` (Frischwasserstation, Trink-/Warmwasser, Schmutz-/Regenwasser, Brandschutz, Elektro etc.).
-- Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`):
-  - Gewerke-Filterung über handliche horizontale Chipkacheln.
-  - Direkte Auflistung aller Positionen laut LV (inkl. `sourceType === 'CUSTOM_ADDED'` bzw. Zusatzpositionen).
-  - Globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`.
-  - Feste Aktionsleiste **„Zum Aufmaß vorbereiten (X Positionen) ›“** und Screen **„Aufmaß vorbereiten“** mit Baustellen-Fotodokumentation, Freitext-Nachtrag und verbindlicher Einreichung in `measurement_sections`.
-- Intelligente Fallback-Erkennung (`src/utils/projectMode.js`): Projekte ohne DWG/CAD-Pläne und ohne Räume, aber mit LV-Positionen werden automatisch als `LV_BASED` erkannt.
+- App version `v2.64` (`src/constants/version.js`) [code]. iOS native `buildNumber: "8"` in `app.json` [config].
+- Implemented [code]:
+  - **Sonderinfo / Montagehinweise prominent hervorgehoben:** Vom Projektleiter hinterlegte Sonderinfos (z. B. „Schellen inklusive“, „Sanpress Edelstahl, Schellen in Position enthalten“) werden in einer warm gehighlighteten Infobox (`💡 MONTAGEHINWEIS`) direkt unter dem Titel der Position auf der Karte (`LvPositionCard`) sowie in der Aufmaß-Vorbereitung (`LvCartScreen`) dargestellt.
+  - **Kein gesonderter Zusatzposition-Hinweis für Monteure:** Der Badge `★ Zusatzposition` wurde auf Positionskarten und im Aufmaß-Screen vollständig entfernt. Nachträglich erfasste Positionen erscheinen für Monteure als reguläre LV-Positionen.
+  - **Globaler Suchfilter erweitert:** Die Suchleiste in `LvOverviewScreen` und `LvPositionsScreen` durchsucht nun neben `displayCode`, `aliasTitle` und `officialTitle` auch die Sonderinfos/Montagehinweise (`monteurInfo`).
+  - **Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`):** Gewerke-Filterung über horizontale Chipkacheln, fortlaufende Liste aller Positionen, feste Aktionsleiste „Zum Aufmaß vorbereiten“ und verbindliche Einreichung in `measurement_sections`.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -198,6 +192,17 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-24 (v2.64)**
+  - **Ziel / Anlass:** Prominente gehighlightete Infobox für Sonderinfos/Montagehinweise (z. B. „Schellen inklusive“) direkt unter dem Titel; Entfernung des gesonderten Zusatzposition-Badges für Monteure.
+  - **Änderungen:**
+    - `src/components/lv/LvPositionCard.jsx`: Badge `★ Zusatzposition` entfernt. Sonderinfos (`monteurInfo`, `containsHint`, `note`, `notes`, `montagehinweis`, `hinweis`) in einer warm gehighlighteten Infobox mit `💡 MONTAGEHINWEIS` direkt unter dem Titel platziert.
+    - `src/screens/LvCartScreen.jsx`: `customBadge` entfernt. `itemMonteurInfoBox` für Cart-Items unter dem Titel hinzugefügt.
+    - `App.js`: `monteurInfo` in den Aufmaß-Warenkorb (`lvCart`) übernommen.
+    - `src/screens/LvOverviewScreen.jsx` & `LvPositionsScreen.jsx`: Suchleiste erweitert, sodass auch nach Montagehinweisen gesucht werden kann.
+    - `src/services/syncService.js`: `mapRemotePos` liest alle Notiz-/Hinweisfelder in `monteurInfo` ein.
+    - `app.json` & `src/constants/version.js`: Bump auf `v2.64` und iOS `buildNumber: "8"`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module).
 
 - **2026-11-24 (v2.63)**
   - **Ziel / Anlass:** Vollständige Mehrsprachigkeit (DE, RO, PL, HR) für Gewerke-Chipfilter, Positions-Kategorien, Glosse und Badges im LV-Modus.

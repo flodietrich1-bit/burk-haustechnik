@@ -14,9 +14,17 @@ export default function LvPositionCard({
   const displayCode = position.displayCode || position.posNr || position.pos || '';
   const aliasTitle = position.aliasTitle;
   const officialTitle = position.officialTitle || position.shortText || position.name || '';
-  const monteurInfo = position.monteurInfo;
+  const monteurInfo =
+    position.monteurInfo ||
+    position.containsHint ||
+    position.notes ||
+    position.note ||
+    position.montagehinweis ||
+    position.hinweis ||
+    position.sonderhinweis ||
+    position.specialInfo ||
+    position.info;
   const tradeCategory = position.tradeCategory || position.group || '';
-  const isCustomAdded = position.sourceType === 'CUSTOM_ADDED';
   const qu = formatUnit(position.qu || 'Stk', currentLang);
   const installedQty = Number(position.installedQty || 0);
   const plannedQty = Number(position.qty || 0);
@@ -37,7 +45,7 @@ export default function LvPositionCard({
 
   return (
     <View style={[styles.card, cartQty > 0 && styles.cardActive]}>
-      {/* Top Header Row: displayCode, Trade Category, Custom Added Badge */}
+      {/* Top Header Row: displayCode & Trade Category */}
       <View style={styles.topRow}>
         <View style={styles.codeGroup}>
           {displayCode ? (
@@ -51,12 +59,6 @@ export default function LvPositionCard({
             </View>
           ) : null}
         </View>
-
-        {isCustomAdded && (
-          <View style={styles.customAddedBadge}>
-            <Text style={styles.customAddedText}>★ {t('lvCustomAdded', currentLang)}</Text>
-          </View>
-        )}
       </View>
 
       {/* Titles: Prominent Bold aliasTitle + smaller officialTitle */}
@@ -83,12 +85,14 @@ export default function LvPositionCard({
         )}
       </View>
 
-      {/* Prominent Colored Info Box for monteurInfo */}
+      {/* Prominent Highlighted Info Box for Special Notes / MonteurInfo (e.g. "Schellen inklusive") */}
       {monteurInfo ? (
         <View style={styles.monteurInfoBox}>
-          <Text style={styles.monteurInfoIcon}>⚠️</Text>
+          <View style={styles.monteurInfoIconWrap}>
+            <Text style={styles.monteurInfoIcon}>💡</Text>
+          </View>
           <View style={styles.monteurInfoContent}>
-            <Text style={styles.monteurInfoLabel}>{t('lvMontagehinweis', currentLang)}:</Text>
+            <Text style={styles.monteurInfoLabel}>{t('lvMontagehinweis', currentLang)}</Text>
             <Text style={styles.monteurInfoText}>{monteurInfo}</Text>
           </View>
         </View>
@@ -205,21 +209,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
-  customAddedBadge: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  customAddedText: {
-    color: '#2563EB',
-    fontSize: 11,
-    fontWeight: '700',
-  },
   titleSection: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   aliasTitle: {
     color: '#0F172A',
@@ -242,36 +233,40 @@ const styles = StyleSheet.create({
   monteurInfoBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#FEF3C7',
+    backgroundColor: '#FEF9C3',
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: '#FDE047',
+    borderLeftWidth: 4,
+    borderLeftColor: '#EAB308',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginTop: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 6,
     marginBottom: 10,
-    gap: 8,
+    gap: 9,
+  },
+  monteurInfoIconWrap: {
+    marginTop: 1,
   },
   monteurInfoIcon: {
-    fontSize: 14,
-    marginTop: 1,
+    fontSize: 16,
   },
   monteurInfoContent: {
     flex: 1,
   },
   monteurInfoLabel: {
-    color: '#92400E',
+    color: '#854D0E',
     fontSize: 11,
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.5,
+    marginBottom: 2,
   },
   monteurInfoText: {
-    color: '#78350F',
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-    marginTop: 1,
+    color: '#713F12',
+    fontSize: 13.5,
+    fontWeight: '700',
+    lineHeight: 19,
   },
   footerRow: {
     flexDirection: 'row',

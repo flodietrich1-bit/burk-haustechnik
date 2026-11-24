@@ -194,7 +194,13 @@ export default function LvCartScreen({
               const title = item.shortText || item.customDescription || '';
               const qu = formatUnit(item.qu || 'Stk', currentLang);
               const isUnplanned = !!item.isUnplannedMaterial;
-              const isCustomAdded = item.sourceType === 'CUSTOM_ADDED';
+              const itemInfo =
+                item.monteurInfo ||
+                item.containsHint ||
+                item.notes ||
+                item.note ||
+                item.montagehinweis ||
+                item.hinweis;
 
               const gloss = getForeignGloss(item, currentLang);
               const transTitle = currentLang !== 'de' && item.translations?.[currentLang];
@@ -213,11 +219,6 @@ export default function LvCartScreen({
                           <Text style={styles.unplannedBadgeText}>⚠️ {t('lvUnplannedBadge', currentLang)}</Text>
                         </View>
                       )}
-                      {isCustomAdded && (
-                        <View style={styles.customBadge}>
-                          <Text style={styles.customBadgeText}>★ {t('lvCustomAdded', currentLang)}</Text>
-                        </View>
-                      )}
                     </View>
 
                     <Text style={styles.itemTitle}>
@@ -225,6 +226,11 @@ export default function LvCartScreen({
                       {transTitle ? <Text style={styles.itemTransGloss}> ({transTitle})</Text> : null}
                       {!transTitle && gloss ? <Text style={styles.itemTransGloss}> ({gloss})</Text> : null}
                     </Text>
+                    {itemInfo ? (
+                      <View style={styles.itemMonteurInfoBox}>
+                        <Text style={styles.itemMonteurInfoText}>💡 {itemInfo}</Text>
+                      </View>
+                    ) : null}
                     {item.customDescription && !isUnplanned ? (
                       <Text style={styles.itemDesc}>{item.customDescription}</Text>
                     ) : null}
@@ -523,16 +529,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  customBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
+  itemMonteurInfoBox: {
+    backgroundColor: '#FEF9C3',
+    borderLeftWidth: 3,
+    borderLeftColor: '#EAB308',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 4,
   },
-  customBadgeText: {
-    color: '#2563EB',
-    fontSize: 10,
+  itemMonteurInfoText: {
+    color: '#713F12',
+    fontSize: 12,
     fontWeight: '700',
+    lineHeight: 16,
   },
   itemTitle: {
     fontSize: 14,

@@ -613,10 +613,23 @@ export default function App() {
       let updatedCart;
       if (safeQty > 0) {
         const exists = prevCart.some((it) => it.lvItemId === posId || (posCode && it.posNr === posCode));
+        const posMonteurInfo =
+          position.monteurInfo ||
+          position.containsHint ||
+          position.notes ||
+          position.note ||
+          position.montagehinweis ||
+          position.hinweis ||
+          null;
+
         if (exists) {
           updatedCart = prevCart.map((it) =>
             it.lvItemId === posId || (posCode && it.posNr === posCode)
-              ? { ...it, quantity: safeQty }
+              ? {
+                  ...it,
+                  quantity: safeQty,
+                  monteurInfo: it.monteurInfo || posMonteurInfo,
+                }
               : it
           );
         } else {
@@ -628,6 +641,7 @@ export default function App() {
             qu: position.qu || 'Stk',
             isUnplannedMaterial: false,
             sourceType: position.sourceType || 'ORIGINAL_GAEB',
+            monteurInfo: posMonteurInfo,
           };
           updatedCart = [...prevCart, newItem];
         }
