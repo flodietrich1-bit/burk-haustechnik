@@ -10,6 +10,7 @@ import {
 import { COLORS } from '../constants/theme';
 import { t, translateGroup } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
+import LvUnplannedModal from '../components/lv/LvUnplannedModal';
 
 export default function LvOverviewScreen({
   positions = [],
@@ -18,10 +19,12 @@ export default function LvOverviewScreen({
   currentLang = 'de',
   onOpenCart,
   onQuantityChange,
+  onAddUnplannedItem,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrade, setSelectedTrade] = useState('Alle');
   const [isSliderDragging, setIsSliderDragging] = useState(false);
+  const [unplannedModalVisible, setUnplannedModalVisible] = useState(false);
 
   // Group positions by tradeCategory and calculate counts
   const { trades, totalPositionsCount, tradeCounts, tradeCartCounts, displayedPositions } = useMemo(() => {
@@ -114,6 +117,21 @@ export default function LvOverviewScreen({
 
   return (
     <View style={styles.container}>
+      {/* 0. Action Button: Außerplanmäßig verbaut */}
+      {onAddUnplannedItem && (
+        <View style={styles.unplannedActionWrap}>
+          <TouchableOpacity
+            style={styles.unplannedActionBtn}
+            onPress={() => setUnplannedModalVisible(true)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.unplannedActionText}>
+              {t('btnUnplannedInstalled', currentLang)}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* 1. Global Search Bar */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBar}>
@@ -273,6 +291,16 @@ export default function LvOverviewScreen({
           </View>
         </TouchableOpacity>
       </View>
+
+      {/* Modal: Außerplanmäßig verbaut / Nicht im LV */}
+      {onAddUnplannedItem && (
+        <LvUnplannedModal
+          visible={unplannedModalVisible}
+          onClose={() => setUnplannedModalVisible(false)}
+          onAdd={(item) => onAddUnplannedItem(item)}
+          currentLang={currentLang}
+        />
+      )}
     </View>
   );
 }
@@ -281,6 +309,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F7F8FA',
+  },
+  unplannedActionWrap: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 2,
+  },
+  unplannedActionBtn: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unplannedActionText: {
+    color: '#92400E',
+    fontSize: 13.5,
+    fontWeight: '800',
   },
   searchContainer: {
     backgroundColor: '#FFFFFF',

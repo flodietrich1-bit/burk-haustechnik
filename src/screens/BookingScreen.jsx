@@ -19,7 +19,6 @@ import {
   isMeterUnit,
 } from '../components/booking/bookingHelpers';
 import MaterialBookingCard from '../components/booking/MaterialBookingCard';
-import NachtragModal from '../components/booking/NachtragModal';
 import UnplannedInstallModal from '../components/booking/UnplannedInstallModal';
 import CompleteRoomModal from '../components/booking/CompleteRoomModal';
 import { getRoomFloor } from '../services/storageService';
@@ -85,7 +84,6 @@ export default function BookingScreen({
   // Modals state
   const [showUnclearModal, setShowUnclearModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
-  const [showNachtragModal, setShowNachtragModal] = useState(false);
   const [isSliderDragging, setIsSliderDragging] = useState(false);
 
   // Dropdown list of materials present in this room
@@ -434,17 +432,6 @@ export default function BookingScreen({
     setShowUnclearModal(false);
   };
 
-  const handleSaveNachtrag = (addendum) => {
-    if (onAddNachtrag) {
-      onAddNachtrag(addendum);
-    }
-    setShowNachtragModal(false);
-    Alert.alert(
-      t('doneTitle', currentLang) || 'Erfasst',
-      t('mehrbedarfSaved', currentLang) || 'Mehrbedarf wurde zur Synchronisation hinterlegt.'
-    );
-  };
-
   return (
     <View style={styles.container}>
       <ScrollView
@@ -481,21 +468,10 @@ export default function BookingScreen({
           </View>
         )}
 
-        {/* Action Buttons direkt unter dem Titel - nur anbieten wenn Raum nicht fertig/gesperrt ist */}
+        {/* Action Button direkt unter dem Titel - nur anbieten wenn Raum nicht fertig/gesperrt ist */}
         {!isLocked && (
           <View style={styles.topActionsRow}>
-            {/* Button 1: + Material benötigt */}
-            <TouchableOpacity
-              style={styles.actionBtnNachtrag}
-              onPress={() => setShowNachtragModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.actionBtnNachtragText}>
-                {t('btnNeedMaterial', currentLang)}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Button 2: außerplanmäßig verbaut */}
+            {/* Außerplanmäßig verbaut */}
             <TouchableOpacity
               style={styles.actionBtnUnclear}
               onPress={() => setShowUnclearModal(true)}
@@ -661,18 +637,7 @@ export default function BookingScreen({
         </TouchableOpacity>
       </View>
 
-      {/* MODAL 1: NACHTRAG (+ Material/Zeit benötigt) */}
-      <NachtragModal
-        visible={showNachtragModal}
-        roomMaterialsList={roomMaterialsList}
-        room={room}
-        monteur={monteur}
-        currentLang={currentLang}
-        onClose={() => setShowNachtragModal(false)}
-        onSave={handleSaveNachtrag}
-      />
-
-      {/* MODAL 3: AUSSERPLANMÄSSIG VERBAUT */}
+      {/* MODAL: AUSSERPLANMÄSSIG VERBAUT */}
       <UnplannedInstallModal
         visible={showUnclearModal}
         materials={materials}

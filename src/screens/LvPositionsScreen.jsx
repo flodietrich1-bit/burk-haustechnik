@@ -10,6 +10,7 @@ import {
 import { COLORS } from '../constants/theme';
 import { t } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
+import LvUnplannedModal from '../components/lv/LvUnplannedModal';
 
 export default function LvPositionsScreen({
   tradeName,
@@ -19,9 +20,11 @@ export default function LvPositionsScreen({
   onBack,
   onOpenCart,
   onQuantityChange,
+  onAddUnplannedItem,
 }) {
   const [filterText, setFilterText] = useState('');
   const [isSliderDragging, setIsSliderDragging] = useState(false);
+  const [unplannedModalVisible, setUnplannedModalVisible] = useState(false);
 
   // Filter positions for this trade and sort by sortOrder then displayCode
   const tradePositions = useMemo(() => {
@@ -84,6 +87,19 @@ export default function LvPositionsScreen({
           {tradeName}
         </Text>
 
+        {/* Action Button: Außerplanmäßig verbaut */}
+        {onAddUnplannedItem && (
+          <TouchableOpacity
+            style={styles.unplannedActionBtn}
+            onPress={() => setUnplannedModalVisible(true)}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.unplannedActionText}>
+              {t('btnUnplannedInstalled', currentLang)}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Filter Input */}
         <View style={styles.searchBar}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -144,6 +160,15 @@ export default function LvPositionsScreen({
           </View>
         )}
       </TouchableOpacity>
+
+      {onAddUnplannedItem && (
+        <LvUnplannedModal
+          visible={unplannedModalVisible}
+          onClose={() => setUnplannedModalVisible(false)}
+          onAdd={(item) => onAddUnplannedItem(item)}
+          currentLang={currentLang}
+        />
+      )}
     </View>
   );
 }
@@ -190,6 +215,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
     marginBottom: 10,
+  },
+  unplannedActionBtn: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  unplannedActionText: {
+    color: '#92400E',
+    fontSize: 13,
+    fontWeight: '800',
   },
   searchBar: {
     flexDirection: 'row',

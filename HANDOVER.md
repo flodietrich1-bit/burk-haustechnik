@@ -10,14 +10,13 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.65` (`src/constants/version.js`) [code]. iOS native `buildNumber: "9"` in `app.json` [config].
+- App version `v2.66` (`src/constants/version.js`) [code]. iOS native `buildNumber: "10"` in `app.json` [config].
 - Implemented [code]:
-  - **Identisches Kachel-Design in beiden Strecken (Raum-Aufmaß & LV-Aufmaß):**
-    - Die Material-Erfassen-Kacheln (`MaterialBookingCard`) sind in beiden Strecken vollständig vereinheitlicht: Jede Kachel verfügt über den interaktiven Schieberegler (Slider bis 100%), das Stepper-Pill `[ − | VERBAUT | + ]` und das direkte manuelle Eingabefeld (Rechner-Keypad-Modal bei Klick auf den Verbaut-Wert).
-    - `LvPositionCard` delegiert nun direkt an `MaterialBookingCard`, wodurch Design, Slider, Rechner-Modal, Prozentbalken und Statusanzeigen („Noch übrig“) auf allen Screens exakt übereinstimmen.
-  - **Priorisierung des Alias-Namens:** Ist für eine Position ein Alias hinterlegt (`aliasTitle`), wird dieser zwingend fett und prominent als Haupttitel angezeigt. Der technische GAEB-Titel (`officialTitle`) erscheint dezent darunter.
-  - **Gewerke-Filter-Kacheln im Raum-Aufmaß:** Wenn ein Raum ausgewählt wird (`BookingScreen`), werden oberhalb der Materialliste die horizontal scrollbaren Gewerke-Chipfilter (`[ Alle (X) ]`, `[ Sanitär (Y) ]`, ...) angezeigt.
-  - **Sonderinfo / Montagehinweise:** Prominente gehighlightete Infobox (`💡 MONTAGEHINWEIS`) direkt unter dem Titel; kein gesonderter Zusatzposition-Badge für Monteure.
+  - **„Außerplanmäßig verbaut“ direkt oben in beiden Strecken:**
+    - **Raum-Strecke (`BookingScreen.jsx`):** Button „+ Material benötigt“ entfernt (`NachtragModal` ausgehängt); oben bleibt ausschließlich der volle-Breite-Button „außerplanmäßig verbaut“.
+    - **LV-Strecke (`LvOverviewScreen.jsx`, `LvPositionsScreen.jsx`):** Button „außerplanmäßig verbaut“ direkt oben über der Suchleiste/Positionsliste integriert; öffnet `LvUnplannedModal` und fügt Positionen sofort der Aufmaß-Vorbereitung (`lvCart`) hinzu.
+  - **EAS Update-Channel (`eas.json`):** `"channel": "production"` im `production`-Profil ergänzt.
+  - **Identisches Kachel-Design in beiden Strecken (Raum-Aufmaß & LV-Aufmaß):** `MaterialBookingCard` mit Slider, Stepper, Rechner-Keypad-Modal, Alias-Priorisierung (`aliasTitle` vor `officialTitle`), `💡 MONTAGEHINWEIS`-Box und Gewerke-Filter-Chipkacheln.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
 - Maturity: working prototype in active iteration (≈ 11 app releases v1.2→v2.11 in 10 days, 2026-09-21 → 2026-09-30) [git]. No automated tests, linting or type checking. Not production-hardened security-wise (see §7, §13).
@@ -194,6 +193,15 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 - `dist/` and `.expo/` are generated; ignore them.
 
 ## 18. Last Updated
+
+- **2026-11-24 (v2.66)**
+  - **Ziel / Anlass:** Button „außerplanmäßig verbaut“ in Raum- und LV-Positionsliste vereinheitlicht; „+ Material benötigt“ entfernt; `production`-Channel in `eas.json` gesetzt.
+  - **Änderungen:**
+    - `src/screens/BookingScreen.jsx`: Button „+ Material benötigt“ & `NachtragModal` entfernt; nur noch „außerplanmäßig verbaut“ oben.
+    - `App.js`, `src/screens/LvOverviewScreen.jsx`, `src/screens/LvPositionsScreen.jsx`: `onAddUnplannedItem` an LV-Listen durchgereicht; Button „außerplanmäßig verbaut“ + `LvUnplannedModal` direkt oben in der Positionsliste integriert.
+    - `eas.json`: `"channel": "production"` im `production`-Build-Profil hinzugefügt.
+    - `app.json` & `src/constants/version.js`: Bump auf `v2.66` und iOS `buildNumber: "10"`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (823 Module).
 
 - **2026-11-24 (v2.65)**
   - **Ziel / Anlass:** Vereinheitlichung der Material-Erfassen-Kacheln über alle Strecken (Raum-Aufmaß & LV-Aufmaß mit Slider und manuellem Rechner-Eingabefeld), prominente Alias-Anzeige und Integration der Gewerke-Filter-Kacheln in der Raum-Strecke.

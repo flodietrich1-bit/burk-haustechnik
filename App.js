@@ -1558,6 +1558,7 @@ export default function App() {
                 onSelectTrade={handleSelectTrade}
                 onOpenCart={handleOpenLvCart}
                 onQuantityChange={handleLvQuantityChange}
+                onAddUnplannedItem={handleAddUnplannedToLvCart}
               />
             )}
 
@@ -1570,6 +1571,7 @@ export default function App() {
                 onBack={() => setCurrentScreen('lv_overview')}
                 onOpenCart={handleOpenLvCart}
                 onQuantityChange={handleLvQuantityChange}
+                onAddUnplannedItem={handleAddUnplannedToLvCart}
               />
             )}
 
