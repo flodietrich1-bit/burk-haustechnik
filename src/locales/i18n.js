@@ -467,6 +467,7 @@ export const TRANSLATIONS = {
   lvSuccessTitle: { de: 'Aufmaß eingereicht!', ro: 'Măsurătoare trimisă!', pl: 'Obmiar przesłany!', hr: 'Obračun predan!' },
   lvSuccessMsg: { de: 'Das Aufmaß wurde erfolgreich erfasst und gespeichert.', ro: 'Măsurătoarea a fost salvată cu succes.', pl: 'Obmiar został pomyślnie zapisany.', hr: 'Obračun je uspješno zabilježen.' },
   lvEmptyCart: { de: 'Noch keine Positionen erfasst. Trage Mengen in der Liste ein.', ro: 'Nu sunt poziții selectate. Introduceți cantități din listă.', pl: 'Brak wybranych pozycji. Wpisz ilości na liście.', hr: 'Nema odabranih stavki. Unesite količine na popisu.' },
+  lvUnplannedBadge: { de: 'Nicht im LV', ro: 'În afara devizului', pl: 'Poza kosztorysem', hr: 'Izvan troškovnika' },
   lvUnplannedModalTitle: { de: 'Material nicht im LV melden', ro: 'Material în afara devizului', pl: 'Materiał spoza kosztorysu', hr: 'Materijal izvan troškovnika' },
   lvUnplannedDescLabel: { de: 'Artikelbezeichnung / Freitext *', ro: 'Descriere articol / text liber *', pl: 'Nazwa artykułu / opis *', hr: 'Naziv artikla / opis *' },
   lvUnplannedDescPlaceholder: { de: 'z. B. 2x Übergangsmuffe DN32', ro: 'de ex. 2x mufă trecere DN32', pl: 'np. 2x mufa przejściowa DN32', hr: 'npr. 2x prijelazna spojnica DN32' },
@@ -503,19 +504,46 @@ export const GLOSSARY = {
   abzweig: { ro: 'Ramificație', pl: 'Trójnik', hr: 'Odvojak' },
   reduzierung: { ro: 'Reducție', pl: 'Redukcja', hr: 'Redukcija' },
   schelle: { ro: 'Brățară', pl: 'Obejma', hr: 'Obujmica' },
-  ventil: { ro: 'Robinet', pl: 'Zawór', hr: 'Ventil' },
+  ventil: { ro: 'Robinet / Ventil', pl: 'Zawór', hr: 'Ventil' },
   kugelhahn: { ro: 'Robinet cu sferă', pl: 'Zawór kulowy', hr: 'Kuglasti ventil' },
   armatur: { ro: 'Baterie / Armătură', pl: 'Bateria / Armatura', hr: 'Miješalica / Slavina' },
   verteiler: { ro: 'Distribuitor', pl: 'Rozdzielacz', hr: 'Razdjelnik' },
   muffe: { ro: 'Mufă', pl: 'Mufa', hr: 'Mufa' },
   isolierung: { ro: 'Izolație', pl: 'Izolacja', hr: 'Izolacija' },
   sanitaer: { ro: 'Obiect sanitar', pl: 'Przybór sanitarny', hr: 'Sanitarija' },
+  frischwasser: { ro: 'Apă proaspătă', pl: 'Świeża woda', hr: 'Svježa voda' },
+  frischwasserstation: { ro: 'Stație de apă proaspătă', pl: 'Stacja świeżej wody', hr: 'Stanica svježe vode' },
+  kaskade: { ro: 'Cascadă', pl: 'Kaskada', hr: 'Kaskada' },
+  dokumentation: { ro: 'Documentație tehnică', pl: 'Dokumentacja techniczna', hr: 'Tehnička dokumentacija' },
+  probenahme: { ro: 'Prelevare probe', pl: 'Pobieranie próbek', hr: 'Uzorkovanje' },
+  absperrung: { ro: 'Set robinete izolare', pl: 'Zestaw odcinający', hr: 'Zaporni set' },
+  entleerung: { ro: 'Drenaj / Golire', pl: 'Spust / Odwadnianie', hr: 'Ispust / Odvod' },
+  pumpe: { ro: 'Pompă', pl: 'Pompa', hr: 'Pumpa' },
+  speicher: { ro: 'Boiler / Acumulator', pl: 'Zasobnik', hr: 'Spremnik' },
+  filter: { ro: 'Filtru', pl: 'Filtr', hr: 'Filter' },
+  druckminderer: { ro: 'Reductor presiune', pl: 'Reduktor ciśnienia', hr: 'Regulator tlaka' },
+  waermetauscher: { ro: 'Schimbător de căldură', pl: 'Wymiennik ciepła', hr: 'Izmjenjivač topline' },
+  brandschutz: { ro: 'Protecție la foc', pl: 'Ochrona ppoż.', hr: 'Protupožarna zaštita' },
+  spuelkasten: { ro: 'Rezervor WC', pl: 'Spłuczka', hr: 'Vodokotlić' },
+  waschtisch: { ro: 'Lavoar', pl: 'Umywalka', hr: 'Umivaonik' },
+  wc: { ro: 'Vas WC', pl: 'Miska WC', hr: 'WC školjka' },
+  sifon: { ro: 'Sifon', pl: 'Syfon', hr: 'Sifon' },
 };
 
 export function translateGroup(rawGroup, lang = 'de') {
   if (!rawGroup || typeof rawGroup !== 'string' || lang === 'de') return rawGroup || '';
   const lower = rawGroup.toLowerCase().trim();
 
+  // Specific multi-word or distinct categories
+  if (lower.includes('frischwasser')) {
+    return lang === 'ro' ? 'Stații apă proaspătă' : lang === 'pl' ? 'Stacja świeżej wody' : 'Stanica svježe vode';
+  }
+  if (lower.includes('technische bearbeitung') || lower.includes('bearbeitung') || lower.includes('dokumentation')) {
+    return lang === 'ro' ? 'Prelucrare tehnică & Documentație' : lang === 'pl' ? 'Opracowanie techniczne' : 'Tehnička obrada';
+  }
+  if (lower.includes('warmwasser')) {
+    return lang === 'ro' ? 'Preparare apă caldă' : lang === 'pl' ? 'Przygotowanie c.w.u.' : 'Priprema tople vode';
+  }
   if (lower.includes('verteiler') && lower.includes('armatur')) {
     return lang === 'ro' ? 'Distribuitoare & Armături' : lang === 'pl' ? 'Rozdzielacze i armatura' : 'Razdjelnici i armature';
   }
@@ -525,20 +553,23 @@ export function translateGroup(rawGroup, lang = 'de') {
   if (lower.includes('armatur')) {
     return lang === 'ro' ? 'Armături / Baterii' : lang === 'pl' ? 'Armatura' : 'Armature';
   }
-  if (lower.includes('abwasser') || lower.includes('entwässerung') || lower.includes('kanal')) {
+  if (lower.includes('abwasser') || lower.includes('entwässerung') || lower.includes('kanal') || lower.includes('schmutzwasser')) {
     return lang === 'ro' ? 'Canalizare & Scurgere' : lang === 'pl' ? 'Kanalizacja i odpływy' : 'Kanalizacija i odvodnja';
+  }
+  if (lower.includes('regenwasser')) {
+    return lang === 'ro' ? 'Apă pluvială' : lang === 'pl' ? 'Woda deszczowa' : 'Kišnica';
   }
   if (lower.includes('trinkwasser')) {
     return lang === 'ro' ? 'Apă potabilă' : lang === 'pl' ? 'Woda pitna' : 'Pitka voda';
   }
-  if (lower.includes('rohr') || lower.includes('leitung')) {
-    return lang === 'ro' ? 'Țevi & Fitinguri' : lang === 'pl' ? 'Rury i kształtki' : 'Cijevi i spojnice';
+  if (lower.includes('rohrleitung') || lower.includes('rohr') || lower.includes('leitung')) {
+    return lang === 'ro' ? 'Conducte & Țevi' : lang === 'pl' ? 'Rurociągi i rury' : 'Cjevovodi i cijevi';
   }
   if (lower.includes('sanitär')) {
-    return lang === 'ro' ? 'Obiecte sanitare' : lang === 'pl' ? 'Przybory sanitarne' : 'Sanitarije';
+    return lang === 'ro' ? 'Instalații sanitare & Obiecte' : lang === 'pl' ? 'Instalacje sanitarne i przybory' : 'Sanitarne instalacije i oprema';
   }
   if (lower.includes('dämmung') || lower.includes('isolier')) {
-    return lang === 'ro' ? 'Izolație' : lang === 'pl' ? 'Izolacja' : 'Izolacija';
+    return lang === 'ro' ? 'Izolație termică' : lang === 'pl' ? 'Izolacja termiczna' : 'Toplinska izolacija';
   }
   if (lower.includes('befestig')) {
     return lang === 'ro' ? 'Tehnică de fixare' : lang === 'pl' ? 'Technika mocowania' : 'Pričvrsna tehnika';
@@ -551,6 +582,12 @@ export function translateGroup(rawGroup, lang = 'de') {
   }
   if (lower.includes('gas')) {
     return lang === 'ro' ? 'Instalație gaz' : lang === 'pl' ? 'Instalacja gazowa' : 'Plinska instalacija';
+  }
+  if (lower.includes('brandschutz')) {
+    return lang === 'ro' ? 'Protecție antifoc' : lang === 'pl' ? 'Ochrona ppoż.' : 'Protupožarna zaštita';
+  }
+  if (lower.includes('elektro')) {
+    return lang === 'ro' ? 'Instalații electrice' : lang === 'pl' ? 'Instalacje elektryczne' : 'Elektroinstalacije';
   }
   if (lower === 'allgemein') {
     return t('groupGeneral', lang);

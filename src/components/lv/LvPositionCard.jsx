@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../../constants/theme';
-import { t, formatUnit } from '../../locales/i18n';
+import { t, formatUnit, translateGroup } from '../../locales/i18n';
+import { getForeignGloss } from '../booking/bookingHelpers';
 
 export default function LvPositionCard({
   position,
@@ -19,6 +20,10 @@ export default function LvPositionCard({
   const qu = formatUnit(position.qu || 'Stk', currentLang);
   const installedQty = Number(position.installedQty || 0);
   const plannedQty = Number(position.qty || 0);
+
+  const displayTrade = translateGroup(tradeCategory, currentLang);
+  const gloss = getForeignGloss(position, currentLang);
+  const transTitle = currentLang !== 'de' && position.translations?.[currentLang];
 
   const handleMinus = () => {
     const next = Math.max(0, (Number(cartQty) || 0) - 1);
@@ -40,9 +45,9 @@ export default function LvPositionCard({
               <Text style={styles.codeText}>{displayCode}</Text>
             </View>
           ) : null}
-          {tradeCategory ? (
+          {displayTrade ? (
             <View style={styles.tradeBadge}>
-              <Text style={styles.tradeText} numberOfLines={1}>{tradeCategory}</Text>
+              <Text style={styles.tradeText} numberOfLines={1}>{displayTrade}</Text>
             </View>
           ) : null}
         </View>
@@ -58,7 +63,11 @@ export default function LvPositionCard({
       <View style={styles.titleSection}>
         {aliasTitle ? (
           <>
-            <Text style={styles.aliasTitle}>{aliasTitle}</Text>
+            <Text style={styles.aliasTitle}>
+              {aliasTitle}
+              {transTitle ? <Text style={styles.transSub}> ({transTitle})</Text> : null}
+              {!transTitle && gloss ? <Text style={styles.transSub}> ({gloss})</Text> : null}
+            </Text>
             {officialTitle ? (
               <Text style={styles.officialTitleSubtitle} numberOfLines={2}>
                 {officialTitle}
@@ -66,7 +75,11 @@ export default function LvPositionCard({
             ) : null}
           </>
         ) : (
-          <Text style={styles.aliasTitle}>{officialTitle}</Text>
+          <Text style={styles.aliasTitle}>
+            {officialTitle}
+            {transTitle ? <Text style={styles.transSub}> ({transTitle})</Text> : null}
+            {!transTitle && gloss ? <Text style={styles.transSub}> ({gloss})</Text> : null}
+          </Text>
         )}
       </View>
 
@@ -213,6 +226,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 22,
+  },
+  transSub: {
+    color: '#0284C7',
+    fontSize: 13.5,
+    fontWeight: '600',
+    fontStyle: 'italic',
   },
   officialTitleSubtitle: {
     color: '#64748B',

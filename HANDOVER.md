@@ -10,13 +10,17 @@ UI languages: German (base), Romanian, Polish, Croatian [code: `i18n.js`].
 
 ## 2. Current Status
 
-- App version `v2.62` (`src/constants/version.js`) [code]. iOS native `buildNumber: "6"` in `app.json` [config].
-- Implemented [code]: Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`). Im `ROOM_BASED`-Modus bleibt der bewährte Raum-Aufmaß-Workflow erhalten. Im `LV_BASED`-Modus wird der Raum-/Etagen-Workflow komplett übersprungen und der containerbasierte LV-Aufmaß-Workflow geöffnet:
-  - Gewerke-Filterung über handliche horizontale Chipkacheln (`[ Alle (195) ]`, `[ Sanitärinstallation (42) ]`, `[ Frischwasserstation (12) ]`, ...).
-  - Alle Positionen des LVs (inkl. der manuell hinzugefügten Materialien/Zusatzpositionen `sourceType === 'CUSTOM_ADDED'`) werden direkt in einer fortlaufenden Liste angezeigt.
+- App version `v2.63` (`src/constants/version.js`) [code]. iOS native `buildNumber: "7"` in `app.json` [config].
+- Implemented [code]: Mehrsprachigkeit & Übersetzung für LV-Modus vervollständigt:
+  - Dynamische Übersetzung der Gewerke-Chipfilter (`translateGroup(tradeName, currentLang)`).
+  - Dynamische Übersetzung der Gewerke-Badges und Titel-Glosse auf Positionskarten (`getForeignGloss`, `position.translations?.[currentLang]`).
+  - Übersetzung des Unplanned-Material-Badges (`t('lvUnplannedBadge', currentLang)`).
+  - Erweiterung des Sanitär-/Heizung-Glossars (`GLOSSARY`) und der Gewerke-Erkennung in `translateGroup` (Frischwasserstation, Trink-/Warmwasser, Schmutz-/Regenwasser, Brandschutz, Elektro etc.).
+- Duale Projekt-Architektur (`measurementMode: 'ROOM_BASED' | 'LV_BASED'`):
+  - Gewerke-Filterung über handliche horizontale Chipkacheln.
+  - Direkte Auflistung aller Positionen laut LV (inkl. `sourceType === 'CUSTOM_ADDED'` bzw. Zusatzpositionen).
   - Globale Echtzeit-Suchleiste nach `displayCode`, `aliasTitle` und `officialTitle`.
-  - Positionskarten mit fettem `aliasTitle`, GAEB-Kurztext, Montagehinweis-Kasten (`monteurInfo`), Zusatzposition-Badge (`★ Zusatzposition`) und Stepper `[ − | X | + ]` mit Direkt-Eingabe-Modal; strikter Ausschluss aller VK-Preise.
-  - Völliger Verzicht auf das Wort „Warenkorb“: Ersetzt durch die neue, feste Aktionsleiste **„Zum Aufmaß vorbereiten (X Positionen) ›“** und Screen **„Aufmaß vorbereiten“** mit Abschnittsbezeichnung, Baustellen-Fotodokumentation, Freitext-Nachtrag und verbindlicher Einreichung in `measurement_sections`.
+  - Feste Aktionsleiste **„Zum Aufmaß vorbereiten (X Positionen) ›“** und Screen **„Aufmaß vorbereiten“** mit Baustellen-Fotodokumentation, Freitext-Nachtrag und verbindlicher Einreichung in `measurement_sections`.
 - Intelligente Fallback-Erkennung (`src/utils/projectMode.js`): Projekte ohne DWG/CAD-Pläne und ohne Räume, aber mit LV-Positionen werden automatisch als `LV_BASED` erkannt.
 - Weiterhin voll integriert: PIN/Passwort-Login, Multi-Projekt-Auswahl mit LV-Modus-Badge, Offline-Cache, automatischer EAS-Update-Check beim Start.
 
@@ -195,6 +199,21 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
 
 ## 18. Last Updated
 
+- **2026-11-24 (v2.63)**
+  - **Ziel / Anlass:** Vollständige Mehrsprachigkeit (DE, RO, PL, HR) für Gewerke-Chipfilter, Positions-Kategorien, Glosse und Badges im LV-Modus.
+  - **Änderungen:**
+    - `src/locales/i18n.js`:
+      - `translateGroup` massiv ausgebaut (Frischwasserstation, Trink-/Warmwasser, Schmutz-/Regenwasser, Brandschutz, Elektro, Rohre, Dämmung etc.).
+      - Neues Badge `lvUnplannedBadge` („Nicht im LV“ / „În afara devizului“ / „Poza kosztorysem“ / „Izvan troškovnika“).
+      - Sanitär-/Heizungs-Fachbegriffe im `GLOSSARY` erweitert.
+    - `src/components/booking/bookingHelpers.js`: `getForeignGloss` um LV-spezifische Felder (`aliasTitle`, `officialTitle`, `tradeCategory`) und technische Begriffe erweitert.
+    - `src/screens/LvOverviewScreen.jsx`: Gewerke-Filter-Pills und Überschrift übersetzen die Gewerke jetzt dynamisch via `translateGroup(tradeName, currentLang)`.
+    - `src/components/lv/LvPositionCard.jsx`: Gewerk-Badge (`translateGroup`) und Titel-Glosse/Übersetzungen (`transTitle`, `gloss`) für fremdsprachige Monteure integriert.
+    - `src/screens/LvCartScreen.jsx`: `lvUnplannedBadge` und fremdsprachige Glosse für Cart-Items angebunden.
+    - `app.json`: iOS `buildNumber` auf `"7"` erhöht.
+    - `src/constants/version.js`: Bump auf `v2.63`.
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (826 Module).
+
 - **2026-11-23 (v2.62)**
   - **Ziel / Anlass:** Neugestaltung der LV-Hauptansicht: Handliche Gewerke-Chipkacheln als Filter, direkte Anzeige aller LV-Positionen inkl. hinzugefügter Materialien und Umbenennung von „Warenkorb“ in „Zum Aufmaß vorbereiten“.
   - **Änderungen:**
@@ -247,44 +266,4 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `app.json` & `version.js`: iOS `buildNumber` auf `"4"` erhöht, `APP_VERSION` auf `v2.59` gesetzt, `NSCameraUsageDescription` neutralisiert.
   - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
 
-- **2026-11-20 (v2.58)**
-  - **Ziel / Anlass:** Klare Trennung zwischen App-Sperre (Passwort-LoginScreen für aktivierte Monteure ohne Einladungscode-Verlust) und vollständigem Gerät-Trennen.
-  - **Änderungen:**
-    - `App.js`: `handleLogout` sperrt die App (`lockDevice()`) und leitet auf `LoginScreen` weiter, sodass aktivierte Monteure ihr persönliches Passwort eingeben können und keinen neuen Einladungscode benötigen.
-    - `i18n.js`: Dialog im Header auf „App sperren“ („Möchtest du die App sperren? Du kannst dich danach jederzeit mit deinem persönlichen Passwort wieder anmelden.“) geschärft.
-    - `src/constants/version.js`: Bump auf `v2.58`.
-  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
-
-- **2026-11-20 (v2.57)**
-  - **Ziel / Anlass:** Echtes vollständiges Abmelden bei Klick auf den Logout-Button (`🚪`), vollständiger Reset zur Aktivierung (`ActivationScreen`) und Löschen des Firmenbrandings.
-  - **Änderungen:**
-    - `App.js`: `handleLogout` ruft nun `logoutDevice()` auf (statt nur `lockDevice()`), leert `monteur`, `project`, `availableProjects` und `tenantBranding` und setzt `appPhase` direkt auf `'activation'`.
-    - `src/constants/version.js`: Bump auf `v2.57`.
-  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
-
-- **2026-11-20 (v2.56)**
-  - **Ziel / Anlass:** Umsetzung des exakten Website-Links gemäß Screendesign („Du hast noch keinen Zugang? Firma anmelden / Mehr erfahren →“) unter den Login-/Aktivierungs-Boxen.
-  - **Änderungen:**
-    - `LoginScreen.jsx`: `Linking` und diskreten 2-Zeiler unter der Passwort-Login-Box eingebunden (dezent zentrierter Text + blauer unterstrichener Link zu `https://p12-aufmass.de`).
-    - `ActivationScreen.jsx`: Container bereinigt auf das schlichte Design ohne graue Box/Rahmen (gleicher Look wie auf LoginScreen).
-    - `i18n.js`: Lokalisierte Keys `noAccessQuestion` und `registerCompanyLink` in allen 4 Sprachen (DE, RO, PL, HR).
-    - `src/constants/version.js`: Bump auf `v2.56`.
-  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module fehlerfrei gebündelt).
-
-- **2026-11-20 (v2.55)**
-  - **Ziel / Anlass:** Integration eines diskreten Website-Links und Anfrage-Hinweises auf dem Aktivierungs-Screen vor dem offiziellen Livegang im Apple App Store & Google Play Store.
-  - **Änderungen:**
-    - `ActivationScreen.jsx`: `Linking` eingebunden, Button/Container „Noch kein Zugang? Website besuchen & Zugang anfragen ↗“ auf dem primären Auswahl-Screen sowie im manuellen Eingabe-Modus integriert (Ziel: `https://p12-aufmass.de`).
-    - `i18n.js`: Lokalisierte Keys `noAccessTitle` und `visitWebsiteBtn` in allen 4 Sprachen (DE, RO, PL, HR) hinterlegt.
-    - `src/constants/version.js`: Bump auf `v2.55`.
-  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
-
-- **2026-11-19 (v2.54)**
-  - **Ziel / Anlass:** Vorbereitung des ersten iOS TestFlight Releases via EAS Build & App Store Connect.
-  - **Änderungen:**
-    - `assets/icon.png`: Neues offizielles P12-Aufmaß-Icon als 1024x1024 RGB-PNG (ohne Alpha-Kanal für Apple App Store Konformität) integriert.
-    - `app.json`: `bundleIdentifier: "com.vibefactory.ttapp"`, `buildNumber: "1"`, vollständige `NSPhotoLibraryUsageDescription` & erweiterte `NSCameraUsageDescription` (inkl. Baustellen-/Raumfotos) in `infoPlist` eingetragen; Plugins `expo-camera` (`microphonePermission: false`) und `expo-image-picker` sauber konfiguriert.
-    - `eas.json`: Neu angelegt mit Build-Profilen (`development`, `preview`, `production` mit `autoIncrement: true`) und `submit`-Konfiguration.
-    - `src/constants/version.js`: Bump auf `v2.54`.
-  - **Verifikation:** `npx expo export --platform ios` erfolgreich (819 Module gebündelt).
 

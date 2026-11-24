@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { COLORS } from '../constants/theme';
-import { t } from '../locales/i18n';
+import { t, translateGroup } from '../locales/i18n';
 import LvPositionCard from '../components/lv/LvPositionCard';
 import LvQuantityModal from '../components/lv/LvQuantityModal';
 
@@ -149,6 +149,10 @@ export default function LvOverviewScreen({
             const count = tradeCounts[tradeName] || 0;
             const inCart = tradeCartCounts[tradeName] || 0;
 
+            const translatedTradeName = tradeName === 'Alle'
+              ? t('lvAllTrades', currentLang)
+              : translateGroup(tradeName, currentLang);
+
             return (
               <TouchableOpacity
                 key={tradeName}
@@ -159,7 +163,7 @@ export default function LvOverviewScreen({
                 <Text
                   style={[styles.filterPillText, isSelected && styles.filterPillTextActive]}
                 >
-                  {tradeName === 'Alle' ? t('lvAllTrades', currentLang) : tradeName}
+                  {translatedTradeName}
                   {count > 0 ? ` (${count})` : ''}
                 </Text>
 
@@ -190,9 +194,10 @@ export default function LvOverviewScreen({
       {/* 3. Section Info Header */}
       <View style={styles.listHeaderRow}>
         <Text style={styles.listHeaderText}>
-          {selectedTrade === 'Alle'
-            ? t('lvPositions', currentLang).toUpperCase()
-            : selectedTrade.toUpperCase()}
+          {(selectedTrade === 'Alle'
+            ? t('lvPositions', currentLang)
+            : translateGroup(selectedTrade, currentLang)
+          ).toUpperCase()}
           {` · ${displayedPositions.length} `}
           {displayedPositions.length === 1 ? 'Position' : 'Positionen'}
         </Text>

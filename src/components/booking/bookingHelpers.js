@@ -91,19 +91,58 @@ export const getForeignGloss = (mat, currentLang) => {
   if (!mat || currentLang === 'de') return '';
   const text = (
     (mat.name || '') + ' ' +
+    (mat.aliasTitle || '') + ' ' +
+    (mat.officialTitle || '') + ' ' +
     (mat.cleanName || '') + ' ' +
     (mat.shortText || '') + ' ' +
-    (mat.group || '')
+    (mat.group || '') + ' ' +
+    (mat.tradeCategory || '')
   ).toLowerCase();
 
   // Explicit keywords matching
+  if (text.includes('frischwasser') || text.includes('vario fresh')) {
+    return GLOSSARY.frischwasserstation?.[currentLang] || GLOSSARY.frischwasser?.[currentLang] || '';
+  }
+  if (text.includes('kaskade')) {
+    return GLOSSARY.kaskade?.[currentLang] || '';
+  }
+  if (text.includes('dokumentation') || text.includes('bedienungsanleitung') || text.includes('betriebs-')) {
+    return GLOSSARY.dokumentation?.[currentLang] || '';
+  }
+  if (text.includes('probenahme') || text.includes('probe')) {
+    return GLOSSARY.probenahme?.[currentLang] || '';
+  }
+  if (text.includes('absperr') || text.includes('absperrhahn')) {
+    return GLOSSARY.absperrung?.[currentLang] || '';
+  }
+  if (text.includes('entleer') || text.includes('entleerstutzen')) {
+    return GLOSSARY.entleerung?.[currentLang] || '';
+  }
+  if (text.includes('pumpe') || text.includes('zirkulation')) {
+    return GLOSSARY.pumpe?.[currentLang] || '';
+  }
+  if (text.includes('wärmetauscher') || text.includes('plattenwärmetauscher')) {
+    return GLOSSARY.waermetauscher?.[currentLang] || '';
+  }
+  if (text.includes('druckminderer')) {
+    return GLOSSARY.druckminderer?.[currentLang] || '';
+  }
+  if (text.includes('filter')) {
+    return GLOSSARY.filter?.[currentLang] || '';
+  }
+  if (text.includes('speicher') || text.includes('boiler')) {
+    return GLOSSARY.speicher?.[currentLang] || '';
+  }
+  if (text.includes('brandschutz')) {
+    return GLOSSARY.brandschutz?.[currentLang] || '';
+  }
   if (text.includes('armatur') || text.includes('mischer') || text.includes('brause') || text.includes('thermostat')) {
     return GLOSSARY.armatur?.[currentLang] || '';
   }
   if (text.includes('kugelhahn') || text.includes('hahn')) {
     return GLOSSARY.kugelhahn?.[currentLang] || GLOSSARY.ventil?.[currentLang] || '';
   }
-  if (text.includes('ventil') || text.includes('absperr') || text.includes('schieber')) {
+  if (text.includes('ventil') || text.includes('schieber')) {
     return GLOSSARY.ventil?.[currentLang] || '';
   }
   if (text.includes('verteiler')) {

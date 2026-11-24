@@ -16,6 +16,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system';
 import { COLORS } from '../constants/theme';
 import { t, formatUnit } from '../locales/i18n';
+import { getForeignGloss } from '../components/booking/bookingHelpers';
 import { persistPhotoLocally } from '../services/storageService';
 import LvUnplannedModal from '../components/lv/LvUnplannedModal';
 
@@ -195,6 +196,9 @@ export default function LvCartScreen({
               const isUnplanned = !!item.isUnplannedMaterial;
               const isCustomAdded = item.sourceType === 'CUSTOM_ADDED';
 
+              const gloss = getForeignGloss(item, currentLang);
+              const transTitle = currentLang !== 'de' && item.translations?.[currentLang];
+
               return (
                 <View key={item.lvItemId || index} style={styles.cartItemRow}>
                   <View style={styles.cartItemInfo}>
@@ -206,7 +210,7 @@ export default function LvCartScreen({
                       ) : null}
                       {isUnplanned && (
                         <View style={styles.unplannedBadge}>
-                          <Text style={styles.unplannedBadgeText}>⚠️ Nicht im LV</Text>
+                          <Text style={styles.unplannedBadgeText}>⚠️ {t('lvUnplannedBadge', currentLang)}</Text>
                         </View>
                       )}
                       {isCustomAdded && (
@@ -216,7 +220,11 @@ export default function LvCartScreen({
                       )}
                     </View>
 
-                    <Text style={styles.itemTitle}>{title}</Text>
+                    <Text style={styles.itemTitle}>
+                      {title}
+                      {transTitle ? <Text style={styles.itemTransGloss}> ({transTitle})</Text> : null}
+                      {!transTitle && gloss ? <Text style={styles.itemTransGloss}> ({gloss})</Text> : null}
+                    </Text>
                     {item.customDescription && !isUnplanned ? (
                       <Text style={styles.itemDesc}>{item.customDescription}</Text>
                     ) : null}
@@ -531,6 +539,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0F172A',
     lineHeight: 18,
+  },
+  itemTransGloss: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0284C7',
+    fontStyle: 'italic',
   },
   itemDesc: {
     fontSize: 12,
