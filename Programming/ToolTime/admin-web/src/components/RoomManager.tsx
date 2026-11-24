@@ -112,7 +112,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     currentIndex: number;
   } | null>(null);
 
-  const activePositions = useMemo(() => positions.filter((p: Position) => !p.isCancelled && p.status !== 'cancelled'), [positions]);
+  const activePositions = useMemo(() => positions.filter((p: Position) => !p.isCancelled && p.status !== 'cancelled' && !p.hiddenForMonteur), [positions]);
 
   useEffect(() => {
     if (!selectedGallery) return;

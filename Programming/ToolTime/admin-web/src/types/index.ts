@@ -147,6 +147,9 @@ export interface Position {
   cancelledAt?: string | null;
   cancelledBy?: string | null;
 
+  // Für Monteur-App ausblenden (z. B. Dokumentation, Pauschalen)
+  hiddenForMonteur?: boolean;
+
   // Erweiterungen für duale Projekt-Architektur & LV-Editor
   originalCode?: string; // Unveränderliche Positionsnummer aus GAEB (z. B. "04.07")
   displayCode?: string; // Frei editierbare Positionsnummer für Sortierung (z. B. "04.07.1")

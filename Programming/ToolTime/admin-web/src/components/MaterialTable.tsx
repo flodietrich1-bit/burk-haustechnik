@@ -6,7 +6,7 @@ import { MaterialStatsCards } from './material/MaterialStatsCards';
 import { MaterialFilterBar, type SourceFilterType } from './material/MaterialFilterBar';
 import { MaterialBalanceRow } from './material/MaterialBalanceRow';
 import { MaterialTableModals } from './material/MaterialTableModals';
-import { addCustomPosition, updatePositionFields, togglePositionCancelled, comparePositionCodes } from '../services/lvPositionService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled, togglePositionMonteurVisibility, comparePositionCodes } from '../services/lvPositionService';
 import { savePositionsBatch, deleteCustomPositions } from '../services/firestoreService';
 
 interface MaterialTableProps {
@@ -331,6 +331,9 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
                           }}
                           onToggleCancel={(p) => {
                             if (projectId) togglePositionCancelled(projectId, p.id, positions);
+                          }}
+                          onToggleMonteurVisibility={(p) => {
+                            if (projectId) togglePositionMonteurVisibility(projectId, p.id, positions);
                           }}
                           onUpdateStatus={(posId, status) => handleUpdateFields(posId, { orderStatus: status })}
                           onUpdatePrice={(posId, price) => handleUpdateFields(posId, { unitPriceVK: price })}

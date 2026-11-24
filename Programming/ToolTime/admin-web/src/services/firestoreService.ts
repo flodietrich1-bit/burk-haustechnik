@@ -812,8 +812,8 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
           Object.entries(pos).filter(([, v]) => v !== undefined)
         );
         batch.set(ref, cleanPos, { merge: true });
-        if (pos.isCancelled || pos.status === 'cancelled') {
-          // Gestrichene Position entfällt für Monteur -> aus items entfernen
+        if (pos.isCancelled || pos.status === 'cancelled' || pos.hiddenForMonteur) {
+          // Gestrichene oder für Monteur ausgeblendete Position -> aus items entfernen
           batch.delete(iRef);
         } else {
           batch.set(iRef, {

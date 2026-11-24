@@ -182,7 +182,7 @@ export const NewMeasurementSectionModal: React.FC<NewMeasurementSectionModalProp
                   className="w-full px-3 py-1.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-emerald-500"
                 >
                   <option value="">Position aus LV wählen...</option>
-                  {positions.filter(p => !p.isCancelled && p.status !== 'cancelled').map(p => (
+                  {positions.filter(p => !p.isCancelled && p.status !== 'cancelled' && !p.hiddenForMonteur).map(p => (
                     <option key={p.id} value={p.id}>
                       {p.displayCode || p.posNr} - {p.aliasTitle || p.officialTitle || p.shortText} ({p.qu})
                     </option>

@@ -12,7 +12,9 @@ import {
   ShieldCheck, 
   Sparkles,
   Ban,
-  Undo2
+  Undo2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface MaterialBalanceRowProps {
@@ -24,6 +26,7 @@ interface MaterialBalanceRowProps {
   onOpenInfo: (pos: Position) => void;
   onInsertBelow: (pos: Position) => void;
   onToggleCancel: (pos: Position) => void;
+  onToggleMonteurVisibility: (pos: Position) => void;
   onUpdateStatus: (posId: string, status: 'OPEN' | 'ORDERED' | 'DELIVERED') => void;
   onUpdatePrice: (posId: string, price: number) => void;
 }
@@ -37,11 +40,13 @@ export const MaterialBalanceRow: React.FC<MaterialBalanceRowProps> = ({
   onOpenInfo,
   onInsertBelow,
   onToggleCancel,
+  onToggleMonteurVisibility,
   onUpdateStatus,
   onUpdatePrice
 }) => {
   const isCustom = position.sourceType === 'CUSTOM_ADDED';
   const isCancelled = Boolean(position.isCancelled || position.status === 'cancelled');
+  const isHiddenForMonteur = Boolean(position.hiddenForMonteur);
   const displayCode = position.displayCode || position.posNr;
   const officialTitle = position.officialTitle || position.shortText;
   const aliasTitle = position.aliasTitle;
@@ -92,6 +97,15 @@ export const MaterialBalanceRow: React.FC<MaterialBalanceRowProps> = ({
             {(position.isAddendum || position.group === 'Nachträge') && (
               <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[9px] font-bold px-1.5 py-0.2 rounded">
                 Nachtrag
+              </span>
+            )}
+            {isHiddenForMonteur && !isCancelled && (
+              <span
+                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-300"
+                title="In der Monteur-App ausgeblendet"
+              >
+                <EyeOff className="w-2.5 h-2.5 text-slate-400" />
+                <span>Monteur aus</span>
               </span>
             )}
           </div>
@@ -278,6 +292,20 @@ export const MaterialBalanceRow: React.FC<MaterialBalanceRowProps> = ({
               className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Für Monteur ausblenden / einblenden */}
+            <button
+              type="button"
+              title={isHiddenForMonteur ? 'Für Monteur ausgeblendet (klicken zum Einblenden)' : 'Für Monteur sichtbar (klicken zum Ausblenden)'}
+              onClick={() => onToggleMonteurVisibility(position)}
+              className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                isHiddenForMonteur
+                  ? 'border-slate-300 bg-slate-200/80 text-slate-600 hover:bg-slate-300'
+                  : 'border-slate-200 text-slate-600 hover:text-[#3B82C4] hover:bg-blue-50'
+              }`}
+            >
+              {isHiddenForMonteur ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             </button>
 
             {/* Streichen / Reaktivieren */}

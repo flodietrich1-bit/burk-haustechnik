@@ -255,3 +255,16 @@ export async function togglePositionCancelled(
     cancelledAt: willBeCancelled ? new Date().toISOString() : null
   });
 }
+
+export async function togglePositionMonteurVisibility(
+  projectId: string,
+  positionId: string,
+  currentPositions: Position[]
+): Promise<void> {
+  const existing = currentPositions.find(p => p.id === positionId);
+  if (!existing) return;
+
+  await updatePositionFields(projectId, positionId, currentPositions, {
+    hiddenForMonteur: !existing.hiddenForMonteur
+  });
+}

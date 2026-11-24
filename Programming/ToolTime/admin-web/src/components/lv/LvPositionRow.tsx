@@ -11,7 +11,9 @@ import {
   CheckCircle, 
   Truck,
   Ban,
-  Undo2
+  Undo2,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface LvPositionRowProps {
@@ -21,6 +23,7 @@ interface LvPositionRowProps {
   onOpenInfo: (pos: Position) => void;
   onInsertBelow: (pos: Position) => void;
   onToggleCancel: (pos: Position) => void;
+  onToggleMonteurVisibility: (pos: Position) => void;
   onUpdateStatus: (posId: string, status: 'OPEN' | 'ORDERED' | 'DELIVERED') => void;
   onUpdatePrice: (posId: string, price: number) => void;
 }
@@ -32,11 +35,13 @@ export const LvPositionRow: React.FC<LvPositionRowProps> = ({
   onOpenInfo,
   onInsertBelow,
   onToggleCancel,
+  onToggleMonteurVisibility,
   onUpdateStatus,
   onUpdatePrice
 }) => {
   const isOriginal = position.sourceType !== 'CUSTOM_ADDED';
   const isCancelled = Boolean(position.isCancelled || position.status === 'cancelled');
+  const isHiddenForMonteur = Boolean(position.hiddenForMonteur);
   const displayCode = position.displayCode || position.posNr;
   const officialTitle = position.officialTitle || position.shortText;
   const aliasTitle = position.aliasTitle;
@@ -205,6 +210,20 @@ export const LvPositionRow: React.FC<LvPositionRowProps> = ({
             className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200 transition-colors cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Button 4: Für Monteur ausblenden / einblenden */}
+          <button
+            type="button"
+            title={isHiddenForMonteur ? 'Für Monteur ausgeblendet (klicken zum Einblenden)' : 'Für Monteur sichtbar (klicken zum Ausblenden)'}
+            onClick={() => onToggleMonteurVisibility(position)}
+            className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+              isHiddenForMonteur
+                ? 'border-slate-300 bg-slate-200/80 text-slate-600 hover:bg-slate-300'
+                : 'border-slate-200 text-slate-600 hover:text-[#3B82C4] hover:bg-blue-50 hover:border-blue-200'
+            }`}
+          >
+            {isHiddenForMonteur ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
           </button>
 
           {/* Button 4: Position streichen / Streichung aufheben */}

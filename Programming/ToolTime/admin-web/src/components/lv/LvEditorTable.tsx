@@ -15,7 +15,7 @@ import { LvAliasModal } from './LvAliasModal';
 import { LvExcelImportModal } from './LvExcelImportModal';
 import { CommercialDeltaBar } from './CommercialDeltaBar';
 import { BillingExportModal } from '../export/BillingExportModal';
-import { addCustomPosition, updatePositionFields, togglePositionCancelled, comparePositionCodes } from '../../services/lvPositionService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled, togglePositionMonteurVisibility, comparePositionCodes } from '../../services/lvPositionService';
 import { savePositionsBatch } from '../../services/firestoreService';
 
 interface LvEditorTableProps {
@@ -235,6 +235,7 @@ export const LvEditorTable: React.FC<LvEditorTableProps> = ({
                             onOpenInfo={(p) => { setAliasModalPos(p); setAliasModalMode('info'); }}
                             onInsertBelow={(p) => { setInsertAfterTarget(p); setDefaultTradeTarget(p.tradeCategory || p.group); setIsAddModalOpen(true); }}
                             onToggleCancel={(p) => togglePositionCancelled(projectId, p.id, positions)}
+                            onToggleMonteurVisibility={(p) => togglePositionMonteurVisibility(projectId, p.id, positions)}
                             onUpdateStatus={(id, status) => handleUpdateFields(id, { orderStatus: status })}
                             onUpdatePrice={(id, price) => handleUpdateFields(id, { unitPriceVK: price, unitPrice: price })}
                           />
