@@ -201,7 +201,7 @@ Suspected / unverified: see "suspected" markers above. The prior unplanned-reaso
     - `App.js`, `src/screens/LvOverviewScreen.jsx`, `src/screens/LvPositionsScreen.jsx`: `onAddUnplannedItem` an LV-Listen durchgereicht; Button „außerplanmäßig verbaut“ + `LvUnplannedModal` direkt oben in der Positionsliste integriert.
     - `eas.json`: `"channel": "production"` im `production`-Build-Profil hinzugefügt.
     - `app.json` & `src/constants/version.js`: Bump auf `v2.66` und iOS `buildNumber: "10"`.
-  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (823 Module).
+  - **Verifikation:** `EXPO_NO_TELEMETRY=1 npx expo export --platform ios` fehlerfrei gebündelt (823 Module); Git push auf `origin/Monteur` (`b65cf9d`); EAS Update für `preview` veröffentlicht (`8c3b8d64-298d-4388-a224-69b3a864a768`); EAS iOS Production Build `11` (Build ID `edfa0fb0-a4a8-4d1e-8044-c28355613d4d`) erfolgreich gebaut und an Apple App Store Connect / TestFlight übermittelt (`https://appstoreconnect.apple.com/apps/6836813921/testflight/ios`).
 
 - **2026-11-24 (v2.65)**
   - **Ziel / Anlass:** Vereinheitlichung der Material-Erfassen-Kacheln über alle Strecken (Raum-Aufmaß & LV-Aufmaß mit Slider und manuellem Rechner-Eingabefeld), prominente Alias-Anzeige und Integration der Gewerke-Filter-Kacheln in der Raum-Strecke.
