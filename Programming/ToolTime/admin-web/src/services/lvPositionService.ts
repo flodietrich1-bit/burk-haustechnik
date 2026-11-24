@@ -2,6 +2,25 @@ import type { Position } from '../types';
 import { savePositionsBatch } from './firestoreService';
 import { recordCatalogArticle } from './catalogArticleService';
 
+export function normalizeExcelPosNr(raw: string): string {
+  const clean = String(raw).trim();
+  const match = clean.match(/^(\d+)\.0*(\d+)(\.\d+)?$/);
+  if (match) {
+    const major = parseInt(match[1], 10);
+    const minor = parseInt(match[2], 10);
+    const ext = match[3] || '';
+    return `${String(major).padStart(2, '0')}.${String(minor).padStart(2, '0')}${ext}`;
+  }
+  const stdMatch = clean.match(/^(\d+)\.(\d+)(\.\d+)?$/);
+  if (stdMatch) {
+    const major = parseInt(stdMatch[1], 10);
+    const minor = parseInt(stdMatch[2], 10);
+    const ext = stdMatch[3] || '';
+    return `${String(major).padStart(2, '0')}.${String(minor).padStart(2, '0')}${ext}`;
+  }
+  return clean;
+}
+
 export function generateNextCode(basePosNr: string, existingCodes: string[]): string {
   const cleanBase = basePosNr.trim();
   // Check if base has sub-position pattern like 04.07 or 04.07.1
@@ -14,6 +33,71 @@ export function generateNextCode(basePosNr: string, existingCodes: string[]): st
     candidate = `${prefix}.${subIndex}`;
   }
   return candidate;
+}
+
+export function generateNextCodeForTrade(tradeCategory: string, existingPositions: Position[]): string {
+  const cleanTrade = (tradeCategory || '').trim().toLowerCase();
+  const tradePositions = existingPositions.filter(p => {
+    const t = (p.tradeCategory || p.group || '').trim().toLowerCase();
+    return cleanTrade && t === cleanTrade;
+  });
+
+  if (tradePositions.length === 0) {
+    const prefixes = existingPositions
+      .map(p => (p.displayCode || p.posNr || '').match(/^(\d+)\./))
+      .filter(Boolean)
+      .map(m => parseInt(m![1], 10));
+    const nextPrefix = prefixes.length > 0 ? Math.max(...prefixes) + 1 : 1;
+    return `${String(nextPrefix).padStart(2, '0')}.01`;
+  }
+
+  // Find max incremental number matching standard patterns e.g. 02.20
+  let maxSubNumber = 0;
+  let detectedPrefix = '';
+  let subDigits = 2;
+
+  tradePositions.forEach(p => {
+    const code = (p.displayCode || p.posNr || '').trim();
+    const match = code.match(/^(\d+)\.(\d+)$/);
+    if (match) {
+      const num = parseInt(match[2], 10);
+      if (num > maxSubNumber) {
+        maxSubNumber = num;
+        detectedPrefix = match[1];
+        subDigits = match[2].length;
+      }
+    }
+  });
+
+  if (detectedPrefix && maxSubNumber > 0) {
+    const nextSub = maxSubNumber + 1;
+    return `${detectedPrefix}.${String(nextSub).padStart(Math.max(subDigits, 2), '0')}`;
+  }
+
+  // Fallback to last position in this trade
+  const lastPos = tradePositions[tradePositions.length - 1];
+  const lastCode = (lastPos.displayCode || lastPos.posNr || '').trim();
+  const allCodes = existingPositions.map(p => p.displayCode || p.posNr);
+  return generateNextCode(lastCode, allCodes);
+}
+
+export function suggestUnitForTrade(tradeName?: string, title?: string): 'Stk' | 'LFM' {
+  const text = `${tradeName || ''} ${title || ''}`.toLowerCase();
+  if (
+    text.includes('rohr') ||
+    text.includes('leitung') ||
+    text.includes('kanal') ||
+    text.includes('trasse') ||
+    text.includes('kabel') ||
+    text.includes('dämmung') ||
+    text.includes('isolier') ||
+    text.includes('schiebe') ||
+    text.includes('lfm') ||
+    text.includes('meter')
+  ) {
+    return 'LFM';
+  }
+  return 'Stk';
 }
 
 export async function addCustomPosition(
@@ -38,6 +122,8 @@ export async function addCustomPosition(
   if (!targetCode) {
     if (insertAfterPosition) {
       targetCode = generateNextCode(insertAfterPosition.displayCode || insertAfterPosition.posNr, existingCodes);
+    } else if (newPosData.tradeCategory) {
+      targetCode = generateNextCodeForTrade(newPosData.tradeCategory, existingPositions);
     } else {
       targetCode = `99.${String(existingPositions.length + 1).padStart(2, '0')}`;
     }
@@ -141,4 +227,21 @@ export async function updatePositionFields(
   }
 
   await savePositionsBatch(projectId, [merged]);
+}
+
+export async function togglePositionCancelled(
+  projectId: string,
+  positionId: string,
+  currentPositions: Position[]
+): Promise<void> {
+  const existing = currentPositions.find(p => p.id === positionId);
+  if (!existing) return;
+
+  const willBeCancelled = !(existing.isCancelled || existing.status === 'cancelled');
+
+  await updatePositionFields(projectId, positionId, currentPositions, {
+    isCancelled: willBeCancelled,
+    status: willBeCancelled ? 'cancelled' : 'open',
+    cancelledAt: willBeCancelled ? new Date().toISOString() : null
+  });
 }

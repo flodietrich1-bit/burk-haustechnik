@@ -101,10 +101,41 @@ export const Header: React.FC<HeaderProps> = ({
           </span>
         </div>
 
-        {/* Center / Action Group: Projektname (links) + Button Neues Projekt (rechts) */}
-        <div className="flex items-center space-x-2.5 sm:space-x-3">
-          {/* Projektname & kleines Dropdown bei mehreren Projekten (links) */}
-          {projects.length > 1 ? (
+        {/* Right Side Group: Projekt-Kacheln (<= 3) oder Dropdown (> 3), + Neues Projekt direkt neben der Glocke */}
+        <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0 ml-auto">
+          {/* Projekt-Kacheln (<= 3 Projekte nebeneinander) oder Dropdown (> 3 Projekte) */}
+          {projects.length > 0 && projects.length <= 3 ? (
+            <div className="flex items-center space-x-1.5 sm:space-x-2">
+              {projects.map((p) => {
+                const isSelected = p.id === activeProject?.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectProject(p.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs transition-all flex items-center space-x-1.5 border cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-50 text-[#0082C9] border-2 border-[#0082C9] font-bold shadow-xs'
+                        : 'bg-white hover:bg-slate-50 text-slate-700 hover:text-slate-900 border border-slate-200 font-semibold shadow-xs'
+                    }`}
+                    title={`Zu Projekt "${p.name}" wechseln`}
+                  >
+                    {isSelected && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#0082C9] shrink-0" />
+                    )}
+                    <span className="truncate max-w-[110px] sm:max-w-[150px] md:max-w-[200px]">{p.name}</span>
+                    {p.totalPositions !== undefined && (
+                      <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold ${
+                        isSelected ? 'bg-blue-100 text-[#0082C9]' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {p.totalPositions}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : projects.length > 3 ? (
             <div className="relative" ref={dropdownRef}>
               <button
                 type="button"
@@ -116,9 +147,9 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="text-xs font-bold text-white truncate">
                     {activeProject?.name || 'Projekt wählen'}
                   </span>
-                  {activeProject?.projectNumber && (
-                    <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
-                      ({activeProject.projectNumber})
+                  {activeProject?.totalPositions !== undefined && (
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      ({activeProject.totalPositions})
                     </span>
                   )}
                 </div>
@@ -129,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* Dropdown Menu */}
               {isDropdownOpen && (
-                <div className="absolute left-0 sm:right-0 sm:left-auto top-full mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
                   <div className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 mb-1">
                     <span>Projekt wechseln</span>
                     <span className="text-slate-500">{projects.length} vorhanden</span>
@@ -192,27 +223,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
-          ) : (
-            /* Einzelnes Projekt: Nur Projektname ohne Dropdown (links) */
-            activeProject && (
-              <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/80 text-xs shadow-xs">
-                <span className="font-bold text-white truncate max-w-[130px] sm:max-w-[200px] md:max-w-[260px]">
-                  {activeProject.name}
-                </span>
-                {activeProject.projectNumber && (
-                  <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
-                    ({activeProject.projectNumber})
-                  </span>
-                )}
-              </div>
-            )
-          )}
+          ) : null}
 
-          {/* Rechts daneben: Button Neues Projekt (Only Admin) */}
+          {/* Button "+ Projekt" / "Neues Projekt" direkt links neben der Glocke */}
           {currentUser?.role === 'admin' && (
             <button
               onClick={onOpenNewProject}
-              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0"
+              className="flex items-center space-x-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-3 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] shrink-0 cursor-pointer"
               title="Neues Projekt anlegen"
             >
               <Plus className="w-4 h-4" />
@@ -220,10 +237,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="sm:hidden">Neu</span>
             </button>
           )}
-        </div>
-
-        {/* Right Side: Alerts, Live, Name des Users ganz nach rechts aliniert */}
-        <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
           {/* Alert Notification Bell */}
           <div className="relative" ref={alertsRef}>
             <button

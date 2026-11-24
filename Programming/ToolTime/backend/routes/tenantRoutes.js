@@ -102,8 +102,16 @@ tenantRouter.get('/:tenantId/projects', requireTenantRole('admin', 'bauleiter', 
 });
 
 tenantRouter.get('/:tenantId/material-events', requireTenantRole('admin'), async (req, res) => {
-  const projects = await adminDb.collection(`tenants/${req.params.tenantId}/projects`).get();
-  const events = await Promise.all(projects.docs.map(async project => {
+  const { projectId } = req.query;
+  let projectsDocs;
+  if (projectId) {
+    const doc = await adminDb.doc(`tenants/${req.params.tenantId}/projects/${projectId}`).get();
+    projectsDocs = doc.exists ? [doc] : [];
+  } else {
+    const projects = await adminDb.collection(`tenants/${req.params.tenantId}/projects`).get();
+    projectsDocs = projects.docs;
+  }
+  const events = await Promise.all(projectsDocs.map(async project => {
     const bookings = await project.ref.collection('bookings').where('type', 'in', ['material_requested', 'commercial_decision']).limit(100).get();
     return bookings.docs.map(booking => ({ id: booking.id, ...booking.data(), projectId: project.id, projectName: project.get('name') || project.id }));
   }));

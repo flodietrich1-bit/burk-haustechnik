@@ -809,20 +809,25 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
         const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions', pos.id);
         const iRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'items', pos.id);
         batch.set(ref, pos, { merge: true });
-        batch.set(iRef, {
-          id: pos.id,
-          oz: pos.posNr,
-          posNr: pos.posNr,
-          text: pos.shortText,
-          shortText: pos.shortText,
-          qu: pos.qu,
-          unit: pos.qu,
-          qty: pos.qty,
-          quantity: pos.qty,
-          unitPrice: pos.unitPrice || 0,
-          group: pos.group,
-          updatedAt: pos.updatedAt || new Date().toISOString()
-        }, { merge: true });
+        if (pos.isCancelled || pos.status === 'cancelled') {
+          // Gestrichene Position entfällt für Monteur -> aus items entfernen
+          batch.delete(iRef);
+        } else {
+          batch.set(iRef, {
+            id: pos.id,
+            oz: pos.posNr,
+            posNr: pos.posNr,
+            text: pos.shortText,
+            shortText: pos.shortText,
+            qu: pos.qu,
+            unit: pos.qu,
+            qty: pos.qty,
+            quantity: pos.qty,
+            unitPrice: pos.unitPrice || 0,
+            group: pos.group,
+            updatedAt: pos.updatedAt || new Date().toISOString()
+          }, { merge: true });
+        }
       }
       await batch.commit();
     }
@@ -831,6 +836,46 @@ export async function savePositionsBatch(projectId: string, positions: Partial<P
     console.warn('Firestore savePositionsBatch error:', err.message);
     throw err;
   }
+}
+
+export async function deleteCustomPositions(projectId: string): Promise<number> {
+  const currentSaved = dataStorage.getItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId);
+  const currentList: Position[] = currentSaved ? JSON.parse(currentSaved) : [];
+  
+  const toKeep = currentList.filter(p => p.sourceType === 'ORIGINAL_GAEB');
+  const toDelete = currentList.filter(p => p.sourceType !== 'ORIGINAL_GAEB');
+  
+  dataStorage.setItem(LOCAL_STORAGE_POSITIONS_PREFIX + projectId, JSON.stringify(toKeep));
+  notifyPositionsSubscribers(projectId, toKeep);
+  
+  const projects = getLocalProjects().map(p => {
+    if (p.id === projectId) {
+      return { ...p, totalPositions: toKeep.length };
+    }
+    return p;
+  });
+  saveLocalProjects(projects);
+
+  try {
+    const POS_CHUNK = 200;
+    for (let i = 0; i < toDelete.length; i += POS_CHUNK) {
+      const chunk = toDelete.slice(i, i + POS_CHUNK);
+      const batch = writeBatch(db);
+      for (const pos of chunk) {
+        if (!pos.id) continue;
+        const ref = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'positions', pos.id);
+        const iRef = doc(db, 'tenants', getActiveTenantId(), 'projects', projectId, 'items', pos.id);
+        batch.delete(ref);
+        batch.delete(iRef);
+      }
+      await batch.commit();
+    }
+    await updateDoc(doc(db, 'tenants', getActiveTenantId(), 'projects', projectId), { totalPositions: toKeep.length });
+  } catch (err: any) {
+    console.warn('Firestore deleteCustomPositions error:', err.message);
+  }
+
+  return toDelete.length;
 }
 
 export async function addPositionDeliveredQty(projectId: string, positionIdOrPosNr: string, additionalQty: number, qu?: string) {

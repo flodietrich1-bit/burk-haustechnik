@@ -102,13 +102,20 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   }, [tenantId, currentUser.id, currentUser.role]);
 
   useEffect(() => {
-    if (currentUser.role !== 'admin') return;
+    if (currentUser.role !== 'admin' || !selectedProjectId) {
+      setTenantMaterialEvents([]);
+      return;
+    }
     let active = true;
-    const refresh = () => { void api<Booking[]>(`/tenants/${tenantId}/material-events`).then(events => { if (active) setTenantMaterialEvents(events); }).catch(() => {}); };
+    const refresh = () => {
+      void api<Booking[]>(`/tenants/${tenantId}/material-events?projectId=${encodeURIComponent(selectedProjectId)}`)
+        .then(events => { if (active) setTenantMaterialEvents(events); })
+        .catch(() => {});
+    };
     refresh();
     const interval = window.setInterval(refresh, 30000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [tenantId, currentUser.role]);
+  }, [tenantId, currentUser.role, selectedProjectId]);
 
   // The tenant API returns only projects the signed-in member may access.
   const accessibleProjects = projects;
@@ -422,7 +429,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                 {activeTab === 'bookings' && (
                   <LiveFeed
                     bookings={bookings}
-                    globalMaterialEvents={tenantMaterialEvents}
+                    globalMaterialEvents={tenantMaterialEvents.filter(e => !selectedProjectId || !e.projectId || e.projectId === selectedProjectId)}
                     projectId={selectedProjectId}
                     rooms={rooms}
                     positions={positions}

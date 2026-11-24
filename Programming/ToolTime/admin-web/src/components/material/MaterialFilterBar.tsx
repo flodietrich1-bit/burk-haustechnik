@@ -1,5 +1,5 @@
 import React from 'react';
-import { Filter, Edit3, Check, Plus, FileSpreadsheet, Download } from 'lucide-react';
+import { Filter, Edit3, Check, Plus, FileSpreadsheet, Download, Trash2 } from 'lucide-react';
 
 export type SourceFilterType = 'all' | 'original' | 'custom';
 
@@ -22,6 +22,7 @@ interface MaterialFilterBarProps {
   onOpenAddModal: () => void;
   onOpenExcelModal: () => void;
   onOpenExportModal: () => void;
+  onDeleteCustom?: () => void;
   canEditCommercial: boolean;
 }
 
@@ -44,6 +45,7 @@ export const MaterialFilterBar: React.FC<MaterialFilterBarProps> = ({
   onOpenAddModal,
   onOpenExcelModal,
   onOpenExportModal,
+  onDeleteCustom,
   canEditCommercial
 }) => {
   return (
@@ -86,6 +88,18 @@ export const MaterialFilterBar: React.FC<MaterialFilterBarProps> = ({
             <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
             <span>Nicht im LV / Ergänzt ({sourceCounts.custom})</span>
           </button>
+
+          {sourceCounts.custom > 0 && canEditCommercial && onDeleteCustom && (
+            <button
+              type="button"
+              onClick={onDeleteCustom}
+              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer"
+              title="Alle nicht im LV enthaltenen Positionen löschen und auf Original-LV zurücksetzen"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Nicht-LV bereinigen ({sourceCounts.custom})</span>
+            </button>
+          )}
         </div>
 
         {/* Right: Edit Mode Button & Quick Actions */}
@@ -176,6 +190,7 @@ export const MaterialFilterBar: React.FC<MaterialFilterBarProps> = ({
             <option value="partial">In Montage (Teilverbaut)</option>
             <option value="completed">Vollständig verbaut</option>
             <option value="open">Noch offen</option>
+            <option value="cancelled">Nur Gestrichene (Entfallen)</option>
           </select>
 
           {/* Radio Button: Nur verbaute Teile */}

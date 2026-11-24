@@ -15,7 +15,7 @@ import { LvAliasModal } from './LvAliasModal';
 import { LvExcelImportModal } from './LvExcelImportModal';
 import { CommercialDeltaBar } from './CommercialDeltaBar';
 import { BillingExportModal } from '../export/BillingExportModal';
-import { addCustomPosition, updatePositionFields } from '../../services/lvPositionService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled } from '../../services/lvPositionService';
 import { savePositionsBatch } from '../../services/firestoreService';
 
 interface LvEditorTableProps {
@@ -178,7 +178,7 @@ export const LvEditorTable: React.FC<LvEditorTableProps> = ({
             className="px-3.5 py-1.5 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center space-x-1.5 transition-all"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>+ Position</span>
+            <span>Position</span>
           </button>
         </div>
       </div>
@@ -234,7 +234,7 @@ export const LvEditorTable: React.FC<LvEditorTableProps> = ({
                             onOpenAlias={(p) => { setAliasModalPos(p); setAliasModalMode('alias'); }}
                             onOpenInfo={(p) => { setAliasModalPos(p); setAliasModalMode('info'); }}
                             onInsertBelow={(p) => { setInsertAfterTarget(p); setDefaultTradeTarget(p.tradeCategory || p.group); setIsAddModalOpen(true); }}
-                            onEditOriginal={(p) => setEditOriginalPos(p)}
+                            onToggleCancel={(p) => togglePositionCancelled(projectId, p.id, positions)}
                             onUpdateStatus={(id, status) => handleUpdateFields(id, { orderStatus: status })}
                             onUpdatePrice={(id, price) => handleUpdateFields(id, { unitPriceVK: price, unitPrice: price })}
                           />

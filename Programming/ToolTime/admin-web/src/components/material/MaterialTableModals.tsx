@@ -27,6 +27,7 @@ interface MaterialTableModalsProps {
   isExcelOpen: boolean;
   onCloseExcel: () => void;
   onImportExcel: (imported: Partial<Position>[]) => Promise<void>;
+  onCleanCustom?: () => Promise<void> | void;
   isExportOpen: boolean;
   onCloseExport: () => void;
 }
@@ -52,6 +53,7 @@ export const MaterialTableModals: React.FC<MaterialTableModalsProps> = ({
   isExcelOpen,
   onCloseExcel,
   onImportExcel,
+  onCleanCustom,
   isExportOpen,
   onCloseExport
 }) => {
@@ -93,6 +95,7 @@ export const MaterialTableModals: React.FC<MaterialTableModalsProps> = ({
           onClose={onCloseExcel}
           existingPositions={positions}
           onImport={onImportExcel}
+          onCleanCustom={onCleanCustom}
         />
       )}
 

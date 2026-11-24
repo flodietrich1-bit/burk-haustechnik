@@ -6,8 +6,8 @@ import { MaterialStatsCards } from './material/MaterialStatsCards';
 import { MaterialFilterBar, type SourceFilterType } from './material/MaterialFilterBar';
 import { MaterialBalanceRow } from './material/MaterialBalanceRow';
 import { MaterialTableModals } from './material/MaterialTableModals';
-import { addCustomPosition, updatePositionFields } from '../services/lvPositionService';
-import { savePositionsBatch } from '../services/firestoreService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled } from '../services/lvPositionService';
+import { savePositionsBatch, deleteCustomPositions } from '../services/firestoreService';
 
 interface MaterialTableProps {
   positions: Position[];
@@ -103,6 +103,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
       if (selectedStatus === 'partial' && !m.isPartial) return false;
       if (selectedStatus === 'completed' && !m.isCompleted) return false;
       if (selectedStatus === 'open' && !m.isOpen) return false;
+      if (selectedStatus === 'cancelled' && !p.isCancelled && p.status !== 'cancelled') return false;
 
       return true;
     });
@@ -139,6 +140,14 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
     await updatePositionFields(projectId, positionId, positions, updates);
   };
 
+  const handleDeleteCustomPositions = async () => {
+    if (!projectId || sourceCounts.custom === 0) return;
+    if (window.confirm(`Möchten Sie alle ${sourceCounts.custom} nicht im LV enthaltenen Positionen löschen und die Materialbilanz auf das Original-LV (${sourceCounts.original} Positionen) zurücksetzen?`)) {
+      await deleteCustomPositions(projectId);
+      setSourceFilter('all');
+    }
+  };
+
   return (
     <div className="space-y-5">
       {/* KPI Stat Cards */}
@@ -173,6 +182,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
         }}
         onOpenExcelModal={() => setIsExcelModalOpen(true)}
         onOpenExportModal={() => setIsExportModalOpen(true)}
+        onDeleteCustom={handleDeleteCustomPositions}
         canEditCommercial={canEditCommercial}
       />
 
@@ -250,7 +260,9 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
                             setDefaultTradeTarget(p.tradeCategory || p.group);
                             setIsAddModalOpen(true);
                           }}
-                          onEditOriginal={(p) => setEditOriginalPos(p)}
+                          onToggleCancel={(p) => {
+                            if (projectId) togglePositionCancelled(projectId, p.id, positions);
+                          }}
                           onUpdateStatus={(posId, status) => handleUpdateFields(posId, { orderStatus: status })}
                           onUpdatePrice={(posId, price) => handleUpdateFields(posId, { unitPriceVK: price })}
                         />
@@ -291,6 +303,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
             setIsExcelModalOpen(false);
           }
         }}
+        onCleanCustom={handleDeleteCustomPositions}
         isExportOpen={isExportModalOpen}
         onCloseExport={() => setIsExportModalOpen(false)}
       />

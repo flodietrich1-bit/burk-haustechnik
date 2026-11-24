@@ -23,16 +23,33 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, globalMaterialEven
   const posMap = useMemo(() => new Map(positions.map(p => [p.posNr, p])), [positions]);
   const posIdMap = useMemo(() => new Map(positions.map(p => [p.id, p])), [positions]);
 
-  // Sort bookings newest first
+  // Sort bookings newest first - strictly filtered to this project
   const sortedBookings = useMemo(() => {
     const merged = new Map<string, Booking>();
-    [...bookings, ...globalMaterialEvents].forEach(booking => merged.set(`${booking.projectId}/${booking.id}`, booking));
+
+    // 1. Project-specific bookings
+    bookings.forEach(booking => {
+      if (projectId && booking.projectId && booking.projectId !== projectId) {
+        return;
+      }
+      merged.set(booking.id, booking);
+    });
+
+    // 2. Global material events - strictly matching current projectId
+    (globalMaterialEvents || []).forEach(booking => {
+      if (!projectId || !booking.projectId || booking.projectId === projectId) {
+        if (!merged.has(booking.id)) {
+          merged.set(booking.id, booking);
+        }
+      }
+    });
+
     return [...merged.values()].sort((a, b) => {
       const timeA = new Date(a.timestamp || a.createdAt || (a as any).syncedAt || 0).getTime() || 0;
       const timeB = new Date(b.timestamp || b.createdAt || (b as any).syncedAt || 0).getTime() || 0;
       return timeB - timeA;
     });
-  }, [bookings, globalMaterialEvents]);
+  }, [bookings, globalMaterialEvents, projectId]);
 
   // Filtered bookings
   const filteredBookings = useMemo(() => {
@@ -63,8 +80,8 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, globalMaterialEven
     });
   }, [sortedBookings, filterType, searchTerm, roomMap, roomCodeMap]);
 
-  const alertCount = bookings.filter(b => b.type === 'over_consumption_alert' || (b as any).isAlert).length;
-  const completionCount = bookings.filter(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion').length;
+  const alertCount = useMemo(() => sortedBookings.filter(b => b.type === 'over_consumption_alert' || (b as any).isAlert).length, [sortedBookings]);
+  const completionCount = useMemo(() => sortedBookings.filter(b => b.type === 'room_completion' || (b as any).itemId === 'room_completion').length, [sortedBookings]);
 
   return (
     <div className="space-y-6">
@@ -105,7 +122,7 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, globalMaterialEven
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            Alle Erfassungen ({bookings.length})
+            Alle Erfassungen ({sortedBookings.length})
           </button>
 
           <button
@@ -240,7 +257,6 @@ export const LiveFeed: React.FC<LiveFeedProps> = ({ bookings, globalMaterialEven
                           </span>
                         )}
                         {isWorkflow && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-800">{booking.type === 'material_requested' ? 'Material angefragt' : 'Kaufmännische Entscheidung'}</span>}
-                        {isWorkflow && booking.projectName && <span className="text-xs font-semibold text-slate-600">{booking.projectName}</span>}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400 mt-0.5">

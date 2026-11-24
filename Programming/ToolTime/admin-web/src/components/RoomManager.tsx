@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { Room, Position, Booking, RoomMaterialRequirement, PlanDocument, PlanLevel } from '../types';
 import { 
   Plus, 
@@ -112,6 +112,8 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
     currentIndex: number;
   } | null>(null);
 
+  const activePositions = useMemo(() => positions.filter((p: Position) => !p.isCancelled && p.status !== 'cancelled'), [positions]);
+
   useEffect(() => {
     if (!selectedGallery) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -171,8 +173,8 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
 
   const handleOpenAssignModal = (room: Room) => {
     setAssigningRoom(room);
-    if (positions.length > 0) {
-      setSelectedPosId(positions[0].id);
+    if (activePositions.length > 0) {
+      setSelectedPosId(activePositions[0].id);
       setPlannedQty(1);
     }
   };
@@ -300,7 +302,7 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
       let detectedLayers: string[] = [];
 
       if (ext === 'dwg' || ext === 'dxf') {
-        const parsed = await parseDwgFile(newPlanFile, positions, newPlanLevel, planId);
+        const parsed = await parseDwgFile(newPlanFile, activePositions, newPlanLevel, planId);
         detectedCount = parsed.rooms.length;
         vectorData = parsed.vectorData;
         detectedLayers = parsed.detectedLayers;
@@ -948,14 +950,14 @@ export const RoomManager: React.FC<RoomManagerProps> = ({ projectId, projectName
             <div className="space-y-3 text-xs">
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  LV-Position auswählen ({positions.length} verfügbar):
+                  LV-Position auswählen ({activePositions.length} verfügbar):
                 </label>
                 <select
                   value={selectedPosId}
                   onChange={(e) => setSelectedPosId(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#3B82C4]"
                 >
-                  {positions.map(p => (
+                  {activePositions.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.posNr} – {p.shortText} ({p.qty} {p.qu})
                     </option>

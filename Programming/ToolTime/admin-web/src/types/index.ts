@@ -135,12 +135,17 @@ export interface Position {
   installedQty?: number;
   unitPrice?: number;
   isCutMaterial?: boolean;
-  status?: 'open' | 'partial' | 'completed' | 'overdelivered';
+  status?: 'open' | 'partial' | 'completed' | 'overdelivered' | 'cancelled';
   assignedRoomNames?: string[];
   projectId?: string;
   updatedAt?: string;
   isAddendum?: boolean;
   addendumId?: string;
+
+  // Storniert / Gestrichen (entfällt für Monteure)
+  isCancelled?: boolean;
+  cancelledAt?: string | null;
+  cancelledBy?: string | null;
 
   // Erweiterungen für duale Projekt-Architektur & LV-Editor
   originalCode?: string; // Unveränderliche Positionsnummer aus GAEB (z. B. "04.07")
