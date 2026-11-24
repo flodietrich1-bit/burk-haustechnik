@@ -5,6 +5,24 @@ import { X, UploadCloud, FileSpreadsheet, CheckCircle2, AlertCircle, RefreshCw, 
 import { cleanShortText } from '../../services/gaebParser';
 import { normalizeExcelPosNr } from '../../services/lvPositionService';
 
+function parseExcelNumber(val: unknown): number {
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (val === null || val === undefined) return 0;
+  let s = String(val).replace(/[€$\s\u00A0]/g, '').trim();
+  if (!s) return 0;
+  if (s.includes(',') && s.includes('.')) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      s = s.replace(/,/g, '');
+    }
+  } else if (s.includes(',')) {
+    s = s.replace(',', '.');
+  }
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
 interface LvExcelImportModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -120,7 +138,13 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
           textCol = tIdx;
           qtyCol = qIdx >= 0 ? qIdx : 2;
           quCol = row.findIndex(c => c.includes('einheit') || c === 'me' || c === 'einh' || c === 'einh.' || c === 'qu');
-          priceCol = row.findIndex(c => c.includes('preis') || c.includes('ep') || c.includes('vk'));
+          let epIdx = row.findIndex(c =>
+            c === 'ep' || c.includes('e-preis') || c.includes('einzelpreis') || c.includes('vk-preis') || c === 'vk'
+          );
+          if (epIdx === -1) {
+            epIdx = row.findIndex(c => (c.includes('preis') || c.includes('ep')) && !c.includes('gesamt'));
+          }
+          priceCol = epIdx;
           deliveredCol = row.findIndex(c => c.includes('bestellt') || c.includes('geliefert'));
           groupCol = row.findIndex(c => c.includes('gewerk') || c.includes('gruppe') || c.includes('titel'));
           break;
@@ -162,15 +186,12 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
 
         const rawPos = posCol >= 0 && row[posCol] !== undefined ? String(row[posCol]).trim() : '';
         const rawText = textCol >= 0 && row[textCol] !== undefined ? String(row[textCol]).trim() : '';
-        const rawQtyStr = qtyCol >= 0 && row[qtyCol] !== undefined ? String(row[qtyCol]).trim().replace(',', '.') : '';
         const rawQu = quCol >= 0 && row[quCol] !== undefined ? String(row[quCol]).trim() : 'Stk';
-        const rawPriceStr = priceCol >= 0 && row[priceCol] !== undefined ? String(row[priceCol]).trim().replace(',', '.') : '0';
-        const rawDeliveredStr = deliveredCol >= 0 && row[deliveredCol] !== undefined ? String(row[deliveredCol]).trim().replace(',', '.') : '';
         const rawGroup = groupCol >= 0 && row[groupCol] !== undefined ? String(row[groupCol]).trim() : '';
 
-        const qty = parseFloat(rawQtyStr) || 0;
-        const unitPriceVK = parseFloat(rawPriceStr) || 0;
-        const deliveredQty = parseFloat(rawDeliveredStr) || 0;
+        const qty = qtyCol >= 0 ? parseExcelNumber(row[qtyCol]) : 0;
+        const unitPriceVK = priceCol >= 0 ? parseExcelNumber(row[priceCol]) : 0;
+        const deliveredQty = deliveredCol >= 0 ? parseExcelNumber(row[deliveredCol]) : 0;
 
         // 2. Skip comment/instruction rows starting with ***
         if (rawText.startsWith('***')) {
@@ -224,9 +245,6 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
           matched++;
           const targetQty = qty > 0 ? qty : (Number(existing.qty) || 1);
           const finalDelivered = deliveredQty > 0 ? deliveredQty : (existing.deliveredQty ?? targetQty);
-          const status = (deliveredQty > 0 && deliveredQty >= targetQty)
-            ? 'DELIVERED'
-            : (deliveredQty > 0 ? 'ORDERED' : (existing.orderStatus || 'OPEN'));
 
           results.push({
             id: existing.id,
@@ -246,26 +264,42 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
             deliveredQty: finalDelivered,
             unitPrice: unitPriceVK > 0 ? unitPriceVK : (existing.unitPrice || 0),
             unitPriceVK: unitPriceVK > 0 ? unitPriceVK : (existing.unitPriceVK || existing.unitPrice || 0),
-            orderStatus: status as any,
+            orderStatus: 'OPEN',
             status: existing.status || 'open',
             updatedAt: new Date().toISOString()
           });
         } else {
-          // Genuine new position / Nachtrag (e.g. 4.0000.1 -> 04.00.1)
+          // Genuine new position / Nachtrag (e.g. 5.10.1 -> 05.10.1 below 05.10)
           newlyAdded++;
           const posId = `pos_custom_${normalizedPos.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}`;
           const quNorm = normalizedQu || 'Stk';
           const finalQty = qty > 0 ? qty : 1;
+
+          // Resolve parent position / trade so sub-positions (e.g. 05.10.1) stay in the same Gewerk directly under parent (05.10)
+          const codeParts = normalizedPos.split('.');
+          let parentPos: Position | undefined;
+          if (codeParts.length > 2) {
+            const parentCode = codeParts.slice(0, -1).join('.');
+            parentPos = existingByCode.get(parentCode) || existingByCode.get(normalizeExcelPosNr(parentCode));
+          }
+          if (!parentPos && codeParts.length >= 2) {
+            const majorPrefix = `${codeParts[0]}.`;
+            parentPos = existingPositions.find(p => (p.displayCode || p.posNr || '').trim().startsWith(majorPrefix));
+          }
+          const resolvedGroup = parentPos?.tradeCategory || parentPos?.group || currentGroup;
+          const resolvedSortOrder = parentPos?.sortOrder !== undefined
+            ? parentPos.sortOrder + 1
+            : (results.length + 1) * 10;
 
           results.push({
             id: posId,
             posNr: normalizedPos,
             displayCode: normalizedPos,
             originalCode: normalizedPos,
-            sortOrder: (results.length + 1) * 10,
+            sortOrder: resolvedSortOrder,
             sourceType: 'CUSTOM_ADDED',
-            group: currentGroup,
-            tradeCategory: currentGroup,
+            group: resolvedGroup,
+            tradeCategory: resolvedGroup,
             officialTitle: cleanTitle || `Position ${normalizedPos}`,
             shortText: cleanTitle || `Position ${normalizedPos}`,
             aliasTitle: null,
@@ -275,7 +309,7 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
             deliveredQty: deliveredQty > 0 ? deliveredQty : finalQty,
             unitPrice: unitPriceVK,
             unitPriceVK: unitPriceVK,
-            orderStatus: (deliveredQty > 0 ? 'ORDERED' : 'OPEN') as any,
+            orderStatus: 'OPEN',
             status: 'open',
             updatedAt: new Date().toISOString()
           });
@@ -404,10 +438,13 @@ export const LvExcelImportModal: React.FC<LvExcelImportModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {parsedRows.slice(0, 30).map((row, idx) => {
+                  {[
+                    ...parsedRows.filter(r => r.sourceType !== 'ORIGINAL_GAEB'),
+                    ...parsedRows.filter(r => r.sourceType === 'ORIGINAL_GAEB').slice(0, 30)
+                  ].map((row, idx) => {
                     const isMatched = row.sourceType === 'ORIGINAL_GAEB';
                     return (
-                      <tr key={idx} className="hover:bg-slate-50">
+                      <tr key={idx} className={isMatched ? 'hover:bg-slate-50' : 'bg-blue-50/40 hover:bg-blue-50'}>
                         <td className="py-1.5 px-3 font-mono font-bold">{row.displayCode}</td>
                         <td className="py-1.5 px-3">
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${

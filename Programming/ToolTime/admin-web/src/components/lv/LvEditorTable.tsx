@@ -15,7 +15,7 @@ import { LvAliasModal } from './LvAliasModal';
 import { LvExcelImportModal } from './LvExcelImportModal';
 import { CommercialDeltaBar } from './CommercialDeltaBar';
 import { BillingExportModal } from '../export/BillingExportModal';
-import { addCustomPosition, updatePositionFields, togglePositionCancelled } from '../../services/lvPositionService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled, comparePositionCodes } from '../../services/lvPositionService';
 import { savePositionsBatch } from '../../services/firestoreService';
 
 interface LvEditorTableProps {
@@ -85,7 +85,7 @@ export const LvEditorTable: React.FC<LvEditorTableProps> = ({
       groups[g].push(p);
     });
     Object.keys(groups).forEach(g => {
-      groups[g].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      groups[g].sort(comparePositionCodes);
     });
     return groups;
   }, [filteredPositions]);

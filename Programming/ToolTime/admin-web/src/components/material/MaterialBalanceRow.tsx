@@ -62,6 +62,7 @@ export const MaterialBalanceRow: React.FC<MaterialBalanceRowProps> = ({
     : 'hover:bg-slate-50/80 border-l-4 border-l-transparent';
 
   const unitPrice = (position.unitPriceVK ?? position.unitPrice);
+  const totalPrice = (Number(position.qty) || 0) * (Number(unitPrice) || 0);
 
   return (
     <tr className={`transition-colors text-xs ${rowCustomClass}`}>
@@ -241,7 +242,16 @@ export const MaterialBalanceRow: React.FC<MaterialBalanceRowProps> = ({
         )}
       </td>
 
-      {/* 11. Aktionen (Im Editiermodus sichtbar) */}
+      {/* 11. Gesamtpreis (Geplant * VK-Preis) */}
+      <td className="py-3 px-3 align-top text-right whitespace-nowrap">
+        <span className={`font-mono font-semibold ${isCancelled ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
+          {unitPrice !== undefined && unitPrice !== null
+            ? `${totalPrice.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+            : '-'}
+        </span>
+      </td>
+
+      {/* 12. Aktionen (Im Editiermodus sichtbar) */}
       {isEditMode && (
         <td className="py-3 px-3 align-top text-right whitespace-nowrap">
           <div className="flex items-center justify-end space-x-1">

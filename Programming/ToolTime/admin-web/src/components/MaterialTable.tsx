@@ -6,7 +6,7 @@ import { MaterialStatsCards } from './material/MaterialStatsCards';
 import { MaterialFilterBar, type SourceFilterType } from './material/MaterialFilterBar';
 import { MaterialBalanceRow } from './material/MaterialBalanceRow';
 import { MaterialTableModals } from './material/MaterialTableModals';
-import { addCustomPosition, updatePositionFields, togglePositionCancelled } from '../services/lvPositionService';
+import { addCustomPosition, updatePositionFields, togglePositionCancelled, comparePositionCodes } from '../services/lvPositionService';
 import { savePositionsBatch, deleteCustomPositions } from '../services/firestoreService';
 
 interface MaterialTableProps {
@@ -118,7 +118,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
       map[g].push(p);
     });
     Object.keys(map).forEach(g => {
-      map[g].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+      map[g].sort(comparePositionCodes);
     });
     return map;
   }, [filteredPositions]);
@@ -202,13 +202,14 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
                 <th className="py-3 px-3 w-32">Fortschritt</th>
                 <th className="py-3 px-3 w-28 text-right">VK-Preis</th>
                 <th className="py-3 px-3 w-28 text-center">{isEditMode ? 'Bestellstatus' : 'Status'}</th>
+                <th className="py-3 px-3 w-28 text-right">Gesamtpreis</th>
                 {isEditMode && <th className="py-3 px-3 w-36 text-right">Aktionen</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
               {filteredPositions.length === 0 ? (
                 <tr>
-                  <td colSpan={isEditMode ? 11 : 10} className="py-12 text-center text-slate-400">
+                  <td colSpan={isEditMode ? 12 : 11} className="py-12 text-center text-slate-400">
                     Keine Positionen für diesen Filter gefunden.
                   </td>
                 </tr>
@@ -218,7 +219,7 @@ export const MaterialTable: React.FC<MaterialTableProps> = ({
                   return (
                     <React.Fragment key={grp}>
                       <tr className="bg-slate-100/90 border-t border-b border-slate-200 font-bold text-slate-700 text-xs">
-                        <td colSpan={isEditMode ? 11 : 10} className="py-2 px-3">
+                        <td colSpan={isEditMode ? 12 : 11} className="py-2 px-3">
                           <div className="flex items-center justify-between">
                             <button
                               type="button"

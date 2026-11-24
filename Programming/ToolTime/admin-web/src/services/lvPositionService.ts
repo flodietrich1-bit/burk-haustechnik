@@ -21,6 +21,16 @@ export function normalizeExcelPosNr(raw: string): string {
   return clean;
 }
 
+export function comparePositionCodes(a: Position, b: Position): number {
+  const codeA = (a.displayCode || a.posNr || '').trim();
+  const codeB = (b.displayCode || b.posNr || '').trim();
+  if (codeA && codeB) {
+    const cmp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+    if (cmp !== 0) return cmp;
+  }
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+}
+
 export function generateNextCode(basePosNr: string, existingCodes: string[]): string {
   const cleanBase = basePosNr.trim();
   // Check if base has sub-position pattern like 04.07 or 04.07.1
