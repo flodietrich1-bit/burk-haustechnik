@@ -120,13 +120,25 @@ tenantRouter.get('/:tenantId/material-events', requireTenantRole('admin'), async
 
 tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', requireTenantRole('admin', 'bauleiter', 'kaufmaennisch'), async (req, res) => {
   const { tenantId, projectId, aufmassId } = req.params;
-  const { recipientRole, excelFilename, excelBase64 } = req.body || {};
-  if (!['admin', 'kaufmaennisch'].includes(recipientRole) || typeof excelBase64 !== 'string' || excelBase64.length > 10_000_000
-    || !/^[A-Za-z0-9+/]+={0,2}$/.test(excelBase64) || typeof excelFilename !== 'string' || !/^Aufmass_[\w.-]+\.xlsx$/.test(excelFilename)) {
+  const { recipientRole, customEmail, attachmentFormat = 'both', excelFilename, excelBase64 } = req.body || {};
+  const format = ['both', 'pdf', 'excel'].includes(attachmentFormat) ? attachmentFormat : 'both';
+  const needsExcel = format === 'both' || format === 'excel';
+  const needsPdf = format === 'both' || format === 'pdf';
+  if (!['admin', 'kaufmaennisch', 'bauleiter', 'custom'].includes(recipientRole)) {
     return res.status(400).json({ code: 'AUFMASS_SEND_INVALID' });
   }
-  const excel = Buffer.from(excelBase64, 'base64');
-  if (excel.length < 4 || excel.subarray(0, 4).toString('hex') !== '504b0304') return res.status(400).json({ code: 'EXCEL_INVALID' });
+  if (recipientRole === 'custom' && (typeof customEmail !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customEmail.trim()))) {
+    return res.status(400).json({ code: 'AUFMASS_EMAIL_INVALID' });
+  }
+  let excel = null;
+  if (needsExcel) {
+    if (typeof excelBase64 !== 'string' || excelBase64.length > 10_000_000
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(excelBase64) || typeof excelFilename !== 'string' || !/^Aufmass_[\w.-]+\.xlsx$/.test(excelFilename)) {
+      return res.status(400).json({ code: 'AUFMASS_SEND_INVALID' });
+    }
+    excel = Buffer.from(excelBase64, 'base64');
+    if (excel.length < 4 || excel.subarray(0, 4).toString('hex') !== '504b0304') return res.status(400).json({ code: 'EXCEL_INVALID' });
+  }
   const projectRef = adminDb.doc(`tenants/${tenantId}/projects/${projectId}`);
   const project = await projectRef.get();
   if (!project.exists) return res.status(404).json({ code: 'PROJECT_NOT_FOUND' });
@@ -144,7 +156,9 @@ tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', req
   if (!snapshot.exists) return res.status(404).json({ code: 'AUFMASS_NOT_FOUND' });
   const aufmass = snapshot.data();
   let recipient;
-  if (recipientRole === 'kaufmaennisch') {
+  if (recipientRole === 'custom') {
+    recipient = { email: customEmail.trim(), displayName: customEmail.trim() };
+  } else if (recipientRole === 'kaufmaennisch') {
     const address = String(project.get('commercialManagerEmail') || '').toLowerCase();
     if (address) {
       const member = project.get('commercialManagerId')
@@ -152,23 +166,37 @@ tenantRouter.post('/:tenantId/projects/:projectId/aufmasse/:aufmassId/send', req
         : (await adminDb.collection(`tenants/${tenantId}/members`).where('email', '==', address).limit(1).get()).docs[0];
       if (member?.exists && member.get('status') === 'active' && member.get('role') === 'kaufmaennisch' && String(member.get('email')).toLowerCase() === address) recipient = member.data();
     }
+  } else if (recipientRole === 'bauleiter') {
+    const address = String(project.get('projectManagerEmail') || '').toLowerCase();
+    if (address) {
+      const member = project.get('projectManagerId')
+        ? await adminDb.doc(`tenants/${tenantId}/members/${project.get('projectManagerId')}`).get()
+        : (await adminDb.collection(`tenants/${tenantId}/members`).where('email', '==', address).limit(1).get()).docs[0];
+      if (member?.exists && member.get('status') === 'active' && String(member.get('email')).toLowerCase() === address) recipient = member.data();
+      else if (/^\S+@\S+\.\S+$/.test(address)) recipient = { email: address, displayName: project.get('projectManagerName') || address };
+    }
   } else {
     const admins = await adminDb.collection(`tenants/${tenantId}/members`).where('role', '==', 'admin').get();
     recipient = admins.docs.find(member => member.get('status') === 'active' && /^\S+@\S+\.\S+$/.test(member.get('email') || ''))?.data();
   }
   if (!recipient) return res.status(409).json({ code: 'AUFMASS_RECIPIENT_MISSING' });
-  const pdf = await generateAufmassPdf(aufmass);
   const filenameStem = `Aufmass_${String(aufmass.aufmassNumber || aufmassId).replace(/[^\w.-]/g, '_')}`;
+  const attachments = [];
+  if (needsPdf) {
+    const pdf = await generateAufmassPdf(aufmass);
+    attachments.push({ filename: `${filenameStem}.pdf`, content: pdf });
+  }
+  if (needsExcel && excel) {
+    attachments.push({ filename: excelFilename, content: excel });
+  }
+  const formatLabel = format === 'both' ? 'als PDF und Excel-Datei' : (format === 'pdf' ? 'als PDF-Datei' : 'als Excel-Datei');
   const dateFrom = new Date(aufmass.dateFrom).toLocaleDateString('de-DE');
   const dateTo = new Date(aufmass.dateTo).toLocaleDateString('de-DE');
   const subject = `Aufmaß ${aufmass.aufmassNumber} – ${aufmass.projectName}`;
-  const body = `Hallo ${String(recipient.displayName || recipient.email).split(' ')[0]},\n\nanbei das Aufmaß ${aufmass.aufmassNumber} für ${aufmass.projectName} (${dateFrom} bis ${dateTo}) als PDF und Excel-Datei.\n\nBitte prüfen und die Abrechnung veranlassen.\n\nViele Grüße\n${req.tenantMember?.displayName || req.auth.email || 'Projektleitung'}`;
+  const body = `Hallo ${String(recipient.displayName || recipient.email).split(' ')[0]},\n\nanbei das Aufmaß ${aufmass.aufmassNumber} für ${aufmass.projectName} (${dateFrom} bis ${dateTo}) ${formatLabel}.\n\nBitte prüfen und die Abrechnung veranlassen.\n\nViele Grüße\n${req.tenantMember?.displayName || req.auth.email || 'Projektleitung'}`;
   let delivery;
   try {
-    delivery = await sendEmail({ to: recipient.email, subject, text: body, attachments: [
-      { filename: `${filenameStem}.pdf`, content: pdf },
-      { filename: excelFilename, content: excel },
-    ] });
+    delivery = await sendEmail({ to: recipient.email, subject, text: body, attachments });
   } catch (error) {
     console.error('Aufmass email failed:', error);
     return res.status(502).json({ code: 'EMAIL_SEND_FAILED' });

@@ -96,7 +96,15 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
   const [editCausedBy, setEditCausedBy] = useState('Monteur');
   const [isSavingReason, setIsSavingReason] = useState(false);
 
-  const [emailSentModal, setEmailSentModal] = useState<{ aufmass: AufmassDocument; recipientRole: 'kaufmaennisch' | 'admin'; sending: boolean; error: string; sentTo?: string } | null>(null);
+  const [emailSentModal, setEmailSentModal] = useState<{
+    aufmass: AufmassDocument;
+    recipientRole: 'kaufmaennisch' | 'bauleiter' | 'admin' | 'custom';
+    customEmail: string;
+    attachmentFormat: 'both' | 'pdf' | 'excel';
+    sending: boolean;
+    error: string;
+    sentTo?: string;
+  } | null>(null);
 
   // Create Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -256,26 +264,49 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
 
   const handleSendAufmassEmail = (aufmass: AufmassDocument, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setEmailSentModal({ aufmass, recipientRole: 'kaufmaennisch', sending: false, error: '' });
+    setEmailSentModal({
+      aufmass,
+      recipientRole: 'kaufmaennisch',
+      customEmail: '',
+      attachmentFormat: 'both',
+      sending: false,
+      error: ''
+    });
   };
 
   const confirmSendAufmassEmail = async () => {
     if (!emailSentModal || emailSentModal.sending) return;
-    const { aufmass, recipientRole } = emailSentModal;
+    const { aufmass, recipientRole, customEmail, attachmentFormat } = emailSentModal;
+    if (recipientRole === 'custom' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customEmail.trim())) {
+      setEmailSentModal(prev => prev ? { ...prev, error: 'Bitte geben Sie eine gültige E-Mail-Adresse ein.' } : null);
+      return;
+    }
     setEmailSentModal(prev => prev ? { ...prev, sending: true, error: '' } : null);
     try {
-      const excel = exportAufmassToExcel(aufmass, false);
-      let binary = '';
-      for (let offset = 0; offset < excel.content.length; offset += 8192) {
-        binary += String.fromCharCode(...excel.content.subarray(offset, offset + 8192));
+      const payload: Record<string, string> = {
+        recipientRole,
+        attachmentFormat
+      };
+      if (recipientRole === 'custom') {
+        payload.customEmail = customEmail.trim();
+      }
+      if (attachmentFormat === 'both' || attachmentFormat === 'excel') {
+        const excel = exportAufmassToExcel(aufmass, false);
+        let binary = '';
+        for (let offset = 0; offset < excel.content.length; offset += 8192) {
+          binary += String.fromCharCode(...excel.content.subarray(offset, offset + 8192));
+        }
+        payload.excelFilename = excel.filename;
+        payload.excelBase64 = btoa(binary);
       }
       const result = await api<{ sent: boolean; recipientEmail: string }>(`/tenants/${getActiveTenantId()}/projects/${projectId}/aufmasse/${aufmass.id}/send`, {
         method: 'POST',
-        body: JSON.stringify({ recipientRole, excelFilename: excel.filename, excelBase64: btoa(binary) }),
+        body: JSON.stringify(payload),
       });
       setEmailSentModal(prev => prev ? { ...prev, sending: false, sentTo: result.recipientEmail } : null);
     } catch (error: any) {
       const message = error?.code === 'AUFMASS_RECIPIENT_MISSING' ? 'Für diese Rolle ist kein aktiver Empfänger hinterlegt.'
+        : error?.code === 'AUFMASS_EMAIL_INVALID' ? 'Bitte geben Sie eine gültige E-Mail-Adresse ein.'
         : error?.code === 'EMAIL_NOT_CONFIGURED' ? 'Der E-Mail-Versand ist nicht eingerichtet.'
         : error?.code === 'EMAIL_SEND_FAILED' ? 'Der Versand ist fehlgeschlagen. Bitte später erneut versuchen.'
         : `Versand fehlgeschlagen: ${error?.message || error}`;
@@ -1615,21 +1646,73 @@ export const AufmassView: React.FC<AufmassViewProps> = ({
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <h3 className="flex items-center gap-2 font-bold text-slate-900"><Mail className="w-5 h-5 text-[#3B82C4]" />Aufmaß per E-Mail versenden</h3>
             {emailSentModal.sentTo ? (
-              <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800"><CheckCircle2 className="inline w-4 h-4 mr-2" />Aufmaß mit PDF und Excel an {emailSentModal.sentTo} gesendet.</p>
+              <p className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">
+                <CheckCircle2 className="inline w-4 h-4 mr-2" />
+                Aufmaß ({emailSentModal.attachmentFormat === 'both' ? 'PDF & Excel' : emailSentModal.attachmentFormat === 'pdf' ? 'PDF' : 'Excel'}) an <strong>{emailSentModal.sentTo}</strong> gesendet.
+              </p>
             ) : (
-              <>
-                <p className="text-sm text-slate-600">{emailSentModal.aufmass.aufmassNumber} · PDF und Excel werden automatisch angehängt.</p>
-                <label className="block text-sm font-semibold text-slate-700" htmlFor="aufmass-recipient">Empfänger</label>
-                <select id="aufmass-recipient" value={emailSentModal.recipientRole} onChange={e => setEmailSentModal(prev => prev ? { ...prev, recipientRole: e.target.value as 'kaufmaennisch' | 'admin', error: '' } : null)} className="w-full rounded-xl border border-slate-300 p-3 text-sm">
-                  <option value="kaufmaennisch">Kaufmann ({project?.commercialManagerEmail || 'keine E-Mail hinterlegt'})</option>
-                  <option value="admin">Administrator</option>
-                </select>
-                {emailSentModal.error && <p role="alert" className="text-sm text-red-700">{emailSentModal.error}</p>}
-              </>
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">{emailSentModal.aufmass.aufmassNumber} · Empfänger und Dateiformat wählen.</p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1" htmlFor="aufmass-recipient">Empfänger</label>
+                  <select
+                    id="aufmass-recipient"
+                    value={emailSentModal.recipientRole}
+                    onChange={e => setEmailSentModal(prev => prev ? { ...prev, recipientRole: e.target.value as 'kaufmaennisch' | 'bauleiter' | 'admin' | 'custom', error: '' } : null)}
+                    className="w-full rounded-xl border border-slate-300 p-2.5 text-sm bg-white focus:outline-none focus:border-[#3B82C4]"
+                  >
+                    <option value="kaufmaennisch">Kaufmännischer Leiter ({project?.commercialManagerEmail || 'keine E-Mail hinterlegt'})</option>
+                    <option value="bauleiter">Projektleiter ({project?.projectManagerEmail || 'keine E-Mail hinterlegt'})</option>
+                    <option value="admin">Administrator</option>
+                    <option value="custom">Freie E-Mail-Adresse eingeben…</option>
+                  </select>
+                </div>
+
+                {emailSentModal.recipientRole === 'custom' && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1" htmlFor="aufmass-custom-email">E-Mail-Adresse</label>
+                    <input
+                      id="aufmass-custom-email"
+                      type="email"
+                      value={emailSentModal.customEmail}
+                      onChange={e => setEmailSentModal(prev => prev ? { ...prev, customEmail: e.target.value, error: '' } : null)}
+                      placeholder="name@firma.de"
+                      className="w-full rounded-xl border border-slate-300 p-2.5 text-sm focus:outline-none focus:border-[#3B82C4]"
+                      autoFocus
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Anhänge</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { id: 'both', label: 'PDF & Excel' },
+                      { id: 'pdf', label: 'Nur PDF' },
+                      { id: 'excel', label: 'Nur Excel' }
+                    ] as const).map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setEmailSentModal(prev => prev ? { ...prev, attachmentFormat: opt.id } : null)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          emailSentModal.attachmentFormat === opt.id
+                            ? 'bg-blue-50 border-[#3B82C4] text-[#3B82C4]'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {emailSentModal.error && <p role="alert" className="text-sm text-red-700 bg-red-50 p-2.5 rounded-xl border border-red-200">{emailSentModal.error}</p>}
+              </div>
             )}
             <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-              <button type="button" disabled={emailSentModal.sending} onClick={() => setEmailSentModal(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm">{emailSentModal.sentTo ? 'Schließen' : 'Abbrechen'}</button>
-              {!emailSentModal.sentTo && <button type="button" disabled={emailSentModal.sending} onClick={() => void confirmSendAufmassEmail()} className="rounded-xl bg-[#3B82C4] px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{emailSentModal.sending ? 'Wird gesendet…' : 'Jetzt senden'}</button>}
+              <button type="button" disabled={emailSentModal.sending} onClick={() => setEmailSentModal(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm cursor-pointer">{emailSentModal.sentTo ? 'Schließen' : 'Abbrechen'}</button>
+              {!emailSentModal.sentTo && <button type="button" disabled={emailSentModal.sending} onClick={() => void confirmSendAufmassEmail()} className="rounded-xl bg-[#3B82C4] hover:bg-[#2B6EB0] px-4 py-2 text-sm font-bold text-white disabled:opacity-50 cursor-pointer">{emailSentModal.sending ? 'Wird gesendet…' : 'Jetzt senden'}</button>}
             </div>
           </div>
         </div>
