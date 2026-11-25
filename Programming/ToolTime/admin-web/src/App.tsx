@@ -45,6 +45,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   const activeProjectStorageKey = `tooltime_${tenantId}_active_project_id`;
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [projects, setProjects] = useState<Project[]>(() => getLocalProjects());
+  const [projectsLoaded, setProjectsLoaded] = useState<boolean>(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
     const saved = localStorage.getItem(activeProjectStorageKey);
     if (saved) return saved;
@@ -89,6 +90,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   useEffect(() => {
     const unsubProjects = listenToProjects((list) => {
       setProjects(list);
+      setProjectsLoaded(true);
     }, currentUser.role);
 
     const unsubUsers = listenToUsers((list) => {
@@ -120,18 +122,23 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
   // The tenant API returns only projects the signed-in member may access.
   const accessibleProjects = projects;
 
-  // Keep selected project aligned with accessible projects
+  // Keep selected project aligned with accessible projects (wait until projectsLoaded to avoid wiping localStorage on F5)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !projectsLoaded) return;
     if (accessibleProjects.length > 0) {
       if (!selectedProjectId || !accessibleProjects.some(p => p.id === selectedProjectId)) {
-        setSelectedProjectId(accessibleProjects[0].id);
+        const saved = localStorage.getItem(activeProjectStorageKey);
+        if (saved && accessibleProjects.some(p => p.id === saved)) {
+          setSelectedProjectId(saved);
+        } else {
+          setSelectedProjectId(accessibleProjects[0].id);
+        }
       }
     } else {
       setSelectedProjectId('');
       setActiveProject(null);
     }
-  }, [accessibleProjects, selectedProjectId, currentUser]);
+  }, [accessibleProjects, selectedProjectId, currentUser, projectsLoaded, activeProjectStorageKey]);
 
   // Guard against non-admin accessing 'users' tab
   useEffect(() => {
@@ -341,7 +348,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
           currentUser={currentUser}
           onExport={handleExport}
           hasActiveProject={Boolean(activeProject)}
-          onDeleteProject={handleRequestDeleteProject}
+          onDeleteProject={currentUser.role === 'admin' ? handleRequestDeleteProject : undefined}
           measurementMode={activeProject?.measurementMode}
         />
 
@@ -360,20 +367,24 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                     Kein aktives Bauvorhaben
                   </h2>
                   <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
-                    Alle Testdaten wurden geleert. Sie können jetzt ein komplett frisches Projekt (z. B. das Einfamilienhaus) in 3 einfachen Schritten anlegen.
+                    {currentUser.role === 'admin'
+                      ? 'Alle Testdaten wurden geleert. Sie können jetzt ein komplett frisches Projekt (z. B. das Einfamilienhaus) in 3 einfachen Schritten anlegen.'
+                      : 'Aktuell ist Ihnen kein Bauvorhaben zugewiesen. Bitte wenden Sie sich an einen Administrator.'}
                   </p>
                 </div>
 
-                <div className="pt-2">
-                  <button
-                    key={projectPromptShake}
-                    onClick={() => setIsNewProjectOpen(true)}
-                    className={`inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-7 py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] ${projectPromptShake ? 'project-create-shake' : ''}`}
-                  >
-                    <Plus className="w-5 h-5" />
-                    <span>Neues Projekt anlegen (3 Schritte)</span>
-                  </button>
-                </div>
+                {currentUser.role === 'admin' && (
+                  <div className="pt-2">
+                    <button
+                      key={projectPromptShake}
+                      onClick={() => setIsNewProjectOpen(true)}
+                      className={`inline-flex items-center space-x-2 bg-[#3B82C4] hover:bg-[#2B6EB0] text-white px-7 py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02] active:scale-[0.98] ${projectPromptShake ? 'project-create-shake' : ''}`}
+                    >
+                      <Plus className="w-5 h-5" />
+                      <span>Neues Projekt anlegen (3 Schritte)</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -491,7 +502,7 @@ export function App({ authenticatedUser: currentUser, tenantId, branding, onLogo
                     project={activeProject}
                     users={users}
                     currentUser={currentUser}
-                    onDeleteProject={handleRequestDeleteProject}
+                    onDeleteProject={currentUser.role === 'admin' ? handleRequestDeleteProject : undefined}
                   />
                 )}
               </>

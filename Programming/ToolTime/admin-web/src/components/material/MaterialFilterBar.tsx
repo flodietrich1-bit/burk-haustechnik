@@ -88,19 +88,20 @@ export const MaterialFilterBar: React.FC<MaterialFilterBarProps> = ({
             <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
             <span>Nicht im LV / Ergänzt ({sourceCounts.custom})</span>
           </button>
-
-          {sourceCounts.custom > 0 && canEditCommercial && onDeleteCustom && (
-            <button
-              type="button"
-              onClick={onDeleteCustom}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer"
-              title="Alle nicht im LV enthaltenen Positionen löschen und auf Original-LV zurücksetzen"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Auf Original-LV zurücksetzen ({sourceCounts.custom})</span>
-            </button>
-          )}
         </div>
+
+        {/* Separate Reset / Delete Button (mittig zwischen Filter-Switch und Export) */}
+        {sourceCounts.custom > 0 && canEditCommercial && onDeleteCustom && (
+          <button
+            type="button"
+            onClick={onDeleteCustom}
+            className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-sm transition-colors cursor-pointer shrink-0"
+            title="Alle nicht im LV enthaltenen Positionen löschen und auf Original-LV zurücksetzen"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Auf Original-LV zurücksetzen ({sourceCounts.custom})</span>
+          </button>
+        )}
 
         {/* Right: Edit Mode Button & Quick Actions */}
         <div className="flex flex-wrap items-center gap-2">
